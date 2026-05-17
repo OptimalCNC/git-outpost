@@ -119,10 +119,8 @@ QA/Test Plan Gate:
 
 ## Active Chunk
 
-- `safety-gates`
-- Scope: add `safety.rs` with dirty-tree checks and managed-outpost/source ownership gates
-- Test IDs: U-10, U-13
-- Status: assigned; implementation in progress
+- none
+- Status: `safety-gates` complete; next chunk ready to assign
 
 ## Remaining Chunks
 
@@ -266,6 +264,9 @@ Remaining chunk order:
   - Normal Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-1/safety-gates/normal-review.md`
   - Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/safety-gates/independent-review.md`
   - Blocking finding to fix: `check_destination_clean(parent, relative_dest)` must resolve relative destinations under `parent` before any existence/canonicalization check, with regression coverage.
+  - Scope Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/safety-gates/scope-review-rerun.md`
+  - Normal Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/safety-gates/normal-review-rerun.md`
+  - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/safety-gates/independent-review-rerun.md`
 
 ## Docs Log
 
@@ -288,8 +289,10 @@ Remaining chunk order:
   - Milestone: `source-outpost-discovery` reviewers approved after rerun
 - `85119de phase-1: add safety gates`
   - Milestone: `safety-gates` implementation evidence recorded before review
-- pending `phase-1: address safety review finding`
+- `7045f59 phase-1: address safety review finding`
   - Milestone: fixed Normal Reviewer finding for `safety-gates`
+- pending `phase-1: record safety review approvals`
+  - Milestone: `safety-gates` reviewers approved after rerun
 
 ## Protected-Path Exception Log
 
@@ -302,4 +305,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `safety-gates` review fix, then rerun reviewers as needed.
+- Commit `safety-gates` review approvals, then assign `add-baseline-clone`.
