@@ -146,7 +146,7 @@
 - Scope: implement `ops::lock`, `ops::unlock`, and `ops::move`; add QA-owned core integration coverage for LMU-01..LMU-08.
 - Test IDs: LMU-01, LMU-02, LMU-03, LMU-04, LMU-05, LMU-06, LMU-07, LMU-08
 - Out of scope: CLI contextual path omission, CLI formatting/dispatch/global `-C`, remove/prune behavior, Phase 3+ status/sync behavior, registry file locking/concurrency.
-- Status: implementation complete; review pending
+- Status: implementation committed; review pending
 
 ## Remaining Chunks
 
@@ -179,7 +179,6 @@ Remaining chunk order:
 
 ## Completed Chunks
 
-- none yet
 - `lock-move-unlock` implementation evidence recorded:
   - Files changed: `crates/core/src/ops/mod.rs`, `crates/core/src/ops/lock.rs`, `crates/core/src/ops/move.rs`, `crates/core/src/ops/unlock.rs`, `crates/core/src/outpost.rs`, `crates/core/tests/lock_move_unlock.rs`
   - Artifact files changed: `.agents-artifacts/progress/phase-2.md`, `.agents-artifacts/reviews/phase-2/lock-move-unlock/evidence-pack.md`, `.agents-artifacts/qa/phase-2/lock-move-unlock.md`
@@ -190,7 +189,8 @@ Remaining chunk order:
   - Integration tests added: `lock_with_reason_marks_registry_entry_locked`, `unlock_clears_registry_lock_state_and_reason`, `move_updates_filesystem_and_registry_path`, `move_refuses_locked_outpost_without_force`, `move_force_moves_locked_outpost_and_preserves_lock`, `move_refuses_dirty_outpost_but_force_succeeds`, `move_refuses_non_empty_destination`, `lock_move_unlock_reject_unregistered_paths`, `lock_move_unlock_reject_wrong_source_registered_path`
   - Docs updated: none; existing product and architecture document lock/move/unlock contracts
   - Architecture deviations: none for claimed lock/move/unlock behavior
-  - Status: implementation evidence recorded; awaiting review
+  - Implementation commit: `700689e phase-2: add lock move unlock`
+  - Status: implementation committed; awaiting review
 
 ## Verification Log
 
@@ -217,7 +217,8 @@ Remaining chunk order:
 
 ## Commit Log
 
-- pending initial Phase 2 readiness/planning commit
+- `88e1b09 phase-2: record readiness and plan`
+- `700689e phase-2: add lock move unlock`
 
 ## Protected-Path Exception Log
 
