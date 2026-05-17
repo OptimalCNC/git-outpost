@@ -146,7 +146,7 @@
 - Scope: implement `ops::lock`, `ops::unlock`, and `ops::move`; add QA-owned core integration coverage for LMU-01..LMU-08.
 - Test IDs: LMU-01, LMU-02, LMU-03, LMU-04, LMU-05, LMU-06, LMU-07, LMU-08
 - Out of scope: CLI contextual path omission, CLI formatting/dispatch/global `-C`, remove/prune behavior, Phase 3+ status/sync behavior, registry file locking/concurrency.
-- Status: implementation committed; review pending
+- Status: approved; next chunk pending
 
 ## Remaining Chunks
 
@@ -190,7 +190,15 @@ Remaining chunk order:
   - Docs updated: none; existing product and architecture document lock/move/unlock contracts
   - Architecture deviations: none for claimed lock/move/unlock behavior
   - Implementation commit: `700689e phase-2: add lock move unlock`
-  - Status: implementation committed; awaiting review
+  - Review artifacts:
+    - Scope Reviewer: `.agents-artifacts/reviews/phase-2/lock-move-unlock/scope-review.md`
+    - Normal Reviewer: `.agents-artifacts/reviews/phase-2/lock-move-unlock/normal-review.md`
+    - Independent Reviewer: `.agents-artifacts/reviews/phase-2/lock-move-unlock/independent-review.md`
+  - Review verdicts: scope `approved with nits`; normal `approved`; independent `approved with nits`
+  - Required review changes: none
+  - Adopted nits: progress log now records checkpoint commit `786473d`
+  - Residual notes: no dedicated LMU integration test for moving into an existing empty destination; shared destination-safety coverage exists and reviewers did not require a change
+  - Status: approved
 
 ## Verification Log
 
@@ -209,7 +217,9 @@ Remaining chunk order:
 
 ## Review Log
 
-- none yet
+- `lock-move-unlock` Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-2/lock-move-unlock/scope-review.md`; nit was to record checkpoint commit `786473d`.
+- `lock-move-unlock` Normal Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-2/lock-move-unlock/normal-review.md`; no required changes.
+- `lock-move-unlock` Independent Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-2/lock-move-unlock/independent-review.md`; residual edge-case test note, no required changes.
 
 ## Docs Log
 
@@ -219,6 +229,7 @@ Remaining chunk order:
 
 - `88e1b09 phase-2: record readiness and plan`
 - `700689e phase-2: add lock move unlock`
+- `786473d phase-2: record lock move unlock checkpoint`
 
 ## Protected-Path Exception Log
 
