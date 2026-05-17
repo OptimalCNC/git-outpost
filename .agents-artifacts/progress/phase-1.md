@@ -150,7 +150,7 @@ QA/Test Plan Gate:
 - Scope: add `ops::list` basic summaries from a `SourceRepo`, including registered outpost paths, current branch, clean/dirty/missing/not-managed state, lock fields, and QA-owned core integration coverage for L-01..L-04 and L-07..L-10
 - Test IDs: L-01, L-02, L-03, L-04, L-07, L-08, L-09, L-10
 - Out of scope: ahead/behind counts L-05/L-06, CLI formatting, CLI dispatch/global `-C`, Phase 2 lock/unlock command behavior
-- Status: normal-review finding addressed; independent first pass approved original range; review reruns pending on the fix
+- Status: complete; normal and independent reviewers approved after reruns
 
 ## Remaining Chunks
 
@@ -240,10 +240,11 @@ Remaining chunk order:
   - Evidence pack: `.agents-artifacts/reviews/phase-1/list-basic-summaries/evidence-pack.md`
   - QA note: `.agents-artifacts/qa/phase-1/list-basic-summaries.md`
   - Unit tests added: none; behavior covered by core integration tests
-  - Integration tests added: `list_empty_source_returns_no_summaries`, `list_reports_three_added_outpost_paths`, `list_reports_current_branch_for_each_outpost`, `list_reports_dirty_for_untracked_outpost_file`, `list_reports_missing_registered_outpost`, `list_reports_not_managed_registered_path`, `list_outside_source_repo_returns_not_a_repo`, `list_includes_lock_reason_from_registry`
+  - Integration tests added: `list_empty_source_returns_no_summaries`, `list_reports_three_added_outpost_paths`, `list_reports_current_branch_for_each_outpost`, `list_reports_dirty_for_untracked_outpost_file`, `list_reports_missing_registered_outpost`, `list_reports_not_managed_registered_path`, `list_reports_wrong_source_outpost_as_not_managed`, `list_outside_source_repo_returns_not_a_repo`, `list_includes_lock_reason_from_registry`
   - Docs updated: none; existing product and architecture document list contracts
   - Architecture deviations: none for claimed basic list behavior; L-05/L-06 ahead/behind remain assigned to `list-ahead-behind`
-  - Status: implementation evidence recorded; awaiting review
+  - Review-fix delta: list now validates existing registry entries with `check_path_is_managed_outpost_of`, so a registered path containing an outpost managed by another source is reported as `NotManaged`.
+  - Status: complete; normal and independent reviewers approved after reruns
 
 ## Verification Log
 
@@ -322,6 +323,14 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 43 unit tests, 22 add integration tests, 8 list integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 22 add integration tests, 8 list integration tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- `list-basic-summaries` review-fix verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core --test list`: pass; 9 list integration tests
+  - `cargo test -p outpost-core`: pass; 43 unit tests, 22 add integration tests, 9 list integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 43 unit tests, 22 add integration tests, 9 list integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 43 unit tests, 22 add integration tests, 9 list integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 22 add integration tests, 9 list integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -359,8 +368,11 @@ Remaining chunk order:
   - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/add-baseline-clone/independent-review-rerun.md`
 - `list-basic-summaries`:
   - Scope Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/list-basic-summaries/scope-review.md`
-  - Normal Reviewer: pending
-  - Independent Reviewer: pending
+  - Normal Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-1/list-basic-summaries/normal-review.md`
+  - Blocking finding fixed locally: registered paths containing an outpost managed by another source must be summarized as `NotManaged`, not healthy.
+  - Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/list-basic-summaries/independent-review.md`
+  - Normal Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/list-basic-summaries/normal-review-rerun.md`
+  - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/list-basic-summaries/independent-review-rerun.md`
 
 ## Docs Log
 
@@ -405,6 +417,12 @@ Remaining chunk order:
   - Milestone: recorded `add-baseline-clone` independent rerun approval
 - `4bb8bb2 phase-1: add list basic summaries`
   - Milestone: `list-basic-summaries` implementation evidence recorded before review
+- `b5303de phase-1: record list basic checkpoint`
+  - Milestone: recorded `list-basic-summaries` implementation checkpoint hash before review
+- `22c13ee phase-1: record list basic scope approval`
+  - Milestone: recorded `list-basic-summaries` scope review approval
+- `7761db8 phase-1: address list normal review`
+  - Milestone: fixed Normal Reviewer wrong-source outpost classification finding
 
 ## Protected-Path Exception Log
 
@@ -417,4 +435,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Run `list-basic-summaries` normal and independent reviews.
+- Start `list-ahead-behind`.
