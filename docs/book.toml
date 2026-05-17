@@ -1,0 +1,14 @@
+[book]
+title = "Git Outpost"
+authors = []
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "navy"
+git-repository-url = ""
+additional-js = [".assets/mermaid.min.js", ".assets/mermaid-init.js"]
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
