@@ -3,7 +3,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use outpost_core::{GitInvoker, OutpostError, OutpostResult};
+use outpost_core::{GitInvoker, OutpostError, OutpostResult, SourceRepo};
 
 pub struct AbcFixture {
     _tmp: tempfile::TempDir,
@@ -76,6 +76,10 @@ impl AbcFixture {
             .fold(GitInvoker::at(cwd), |git, (key, val)| {
                 git.with_env(key.clone(), val.clone())
             })
+    }
+
+    pub fn source_repo(&self) -> OutpostResult<SourceRepo> {
+        SourceRepo::at_with(&self.source, &self.git_env)
     }
 
     pub fn commit_in_source(&self, msg: &str) -> OutpostResult<String> {

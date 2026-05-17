@@ -119,8 +119,10 @@ QA/Test Plan Gate:
 
 ## Active Chunk
 
-- none
-- Status: `storage-foundations` complete; next chunk ready to assign
+- `source-outpost-discovery`
+- Scope: expand `source_repo.rs`, add `outpost.rs`, and add minimal fixture support for hermetic SourceRepo/Outpost access
+- Test IDs: none directly; supports C/L integration behavior and later U-10/U-13
+- Status: implementation complete; evidence recorded; awaiting review
 
 ## Remaining Chunks
 
@@ -175,6 +177,15 @@ Remaining chunk order:
   - Docs updated: none; existing architecture documents storage contracts
   - Architecture deviations: minimal `SourceRepo` storage carrier added because registry APIs require it; full discovery remains deferred
   - Status: complete; post-fix normal and independent reviewers approved
+- `source-outpost-discovery` implementation evidence recorded:
+  - Files changed: `crates/core/src/lib.rs`, `crates/core/src/source_repo.rs`, `crates/core/src/outpost.rs`, `crates/core/tests/common/fixture.rs`, `crates/core/tests/fixture_smoke.rs`
+  - Test IDs advanced: none directly; supports U-10, U-13, C-01..C-20, L-01..L-10
+  - Evidence pack: `.agents-artifacts/reviews/phase-1/source-outpost-discovery/evidence-pack.md`
+  - Unit tests added: `source_at_canonicalizes_paths_and_reads_current_branch`, `source_discover_rejects_non_repo`, `source_dirty_detects_untracked_files`, `source_branch_helpers_read_local_heads_upstream_and_worktrees`, `outpost_at_rejects_unmanaged_repo`, `outpost_at_reads_metadata_and_source_repo`, `outpost_reports_missing_source_repo_from_metadata`
+  - Integration tests touched: `abc_fixture_builds_a_b_with_hermetic_git_env` now verifies `AbcFixture::source_repo`
+  - Docs updated: none; existing architecture documents the stable `SourceRepo`, `Outpost`, and fixture env-threading contracts
+  - Architecture deviations: none; ahead/behind behavior remains deferred to the planned `list-ahead-behind` chunk
+  - Status: implementation complete; awaiting three-reviewer gate
 
 ## Verification Log
 
@@ -191,6 +202,13 @@ Remaining chunk order:
   - `cargo tree -p outpost-core --offline`: pass; active target storage dependency tree audited for Rust 1.75-compatible locked manifests
   - `cargo metadata --format-version 1`: failed under restricted network while trying to download target-specific crates; not required for the gate
   - `cargo tree -p outpost-core --target all --offline`: failed because uncached target-specific crates were unavailable offline; not required for the gate
+- `source-outpost-discovery` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 28 unit tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -201,10 +219,14 @@ Remaining chunk order:
   - Blocking findings fixed locally: `RegistryMut::save()` failure no longer trips Drop guard; `update_path()` and `remove_by_path()` handle already-recorded canonical paths after the filesystem path is missing.
   - Normal Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/storage-foundations/normal-review-rerun.md`
   - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/storage-foundations/independent-review-rerun.md`
+- `source-outpost-discovery`:
+  - Scope Reviewer: pending; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/scope-review.md`
+  - Normal Reviewer: pending; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/normal-review.md`
+  - Independent Reviewer: pending; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/independent-review.md`
 
 ## Docs Log
 
-- none
+- `source-outpost-discovery`: no docs changes; stable contracts already covered by architecture sections 5.4, 5.5, and 10.2.
 
 ## Commit Log
 
@@ -214,6 +236,8 @@ Remaining chunk order:
   - Milestone: `storage-foundations` implementation evidence recorded before review
 - `98591c6 phase-1: address storage review findings`
   - Milestone: fixed Normal and Independent Reviewer findings for `storage-foundations`
+- pending `phase-1: add source and outpost discovery`
+  - Milestone: `source-outpost-discovery` implementation evidence recorded before review
 
 ## Protected-Path Exception Log
 
@@ -226,4 +250,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `storage-foundations` review approvals, then assign `source-outpost-discovery`.
+- Commit `source-outpost-discovery` implementation evidence, then run the Scope Reviewer.

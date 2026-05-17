@@ -27,6 +27,13 @@ fn abc_fixture_builds_a_b_with_hermetic_git_env() {
             .expect("source should have initial commit"),
         "initial"
     );
+    assert_eq!(
+        fixture
+            .source_repo()
+            .expect("source repo should open with hermetic env")
+            .work_tree(),
+        std::fs::canonicalize(&fixture.source).expect("canonical source")
+    );
 
     let source_oid = fixture
         .commit_in_source("source commit")
