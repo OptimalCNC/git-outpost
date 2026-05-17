@@ -119,10 +119,8 @@ QA/Test Plan Gate:
 
 ## Active Chunk
 
-- `storage-foundations`
-- Scope: `metadata.rs`, `registry.rs`, minimal storage dependencies/exports, and minimal `SourceRepo` storage carrier
-- Test IDs: U-01, U-02, U-03, U-04, U-05, U-06, U-14, U-15
-- Status: implementation complete; evidence recorded; pending milestone commit and review
+- none
+- Status: `storage-foundations` complete; next chunk ready to assign
 
 ## Remaining Chunks
 
@@ -158,7 +156,6 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `storage-foundations`
 - `source-outpost-discovery`
 - `safety-gates`
 - `add-baseline-clone`
@@ -168,7 +165,16 @@ Remaining chunk order:
 
 ## Completed Chunks
 
-- none; `storage-foundations` implementation is pending review
+- `storage-foundations` implementation evidence recorded:
+  - Files changed: `Cargo.toml`, `Cargo.lock`, `crates/core/Cargo.toml`, `crates/core/src/lib.rs`, `crates/core/src/metadata.rs`, `crates/core/src/registry.rs`, `crates/core/src/source_repo.rs`
+  - Test IDs advanced: U-01, U-02, U-03, U-04, U-05, U-06, U-14, U-15
+  - Evidence pack: `.agents-artifacts/reviews/phase-1/storage-foundations/evidence-pack.md`
+  - Review artifacts: `.agents-artifacts/reviews/phase-1/storage-foundations/scope-review.md`, `.agents-artifacts/reviews/phase-1/storage-foundations/normal-review.md`, `.agents-artifacts/reviews/phase-1/storage-foundations/independent-review.md`, `.agents-artifacts/reviews/phase-1/storage-foundations/normal-review-rerun.md`, `.agents-artifacts/reviews/phase-1/storage-foundations/independent-review-rerun.md`
+  - Unit tests added: `metadata_write_sets_local_outpost_config_keys`, `raw_metadata_on_non_managed_repo_promotes_to_not_an_outpost`, `raw_metadata_read_ignores_global_outpost_managed_config`, `empty_registry_serializes_to_expected_json_and_round_trips`, `add_readd_remove_and_add_round_trips_by_canonical_path`, `load_missing_registry_returns_empty_registry`, `load_malformed_json_returns_bad_registry`, `dropping_dirty_registry_mut_trips_debug_drop_guard`, `dropping_dirty_registry_mut_does_not_panic_in_release_builds`, `failed_save_returns_error_without_drop_guard_panic`, `update_path_handles_registered_old_path_after_rename`, `remove_by_path_handles_registered_missing_path`
+  - Integration tests touched: none; QA-owned and scheduled after APIs stabilize
+  - Docs updated: none; existing architecture documents storage contracts
+  - Architecture deviations: minimal `SourceRepo` storage carrier added because registry APIs require it; full discovery remains deferred
+  - Status: complete; post-fix normal and independent reviewers approved
 
 ## Verification Log
 
@@ -193,6 +199,8 @@ Remaining chunk order:
   - Normal Reviewer: `changes requested`; artifact `.agents-artifacts/reviews/phase-1/storage-foundations/normal-review.md`
   - Independent Reviewer: `changes requested`; artifact `.agents-artifacts/reviews/phase-1/storage-foundations/independent-review.md`
   - Blocking findings fixed locally: `RegistryMut::save()` failure no longer trips Drop guard; `update_path()` and `remove_by_path()` handle already-recorded canonical paths after the filesystem path is missing.
+  - Normal Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/storage-foundations/normal-review-rerun.md`
+  - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/storage-foundations/independent-review-rerun.md`
 
 ## Docs Log
 
@@ -202,6 +210,10 @@ Remaining chunk order:
 
 - `3de288d phase-1: record readiness and plan`
   - Milestone: Phase 1 readiness, QA/Test Plan Gate, and Chunk Planning Gate recorded before implementation
+- `e80bd1e phase-1: add storage foundations`
+  - Milestone: `storage-foundations` implementation evidence recorded before review
+- `98591c6 phase-1: address storage review findings`
+  - Milestone: fixed Normal and Independent Reviewer findings for `storage-foundations`
 
 ## Protected-Path Exception Log
 
@@ -214,4 +226,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `storage-foundations` review fixes, then rerun required reviewers.
+- Commit `storage-foundations` review approvals, then assign `source-outpost-discovery`.
