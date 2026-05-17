@@ -8,3 +8,4 @@ rust-version = "1.75"
 
 [workspace.dependencies]
 thiserror = "^1.0"
+tempfile = "^3.0"

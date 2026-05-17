@@ -74,16 +74,15 @@ QA/Test Plan Gate:
 
 ## Active Chunk
 
-- `git-and-ref-boundary`
-- Scope: implement `git.rs`, `refname.rs`, and minimal exports/feature support
-- Test IDs: U-09, U-11, U-12
-- Status: complete; three-reviewer gate passed after review fix
-- Developer subagent: `019e36fd-54c6-7761-bafb-44d317521eaf`
+- `phase0-fixture-scaffold`
+- Scope: A/B fixture scaffold and hermetic Git environment support without Phase 1 outpost helpers
+- Test IDs: none directly
+- Status: implementation complete; evidence recorded; pending milestone commit and review
+- QA/Test Developer subagent: `019e371f-1451-7100-85f3-2f630c85cb04`
 
 ## Remaining Chunks
 
-- `git-and-ref-boundary`: implement `git.rs` and `refname.rs`; covers U-09, U-11, U-12
-- `phase0-fixture-scaffold`: add A/B fixture scaffold and hermetic Git environment support without Phase 1 ops behavior
+- none for Phase 0 after `phase0-fixture-scaffold` review/closeout
 
 Chunk Planning Gate:
 
@@ -122,6 +121,14 @@ Chunk Planning Gate:
   - Docs updated: none; existing architecture already documents the stable contract
   - Architecture deviations: none
   - Review fix applied: `GitFailed.args`/`GitTerminatedBySignal.args` now render argv as a bracketed per-argument list to preserve argument boundaries; U-09 test now distinguishes one arg containing spaces from multiple args
+- `phase0-fixture-scaffold` implementation evidence recorded:
+  - Files changed: `Cargo.toml`, `Cargo.lock`, `crates/core/Cargo.toml`, `crates/core/tests/common/mod.rs`, `crates/core/tests/common/fixture.rs`, `crates/core/tests/fixture_smoke.rs`
+  - Test IDs advanced: none directly
+  - Evidence pack: `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/evidence-pack.md`
+  - Fixture changes: A/B temp fixture, hermetic Git env, `invoker`, `commit_in_source`, `commit_in_upstream`
+  - Integration tests added: `abc_fixture_builds_a_b_with_hermetic_git_env`
+  - Docs updated: none; existing architecture documents fixture intent
+  - Architecture deviations: full C/outpost helpers deferred because they require Phase 1 APIs and command behavior
 
 ## Verification Log
 
@@ -146,6 +153,11 @@ Chunk Planning Gate:
   - `cargo test -p outpost-core --tests`: pass; 10 unit tests passed
   - `cargo test --workspace`: pass; 10 unit tests passed, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 10 unit tests passed, 0 doctests
+- `phase0-fixture-scaffold` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core`: pass; 10 unit tests passed, 1 fixture smoke test passed, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 10 unit tests passed, 1 fixture smoke test passed
+  - `cargo test --workspace`: pass; 10 unit tests passed, 1 fixture smoke test passed, 0 doctests
 
 ## Review Log
 
@@ -180,6 +192,8 @@ Chunk Planning Gate:
   - Includes `git.rs`, `refname.rs`, exports, `test-helpers` feature, U-09/U-11/U-12 tests, and evidence/progress artifacts
 - `83a1f74 phase-0: address git argv review finding`
   - Milestone: fixed Normal Reviewer blocking finding for `git-and-ref-boundary` U-09 argv boundary preservation and recorded review artifacts
+- `9f2fc35 phase-0: record git boundary review approvals`
+  - Milestone: recorded post-fix Normal Reviewer and Independent Reviewer approvals for `git-and-ref-boundary`
 
 ## Protected-Path Exception Log
 
@@ -191,4 +205,4 @@ Chunk Planning Gate:
 
 ## Next Recommended Action
 
-- Commit `git-and-ref-boundary` review-result artifacts, then start `phase0-fixture-scaffold`.
+- Commit `phase0-fixture-scaffold` implementation milestone, then run Scope Reviewer.
