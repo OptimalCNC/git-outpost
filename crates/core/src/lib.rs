@@ -5,6 +5,7 @@ pub mod outpost;
 pub mod refname;
 pub mod registry;
 pub mod reporter;
+pub mod safety;
 pub mod source_repo;
 
 pub use error::{OutpostError, OutpostResult};

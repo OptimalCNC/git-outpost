@@ -81,8 +81,8 @@
 | U-04 | `registry.rs` malformed JSON returns `BadRegistry` | implemented passing | `load_malformed_json_returns_bad_registry` |
 | U-05 | `metadata.rs` writes local outpost config keys | implemented passing | `metadata_write_sets_local_outpost_config_keys` |
 | U-06 | `metadata.rs` unmanaged raw metadata promotes to `NotAnOutpost` | implemented passing | `raw_metadata_on_non_managed_repo_promotes_to_not_an_outpost` |
-| U-10 | `safety.rs` dirty detection staged/unstaged/untracked | planned |  |
-| U-13 | `safety.rs` managed outpost path gate rejects invalid/wrong-source paths | planned |  |
+| U-10 | `safety.rs` dirty detection staged/unstaged/untracked | implemented passing | `check_clean_reports_staged_changes_as_dirty`, `check_clean_reports_unstaged_changes_as_dirty`, `check_clean_reports_untracked_changes_as_dirty` |
+| U-13 | `safety.rs` managed outpost path gate rejects invalid/wrong-source paths | implemented passing | `managed_outpost_gate_rejects_path_with_no_git_repo`, `managed_outpost_gate_rejects_managed_false`, `managed_outpost_gate_rejects_different_source` |
 | U-14 | `metadata.rs` `RawMetadata::read` ignores global config | implemented passing | `raw_metadata_read_ignores_global_outpost_managed_config` |
 | U-15 | `registry.rs` unsaved `RegistryMut` Drop guard | implemented passing | `dropping_dirty_registry_mut_trips_debug_drop_guard`; release behavior test is cfg-gated |
 | C-01..C-20 | `ops::add` core integration behavior | planned | QA-owned integration tests |
@@ -119,8 +119,10 @@ QA/Test Plan Gate:
 
 ## Active Chunk
 
-- none
-- Status: `source-outpost-discovery` complete; next chunk ready to assign
+- `safety-gates`
+- Scope: add `safety.rs` with dirty-tree checks and managed-outpost/source ownership gates
+- Test IDs: U-10, U-13
+- Status: assigned; implementation in progress
 
 ## Remaining Chunks
 
@@ -185,6 +187,15 @@ Remaining chunk order:
   - Architecture deviations: none; ahead/behind behavior remains deferred to the planned `list-ahead-behind` chunk
   - Review-fix delta: added documented `outpost-core` self dev-dependency with `test-helpers` for integration tests; updated lockfile for that self edge
   - Status: review fix implemented; awaiting rerun review
+- `safety-gates` implementation evidence recorded:
+  - Files changed: `crates/core/src/lib.rs`, `crates/core/src/safety.rs`
+  - Test IDs advanced: U-10, U-13
+  - Evidence pack: `.agents-artifacts/reviews/phase-1/safety-gates/evidence-pack.md`
+  - Unit tests added: `check_clean_reports_staged_changes_as_dirty`, `check_clean_reports_unstaged_changes_as_dirty`, `check_clean_reports_untracked_changes_as_dirty`, `check_clean_allows_clean_work_tree`, `managed_outpost_gate_rejects_path_with_no_git_repo`, `managed_outpost_gate_rejects_managed_false`, `managed_outpost_gate_rejects_different_source`, `managed_outpost_gate_accepts_matching_source`, `destination_clean_rejects_existing_file_and_non_empty_dir`, `destination_clean_allows_missing_and_empty_dir_outside_repo`, `destination_clean_rejects_target_inside_existing_repo`, `destination_clean_allows_relative_sibling_outside_repo`
+  - Integration tests touched: none; QA-owned and scheduled after ops APIs stabilize
+  - Docs updated: none; existing architecture documents safety contracts
+  - Architecture deviations: `check_no_unpushed` and divergence helpers remain deferred because this chunk is scoped to U-10/U-13 and destination gating
+  - Status: implementation complete; awaiting three-reviewer gate
 
 ## Verification Log
 
@@ -215,6 +226,14 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- `safety-gates` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core safety::tests::`: pass; 12 safety tests
+  - `cargo test -p outpost-core`: pass; 40 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 40 unit tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 40 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 40 unit tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -237,6 +256,7 @@ Remaining chunk order:
 ## Docs Log
 
 - `source-outpost-discovery`: no docs changes; stable contracts already covered by architecture sections 5.4, 5.5, and 10.2.
+- `safety-gates`: no docs changes; stable contracts already covered by architecture section 5.8.
 
 ## Commit Log
 
@@ -250,8 +270,10 @@ Remaining chunk order:
   - Milestone: `source-outpost-discovery` implementation evidence recorded before review
 - `bad1609 phase-1: address discovery review finding`
   - Milestone: fixed Normal Reviewer finding for `source-outpost-discovery`
-- pending `phase-1: record discovery review approvals`
+- `6e38079 phase-1: record discovery review approvals`
   - Milestone: `source-outpost-discovery` reviewers approved after rerun
+- pending `phase-1: add safety gates`
+  - Milestone: `safety-gates` implementation evidence recorded before review
 
 ## Protected-Path Exception Log
 
@@ -264,4 +286,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `source-outpost-discovery` review approvals, then assign `safety-gates`.
+- Commit `safety-gates` implementation evidence, then run the Scope Reviewer.
