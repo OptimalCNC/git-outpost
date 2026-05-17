@@ -466,6 +466,8 @@ Remaining chunk order:
   - Milestone: fixed Independent Reviewer progress-log accuracy findings for `list-ahead-behind`
 - `0a07ffd phase-1: record list ahead approval`
   - Milestone: recorded `list-ahead-behind` independent rerun approval
+- `258abf2 phase-1: close phase`
+  - Milestone: Phase 1 closeout gate passed and required closeout commit created
 
 ## Protected-Path Exception Log
 
@@ -478,4 +480,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Create the Phase 1 closeout commit, report Phase 1 complete, then begin Phase 2 readiness.
+- Begin Phase 2 readiness.
