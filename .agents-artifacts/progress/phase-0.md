@@ -74,11 +74,8 @@ QA/Test Plan Gate:
 
 ## Active Chunk
 
-- `phase0-fixture-scaffold`
-- Scope: A/B fixture scaffold and hermetic Git environment support without Phase 1 outpost helpers
-- Test IDs: none directly
-- Status: implementation complete; evidence recorded; pending milestone commit and review
-- QA/Test Developer subagent: `019e371f-1451-7100-85f3-2f630c85cb04`
+- none
+- Status: all Phase 0 chunks complete; phase closeout pending
 
 ## Remaining Chunks
 
@@ -125,11 +122,13 @@ Chunk Planning Gate:
   - Files changed: `Cargo.toml`, `Cargo.lock`, `crates/core/Cargo.toml`, `crates/core/tests/common/mod.rs`, `crates/core/tests/common/fixture.rs`, `crates/core/tests/fixture_smoke.rs`
   - Test IDs advanced: none directly
   - Evidence pack: `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/evidence-pack.md`
+  - Review artifacts: `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/scope-review.md`, `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/normal-review.md`, `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/independent-review.md`, `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/normal-review-rerun.md`, `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/independent-review-rerun.md`
   - Fixture changes: A/B temp fixture, hermetic Git env, `invoker`, `commit_in_source`, `commit_in_upstream`
   - Integration tests added: `abc_fixture_builds_a_b_with_hermetic_git_env`
   - Docs updated: none; existing architecture documents fixture intent
   - Architecture deviations: full C/outpost helpers deferred because they require Phase 1 APIs and command behavior
   - Review fix applied: `tempfile` pinned to `=3.10.0`; lockfile no longer contains `getrandom`/Rust 1.85 dependency chain; audited locked fixture dependencies are Rust 1.75-compatible
+  - Status: complete; all reviewer reruns approved after MSRV fix
 
 ## Verification Log
 
@@ -187,6 +186,8 @@ Chunk Planning Gate:
   - Normal Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/normal-review.md`
   - Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/independent-review.md`
   - Blocking finding fixed: `tempfile` pinned to `=3.10.0`; audited locked dependency tree is Rust 1.75-compatible and Rust 1.85 chain is absent
+  - Normal Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/normal-review-rerun.md`
+  - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/independent-review-rerun.md`
 
 ## Docs Log
 
@@ -211,6 +212,8 @@ Chunk Planning Gate:
 - `2361d90 phase-0: add fixture scaffold`
   - Milestone: `phase0-fixture-scaffold` implementation evidence recorded before review
   - Includes A/B fixture scaffold, hermetic Git env, smoke integration test, `tempfile` dev-dependency, and evidence/progress artifacts
+- `383a2e8 phase-0: address fixture msrv review finding`
+  - Milestone: fixed Normal Reviewer blocking finding for `phase0-fixture-scaffold` MSRV-compatible fixture dependency resolution and recorded review artifacts
 
 ## Protected-Path Exception Log
 
@@ -222,4 +225,4 @@ Chunk Planning Gate:
 
 ## Next Recommended Action
 
-- Commit `phase0-fixture-scaffold` MSRV review-fix milestone, then rerun needed reviews.
+- Commit `phase0-fixture-scaffold` review approval artifacts, then run and record the Phase 0 closeout gate.
