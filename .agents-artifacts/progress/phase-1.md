@@ -150,7 +150,7 @@ QA/Test Plan Gate:
 - Scope: add `ops::list` basic summaries from a `SourceRepo`, including registered outpost paths, current branch, clean/dirty/missing/not-managed state, lock fields, and QA-owned core integration coverage for L-01..L-04 and L-07..L-10
 - Test IDs: L-01, L-02, L-03, L-04, L-07, L-08, L-09, L-10
 - Out of scope: ahead/behind counts L-05/L-06, CLI formatting, CLI dispatch/global `-C`, Phase 2 lock/unlock command behavior
-- Status: implementation evidence committed; under review
+- Status: scope review approved; normal and independent reviews pending
 
 ## Remaining Chunks
 
@@ -357,6 +357,10 @@ Remaining chunk order:
   - Normal Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/add-baseline-clone/normal-review-rerun.md`
   - Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/add-baseline-clone/independent-review.md`
   - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/add-baseline-clone/independent-review-rerun.md`
+- `list-basic-summaries`:
+  - Scope Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/list-basic-summaries/scope-review.md`
+  - Normal Reviewer: pending
+  - Independent Reviewer: pending
 
 ## Docs Log
 
@@ -413,4 +417,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Run `list-basic-summaries` scope, normal, and independent reviews.
+- Run `list-basic-summaries` normal and independent reviews.
