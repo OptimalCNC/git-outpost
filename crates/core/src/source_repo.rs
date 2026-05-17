@@ -167,6 +167,10 @@ impl SourceRepo {
         self.git_dir.join("info").join("exclude")
     }
 
+    pub(crate) fn git(&self) -> &GitInvoker {
+        &self.git
+    }
+
     #[cfg(test)]
     pub(crate) fn from_storage_paths(work_tree: &Path, git_dir: &Path) -> OutpostResult<Self> {
         let work_tree = canonicalize_path(work_tree)?;

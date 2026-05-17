@@ -3,7 +3,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use outpost_core::{GitInvoker, OutpostError, OutpostResult, SourceRepo};
+use outpost_core::{BranchName, GitInvoker, OutpostError, OutpostResult, SourceRepo};
 
 pub struct AbcFixture {
     _tmp: tempfile::TempDir,
@@ -91,6 +91,14 @@ impl AbcFixture {
         ])?;
         self.invoker(&self.source)
             .run_capture([os("rev-parse"), os("HEAD")])
+    }
+
+    #[allow(dead_code)]
+    pub fn create_source_branch(&self, branch: &str) -> OutpostResult<BranchName> {
+        let branch = BranchName::parse(branch.to_owned())?;
+        self.invoker(&self.source)
+            .run_check([os("branch"), OsStr::new(branch.as_str())])?;
+        Ok(branch)
     }
 
     pub fn commit_in_upstream(&self, branch: &str, msg: &str) -> OutpostResult<String> {

@@ -1,6 +1,7 @@
 pub mod error;
 pub mod git;
 pub mod metadata;
+pub mod ops;
 pub mod outpost;
 pub mod refname;
 pub mod registry;

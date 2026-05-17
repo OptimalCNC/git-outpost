@@ -85,7 +85,18 @@
 | U-13 | `safety.rs` managed outpost path gate rejects invalid/wrong-source paths | implemented passing | `managed_outpost_gate_rejects_path_with_no_git_repo`, `managed_outpost_gate_rejects_managed_false`, `managed_outpost_gate_rejects_different_source` |
 | U-14 | `metadata.rs` `RawMetadata::read` ignores global config | implemented passing | `raw_metadata_read_ignores_global_outpost_managed_config` |
 | U-15 | `registry.rs` unsaved `RegistryMut` Drop guard | implemented passing | `dropping_dirty_registry_mut_trips_debug_drop_guard`; release behavior test is cfg-gated |
-| C-01..C-20 | `ops::add` core integration behavior | planned | QA-owned integration tests |
+| C-01 | `ops::add` current-branch clone | implemented passing | `add_without_branch_clones_current_branch_with_real_git_dir` |
+| C-02 | `ops::add` existing branch checkout/tracking | implemented passing | `add_existing_branch_checks_out_branch_and_tracks_local_remote` |
+| C-03..C-09 | `ops::add` branch/refusal behavior | planned | assigned to later add chunks |
+| C-10 | `ops::add` outpost metadata config | implemented passing | `add_writes_outpost_metadata_keys` |
+| C-11a..C-11d | `ops::add` remote/real-git-dir/no-shared clone invariants | implemented passing | `add_configures_local_remote_and_non_shared_clone`; C-11b also covered by C-01 test |
+| C-12 | `ops::add` source registry entry | implemented passing | `add_registers_outpost_path_in_source_registry` |
+| C-13 | `ops::add` custom remote name | planned | assigned to later add chunk |
+| C-14 | `ops::add` source `receive.denyCurrentBranch` config | implemented passing | `add_sets_source_receive_deny_current_branch_update_instead` |
+| C-15 | `ops::add` config change reporter event | implemented passing | `add_reports_source_config_change` |
+| C-16 | `ops::add` file protocol clone override | implemented passing | `add_clone_allows_user_file_protocol` |
+| C-17..C-19 | `ops::add` unborn/branch-mode behavior | planned | assigned to later add chunks |
+| C-20 | `ops::add` local `.outpost/` exclude | implemented passing | `add_ignores_source_registry_directory_locally` |
 | L-01..L-10 | `ops::list` core integration behavior | planned | QA-owned integration tests |
 
 QA/Test Plan Gate:
@@ -119,8 +130,10 @@ QA/Test Plan Gate:
 
 ## Active Chunk
 
-- none
-- Status: `safety-gates` complete; next chunk ready to assign
+- `add-baseline-clone`
+- Scope: add `ops::add` baseline clone path for existing source branches, registry/metadata setup, local safety prechecks, reporter config event, and QA-owned core integration coverage for C-01, C-02, C-10..C-12, C-14..C-16, C-20
+- Test IDs: C-01, C-02, C-10, C-11a, C-11b, C-11c, C-11d, C-12, C-14, C-15, C-16, C-20
+- Status: implementation evidence recorded; pre-review commit pending
 
 ## Remaining Chunks
 
@@ -156,9 +169,6 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `source-outpost-discovery`
-- `safety-gates`
-- `add-baseline-clone`
 - `add-branch-modes`
 - `list-basic-summaries`
 - `list-ahead-behind`
@@ -184,7 +194,7 @@ Remaining chunk order:
   - Docs updated: none; existing architecture documents the stable `SourceRepo`, `Outpost`, and fixture env-threading contracts
   - Architecture deviations: none; ahead/behind behavior remains deferred to the planned `list-ahead-behind` chunk
   - Review-fix delta: added documented `outpost-core` self dev-dependency with `test-helpers` for integration tests; updated lockfile for that self edge
-  - Status: review fix implemented; awaiting rerun review
+  - Status: complete; post-fix scope, normal, and independent reviewers approved
 - `safety-gates` implementation evidence recorded:
   - Files changed: `crates/core/src/lib.rs`, `crates/core/src/safety.rs`
   - Test IDs advanced: U-10, U-13
@@ -194,7 +204,18 @@ Remaining chunk order:
   - Docs updated: none; existing architecture documents safety contracts
   - Architecture deviations: `check_no_unpushed` and divergence helpers remain deferred because this chunk is scoped to U-10/U-13 and destination gating
   - Review-fix delta: relative destination resolution now anchors under canonicalized `parent` before existence/canonicalization checks
-  - Status: review fix implemented; awaiting rerun review
+  - Status: complete; post-fix scope, normal, and independent reviewers approved
+- `add-baseline-clone` implementation evidence recorded:
+  - Files changed: `crates/core/src/lib.rs`, `crates/core/src/source_repo.rs`, `crates/core/src/ops/mod.rs`, `crates/core/src/ops/add.rs`, `crates/core/tests/add.rs`, `crates/core/tests/common/fixture.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-1.md`, `.agents-artifacts/reviews/phase-1/add-baseline-clone/evidence-pack.md`, `.agents-artifacts/qa/phase-1/add-baseline-clone.md`
+  - Test IDs advanced: C-01, C-02, C-10, C-11a, C-11b, C-11c, C-11d, C-12, C-14, C-15, C-16, C-20
+  - Evidence pack: `.agents-artifacts/reviews/phase-1/add-baseline-clone/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-1/add-baseline-clone.md`
+  - Unit tests added: `ops::add::tests::destination_parent_and_name_splits_bare_relative_path`, `ops::add::tests::destination_parent_and_name_splits_nested_relative_path`
+  - Integration tests added: `add_without_branch_clones_current_branch_with_real_git_dir`, `add_existing_branch_checks_out_branch_and_tracks_local_remote`, `add_writes_outpost_metadata_keys`, `add_configures_local_remote_and_non_shared_clone`, `add_registers_outpost_path_in_source_registry`, `add_sets_source_receive_deny_current_branch_update_instead`, `add_reports_source_config_change`, `add_clone_allows_user_file_protocol`, `add_ignores_source_registry_directory_locally`
+  - Docs updated: none; existing product and architecture document add contracts
+  - Architecture deviations: none for claimed baseline behavior; branch-mode/custom-remote/refusal/unborn-HEAD QA remains assigned to later add chunks
+  - Status: implementation evidence recorded; awaiting review
 
 ## Verification Log
 
@@ -241,6 +262,14 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 41 unit tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 41 unit tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- `add-baseline-clone` local verification:
+  - `cargo test -p outpost-core --test add`: pass; 9 add integration tests
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core`: pass; 43 unit tests, 9 add integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 43 unit tests, 9 add integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 43 unit tests, 9 add integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 9 add integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -267,11 +296,16 @@ Remaining chunk order:
   - Scope Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/safety-gates/scope-review-rerun.md`
   - Normal Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/safety-gates/normal-review-rerun.md`
   - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/safety-gates/independent-review-rerun.md`
+- `add-baseline-clone`:
+  - Scope Reviewer: pending
+  - Normal Reviewer: pending
+  - Independent Reviewer: pending
 
 ## Docs Log
 
 - `source-outpost-discovery`: no docs changes; stable contracts already covered by architecture sections 5.4, 5.5, and 10.2.
 - `safety-gates`: no docs changes; stable contracts already covered by architecture section 5.8.
+- `add-baseline-clone`: no docs changes; stable add contracts already covered by product `add` behavior and architecture section 5.9.1.
 
 ## Commit Log
 
@@ -291,8 +325,10 @@ Remaining chunk order:
   - Milestone: `safety-gates` implementation evidence recorded before review
 - `7045f59 phase-1: address safety review finding`
   - Milestone: fixed Normal Reviewer finding for `safety-gates`
-- pending `phase-1: record safety review approvals`
+- `e7d7a47 phase-1: record safety review approvals`
   - Milestone: `safety-gates` reviewers approved after rerun
+- pending `phase-1: add baseline add clone`
+  - Milestone: `add-baseline-clone` implementation evidence recorded before review
 
 ## Protected-Path Exception Log
 
@@ -305,4 +341,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `safety-gates` review approvals, then assign `add-baseline-clone`.
+- Commit `add-baseline-clone` implementation evidence, then run scope, normal, and independent reviews.
