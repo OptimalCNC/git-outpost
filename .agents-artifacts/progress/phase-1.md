@@ -141,7 +141,7 @@ QA/Test Plan Gate:
 - `add-baseline-clone`
 - Scope: add `ops::add` for Phase 1, including baseline clone path, branch creation mode, custom remote, destination/branch refusal behavior, registry/metadata setup, local safety prechecks, reporter config event, and QA-owned core integration coverage for C-01..C-20
 - Test IDs: C-01..C-20
-- Status: normal-review fix committed; rerun review pending
+- Status: normal review approved after rerun; independent rerun pending
 - Scope update note: initial Scope Reviewer found `AddCheckout::NewBranch` execution exceeded the baseline-only chunk claim. Coordinator resolved this by expanding the current add chunk evidence and QA coverage to all C-01..C-20 instead of leaving a temporary unimplemented public enum arm.
 
 ## Remaining Chunks
@@ -328,8 +328,9 @@ Remaining chunk order:
   - Scope Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/add-baseline-clone/scope-review-rerun.md`
   - Normal Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-1/add-baseline-clone/normal-review.md`
   - Blocking finding fixed locally: relative add destinations were validated/cloned/opened relative to different directories; add now resolves one effective destination path up front and regression tests cover source-internal and sibling relative destinations.
-  - Normal Reviewer rerun: pending
+  - Normal Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/add-baseline-clone/normal-review-rerun.md`
   - Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/add-baseline-clone/independent-review.md`
+  - Independent Reviewer rerun: pending after normal-review production fix
 
 ## Docs Log
 
@@ -379,4 +380,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Rerun `add-baseline-clone` normal review.
+- Rerun `add-baseline-clone` independent review.
