@@ -30,6 +30,12 @@
   - Adds `check_destination_clean(parent, dest)` for later add/move use, rejecting existing files, non-empty directories, and destinations inside an existing Git work tree.
   - Does not implement `check_no_unpushed` or divergence helpers; those are command-flow behaviors outside this chunk.
 
+## Review Fix Delta
+
+- Normal Reviewer finding fixed:
+  - `resolve_destination` now anchors relative destinations under canonicalized `parent` before any existence/canonicalization check.
+  - Added regression coverage proving a relative destination is checked under `parent` even when a same-named path exists in the process cwd.
+
 ## Tests Added / Updated
 
 - Unit tests added:
@@ -45,6 +51,7 @@
   - `destination_clean_allows_missing_and_empty_dir_outside_repo`
   - `destination_clean_rejects_target_inside_existing_repo`
   - `destination_clean_allows_relative_sibling_outside_repo`
+  - `destination_clean_resolves_relative_path_under_parent_before_exists_check`
 
 ## Integration Tests Added / Updated
 
@@ -63,6 +70,16 @@
 - `cargo test -p outpost-core --tests`: pass; 40 unit tests, 1 fixture smoke test
 - `cargo test --workspace`: pass; 40 unit tests, 1 fixture smoke test, 0 doctests
 - `cargo test -p outpost-core --features test-helpers`: pass; 40 unit tests, 1 fixture smoke test, 0 doctests
+- `git diff --check`: pass
+
+Review-fix verification:
+
+- `cargo fmt --check`: pass
+- `cargo test -p outpost-core safety::tests::`: pass; 13 safety tests
+- `cargo test -p outpost-core`: pass; 41 unit tests, 1 fixture smoke test, 0 doctests
+- `cargo test -p outpost-core --tests`: pass; 41 unit tests, 1 fixture smoke test
+- `cargo test --workspace`: pass; 41 unit tests, 1 fixture smoke test, 0 doctests
+- `cargo test -p outpost-core --features test-helpers`: pass; 41 unit tests, 1 fixture smoke test, 0 doctests
 - `git diff --check`: pass
 
 ## Verification Not Run

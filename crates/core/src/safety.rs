@@ -91,13 +91,17 @@ fn canonicalize_path(path: &Path) -> OutpostResult<PathBuf> {
 }
 
 fn resolve_destination(parent: &Path, dest: &Path) -> OutpostResult<PathBuf> {
-    if dest.exists() {
-        canonicalize_path(dest)
-    } else if dest.is_absolute() {
-        Ok(normalize_existing_or_missing(dest))
+    let anchored = if dest.is_absolute() {
+        dest.to_path_buf()
     } else {
         let parent = canonicalize_path(parent)?;
-        Ok(normalize_existing_or_missing(&parent.join(dest)))
+        parent.join(dest)
+    };
+
+    if anchored.exists() {
+        canonicalize_path(&anchored)
+    } else {
+        Ok(normalize_existing_or_missing(&anchored))
     }
 }
 
@@ -292,6 +296,24 @@ mod tests {
 
         check_destination_clean(temp.path(), Path::new("../outpost"))
             .expect("sibling destination outside repo");
+    }
+
+    #[test]
+    fn destination_clean_resolves_relative_path_under_parent_before_exists_check() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cwd_dest = tempfile::tempdir_in(".").expect("cwd dest dir");
+        let dest = PathBuf::from(cwd_dest.path().file_name().expect("cwd dest file name"));
+        let parent = temp.path().join("parent");
+        fs::create_dir_all(parent.join(&dest)).expect("dest dir");
+        fs::write(parent.join(&dest).join("child"), "child").expect("child");
+
+        let result = check_destination_clean(&parent, &dest);
+
+        assert!(cwd_dest.path().exists());
+        assert!(matches!(
+            result,
+            Err(OutpostError::DestinationExists(path)) if path == dest
+        ));
     }
 
     fn assert_dirty(result: OutpostResult<()>, repo: &Path) {

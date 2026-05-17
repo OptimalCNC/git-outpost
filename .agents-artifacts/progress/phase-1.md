@@ -191,11 +191,12 @@ Remaining chunk order:
   - Files changed: `crates/core/src/lib.rs`, `crates/core/src/safety.rs`
   - Test IDs advanced: U-10, U-13
   - Evidence pack: `.agents-artifacts/reviews/phase-1/safety-gates/evidence-pack.md`
-  - Unit tests added: `check_clean_reports_staged_changes_as_dirty`, `check_clean_reports_unstaged_changes_as_dirty`, `check_clean_reports_untracked_changes_as_dirty`, `check_clean_allows_clean_work_tree`, `managed_outpost_gate_rejects_path_with_no_git_repo`, `managed_outpost_gate_rejects_managed_false`, `managed_outpost_gate_rejects_different_source`, `managed_outpost_gate_accepts_matching_source`, `destination_clean_rejects_existing_file_and_non_empty_dir`, `destination_clean_allows_missing_and_empty_dir_outside_repo`, `destination_clean_rejects_target_inside_existing_repo`, `destination_clean_allows_relative_sibling_outside_repo`
+  - Unit tests added: `check_clean_reports_staged_changes_as_dirty`, `check_clean_reports_unstaged_changes_as_dirty`, `check_clean_reports_untracked_changes_as_dirty`, `check_clean_allows_clean_work_tree`, `managed_outpost_gate_rejects_path_with_no_git_repo`, `managed_outpost_gate_rejects_managed_false`, `managed_outpost_gate_rejects_different_source`, `managed_outpost_gate_accepts_matching_source`, `destination_clean_rejects_existing_file_and_non_empty_dir`, `destination_clean_allows_missing_and_empty_dir_outside_repo`, `destination_clean_rejects_target_inside_existing_repo`, `destination_clean_allows_relative_sibling_outside_repo`, `destination_clean_resolves_relative_path_under_parent_before_exists_check`
   - Integration tests touched: none; QA-owned and scheduled after ops APIs stabilize
   - Docs updated: none; existing architecture documents safety contracts
   - Architecture deviations: `check_no_unpushed` and divergence helpers remain deferred because this chunk is scoped to U-10/U-13 and destination gating
-  - Status: implementation complete; awaiting three-reviewer gate
+  - Review-fix delta: relative destination resolution now anchors under canonicalized `parent` before existence/canonicalization checks
+  - Status: review fix implemented; awaiting rerun review
 
 ## Verification Log
 
@@ -234,6 +235,14 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 40 unit tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 40 unit tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- `safety-gates` review-fix verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core safety::tests::`: pass; 13 safety tests
+  - `cargo test -p outpost-core`: pass; 41 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 41 unit tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 41 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 41 unit tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -252,6 +261,11 @@ Remaining chunk order:
   - Scope Reviewer rerun: `approved with nits`; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/scope-review-rerun.md`
   - Normal Reviewer rerun: `approved with nits`; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/normal-review-rerun.md`
   - Independent Reviewer rerun: `approved with nits`; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/independent-review-rerun.md`
+- `safety-gates`:
+  - Scope Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/safety-gates/scope-review.md`
+  - Normal Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-1/safety-gates/normal-review.md`
+  - Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/safety-gates/independent-review.md`
+  - Blocking finding to fix: `check_destination_clean(parent, relative_dest)` must resolve relative destinations under `parent` before any existence/canonicalization check, with regression coverage.
 
 ## Docs Log
 
@@ -272,8 +286,10 @@ Remaining chunk order:
   - Milestone: fixed Normal Reviewer finding for `source-outpost-discovery`
 - `6e38079 phase-1: record discovery review approvals`
   - Milestone: `source-outpost-discovery` reviewers approved after rerun
-- pending `phase-1: add safety gates`
+- `85119de phase-1: add safety gates`
   - Milestone: `safety-gates` implementation evidence recorded before review
+- pending `phase-1: address safety review finding`
+  - Milestone: fixed Normal Reviewer finding for `safety-gates`
 
 ## Protected-Path Exception Log
 
@@ -286,4 +302,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `safety-gates` implementation evidence, then run the Scope Reviewer.
+- Commit `safety-gates` review fix, then rerun reviewers as needed.
