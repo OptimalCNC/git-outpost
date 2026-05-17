@@ -146,11 +146,11 @@ QA/Test Plan Gate:
 
 ## Active Chunk
 
-- `list-basic-summaries`
-- Scope: add `ops::list` basic summaries from a `SourceRepo`, including registered outpost paths, current branch, clean/dirty/missing/not-managed state, lock fields, and QA-owned core integration coverage for L-01..L-04 and L-07..L-10
-- Test IDs: L-01, L-02, L-03, L-04, L-07, L-08, L-09, L-10
-- Out of scope: ahead/behind counts L-05/L-06, CLI formatting, CLI dispatch/global `-C`, Phase 2 lock/unlock command behavior
-- Status: complete; normal and independent reviewers approved after reruns
+- `list-ahead-behind`
+- Scope: add outpost ahead/behind computation relative to the local source repository and surface it through `ops::list` summaries.
+- Test IDs: L-05, L-06
+- Out of scope: CLI formatting, CLI dispatch/global `-C`, Phase 2+ command behavior, unrelated source/upstream status behavior, unrelated docs cleanup/refactors.
+- Status: assigned; implementation pending
 
 ## Remaining Chunks
 
@@ -186,7 +186,7 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `list-ahead-behind`
+- none; `list-ahead-behind` is active
 
 ## Completed Chunks
 
@@ -423,6 +423,8 @@ Remaining chunk order:
   - Milestone: recorded `list-basic-summaries` scope review approval
 - `7761db8 phase-1: address list normal review`
   - Milestone: fixed Normal Reviewer wrong-source outpost classification finding
+- `83199e5 phase-1: record list review approvals`
+  - Milestone: recorded `list-basic-summaries` normal and independent rerun approvals
 
 ## Protected-Path Exception Log
 
