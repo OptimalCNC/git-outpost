@@ -150,7 +150,7 @@ QA/Test Plan Gate:
 - Scope: add outpost ahead/behind computation relative to the local source repository and surface it through `ops::list` summaries.
 - Test IDs: L-05, L-06
 - Out of scope: CLI formatting, CLI dispatch/global `-C`, Phase 2+ command behavior, unrelated source/upstream status behavior, unrelated docs cleanup/refactors.
-- Status: implementation complete; review pending
+- Status: complete; scope, normal, and independent reviewers approved after rerun
 
 ## Remaining Chunks
 
@@ -255,7 +255,8 @@ Remaining chunk order:
   - Integration tests added: `list_reports_outpost_ahead_of_source`, `list_reports_outpost_behind_source`
   - Docs updated: none; existing product and architecture document list ahead/behind and `Outpost::ahead_behind_source`
   - Architecture deviations: none for claimed ahead/behind list behavior
-  - Status: implementation evidence recorded; awaiting review
+  - Review-fix delta: progress log corrected to mark L-05/L-06 implemented, record chunk commits, add docs rationale, and update next action
+  - Status: complete; scope, normal, and independent reviewers approved after rerun
 
 ## Verification Log
 
@@ -397,6 +398,7 @@ Remaining chunk order:
   - Normal Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/list-ahead-behind/normal-review.md`
   - Independent Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-1/list-ahead-behind/independent-review.md`
   - Blocking finding fixed locally: progress log must mark L-05/L-06 implemented, record the chunk commits, update next action, and add the no-docs rationale.
+  - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/list-ahead-behind/independent-review-rerun.md`
 
 ## Docs Log
 
@@ -454,6 +456,8 @@ Remaining chunk order:
   - Milestone: assigned final Phase 1 chunk `list-ahead-behind`
 - `d5280eb phase-1: add list ahead behind`
   - Milestone: implemented L-05/L-06 ahead/behind list summaries before review
+- `ca90b98 phase-1: address list ahead review`
+  - Milestone: fixed Independent Reviewer progress-log accuracy findings for `list-ahead-behind`
 
 ## Protected-Path Exception Log
 
@@ -466,4 +470,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Rerun `list-ahead-behind` independent review after progress-log accuracy fixes.
+- Run Phase 1 closeout verification.
