@@ -18,6 +18,7 @@
 ## Current Snapshot
 
 - Branch: `main`
+- Phase status: closeout gate passed at HEAD `6afcb3d phase-0: record fixture review approvals`; phase-closeout commit pending for this final log update
 - Initial `git status --short`: clean
 - Repository files observed: documentation tree plus `AGENTS.md`, `.gitignore`, and `story-add-entry-branches.png`
 - Cargo workspace status before Phase 0: no `Cargo.toml` present; this is expected Phase 0 scope
@@ -75,11 +76,11 @@ QA/Test Plan Gate:
 ## Active Chunk
 
 - none
-- Status: all Phase 0 chunks complete; phase closeout pending
+- Status: all Phase 0 chunks complete; closeout gate passed
 
 ## Remaining Chunks
 
-- none for Phase 0 after `phase0-fixture-scaffold` review/closeout
+- none for Phase 0
 
 Chunk Planning Gate:
 
@@ -166,6 +167,11 @@ Chunk Planning Gate:
   - `cargo test -p outpost-core`: pass; 10 unit tests passed, 1 fixture smoke test passed, 0 doctests
   - `cargo test -p outpost-core --tests`: pass; 10 unit tests passed, 1 fixture smoke test passed
   - `cargo test --workspace`: pass; 10 unit tests passed, 1 fixture smoke test passed, 0 doctests
+- Phase closeout verification at HEAD `6afcb3d`:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core`: pass; 10 unit tests passed, 1 fixture smoke test passed, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 10 unit tests passed, 1 fixture smoke test passed
+  - `cargo test --workspace`: pass; 10 unit tests passed, 1 fixture smoke test passed, 0 doctests
 
 ## Review Log
 
@@ -214,6 +220,8 @@ Chunk Planning Gate:
   - Includes A/B fixture scaffold, hermetic Git env, smoke integration test, `tempfile` dev-dependency, and evidence/progress artifacts
 - `383a2e8 phase-0: address fixture msrv review finding`
   - Milestone: fixed Normal Reviewer blocking finding for `phase0-fixture-scaffold` MSRV-compatible fixture dependency resolution and recorded review artifacts
+- `6afcb3d phase-0: record fixture review approvals`
+  - Milestone: recorded post-fix Normal Reviewer and Independent Reviewer approvals for `phase0-fixture-scaffold`
 
 ## Protected-Path Exception Log
 
@@ -221,8 +229,9 @@ Chunk Planning Gate:
 
 ## Open Risks / Questions
 
-- Non-blocking readiness cautions above must remain excluded from commits where unrelated.
+- none blocking
+- Phase 0 intentionally leaves C/outpost fixture helpers for Phase 1 because they depend on `ops::add` and outpost metadata behavior.
 
 ## Next Recommended Action
 
-- Commit `phase0-fixture-scaffold` review approval artifacts, then run and record the Phase 0 closeout gate.
+- Create the Phase 0 closeout commit, report Phase 0 complete, then begin Phase 1 readiness.
