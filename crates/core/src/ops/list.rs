@@ -56,6 +56,7 @@ fn summarize_entry(
     };
 
     summary.current_branch = outpost.current_branch().ok();
+    summary.ahead_behind = outpost.ahead_behind_source().ok();
     summary.state = if outpost.is_dirty()? {
         OutpostState::Dirty
     } else {

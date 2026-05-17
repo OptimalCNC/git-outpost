@@ -70,6 +70,40 @@ fn list_reports_dirty_for_untracked_outpost_file() {
 }
 
 #[test]
+fn list_reports_outpost_ahead_of_source() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+    fixture
+        .commit_in_outpost(&outpost, "outpost commit")
+        .expect("commit in outpost");
+    let source = fixture.source_repo().expect("source repo");
+
+    let summaries = run(&source).expect("list summaries");
+
+    assert_eq!(summaries.len(), 1);
+    let ahead_behind = summaries[0].ahead_behind.expect("ahead behind");
+    assert_eq!(ahead_behind.ahead, 1);
+    assert_eq!(ahead_behind.behind, 0);
+}
+
+#[test]
+fn list_reports_outpost_behind_source() {
+    let fixture = AbcFixture::new();
+    fixture.add_outpost("C").expect("add C");
+    fixture
+        .commit_in_source("source commit")
+        .expect("commit in source");
+    let source = fixture.source_repo().expect("source repo");
+
+    let summaries = run(&source).expect("list summaries");
+
+    assert_eq!(summaries.len(), 1);
+    let ahead_behind = summaries[0].ahead_behind.expect("ahead behind");
+    assert_eq!(ahead_behind.ahead, 0);
+    assert_eq!(ahead_behind.behind, 1);
+}
+
+#[test]
 fn list_reports_missing_registered_outpost() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add C");

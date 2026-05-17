@@ -150,7 +150,7 @@ QA/Test Plan Gate:
 - Scope: add outpost ahead/behind computation relative to the local source repository and surface it through `ops::list` summaries.
 - Test IDs: L-05, L-06
 - Out of scope: CLI formatting, CLI dispatch/global `-C`, Phase 2+ command behavior, unrelated source/upstream status behavior, unrelated docs cleanup/refactors.
-- Status: assigned; implementation pending
+- Status: implementation complete; review pending
 
 ## Remaining Chunks
 
@@ -245,6 +245,17 @@ Remaining chunk order:
   - Architecture deviations: none for claimed basic list behavior; L-05/L-06 ahead/behind remain assigned to `list-ahead-behind`
   - Review-fix delta: list now validates existing registry entries with `check_path_is_managed_outpost_of`, so a registered path containing an outpost managed by another source is reported as `NotManaged`.
   - Status: complete; normal and independent reviewers approved after reruns
+- `list-ahead-behind` implementation evidence recorded:
+  - Files changed: `crates/core/src/outpost.rs`, `crates/core/src/ops/list.rs`, `crates/core/tests/list.rs`, `crates/core/tests/common/fixture.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-1.md`, `.agents-artifacts/reviews/phase-1/list-ahead-behind/evidence-pack.md`, `.agents-artifacts/qa/phase-1/list-ahead-behind.md`
+  - Test IDs advanced: L-05, L-06
+  - Evidence pack: `.agents-artifacts/reviews/phase-1/list-ahead-behind/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-1/list-ahead-behind.md`
+  - Unit tests added: none; behavior covered by core integration tests
+  - Integration tests added: `list_reports_outpost_ahead_of_source`, `list_reports_outpost_behind_source`
+  - Docs updated: none; existing product and architecture document list ahead/behind and `Outpost::ahead_behind_source`
+  - Architecture deviations: none for claimed ahead/behind list behavior
+  - Status: implementation evidence recorded; awaiting review
 
 ## Verification Log
 
@@ -330,6 +341,14 @@ Remaining chunk order:
   - `cargo test -p outpost-core --tests`: pass; 43 unit tests, 22 add integration tests, 9 list integration tests, 1 fixture smoke test
   - `cargo test --workspace`: pass; 43 unit tests, 22 add integration tests, 9 list integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 22 add integration tests, 9 list integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
+- `list-ahead-behind` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core --test list`: pass; 11 list integration tests
+  - `cargo test -p outpost-core`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
 
 ## Review Log

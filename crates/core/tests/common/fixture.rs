@@ -131,6 +131,18 @@ impl AbcFixture {
         Ok(outpost)
     }
 
+    #[allow(dead_code)]
+    pub fn commit_in_outpost(&self, outpost: &Path, msg: &str) -> OutpostResult<String> {
+        self.invoker(outpost).run_check([
+            os("commit"),
+            os("--allow-empty"),
+            os("-m"),
+            OsStr::new(msg),
+        ])?;
+        self.invoker(outpost)
+            .run_capture([os("rev-parse"), os("HEAD")])
+    }
+
     pub fn commit_in_upstream(&self, branch: &str, msg: &str) -> OutpostResult<String> {
         let scratch = tempfile::tempdir_in(&self.root).map_err(|source| OutpostError::IoAt {
             path: self.root.clone(),

@@ -95,6 +95,42 @@ impl Outpost {
         is_dirty(&self.git)
     }
 
+    pub fn ahead_behind_source(&self) -> OutpostResult<AheadBehind> {
+        let branch = self.current_branch()?;
+        let upstream =
+            self.upstream_tracking()?
+                .ok_or_else(|| OutpostError::NoUpstreamTracking {
+                    branch: branch.as_str().to_owned(),
+                })?;
+        if upstream.remote != self.metadata.remote_name {
+            return Err(OutpostError::NoUpstreamTracking {
+                branch: branch.as_str().to_owned(),
+            });
+        }
+        let remote_branch =
+            upstream
+                .short_branch()
+                .ok_or_else(|| OutpostError::UpstreamNotABranch {
+                    merge_ref: upstream.merge_ref.as_str().to_owned(),
+                })?;
+        let remote_tracking_ref = format!(
+            "refs/remotes/{}/{}",
+            self.metadata.remote_name.as_str(),
+            remote_branch
+        );
+        let fetch_refspec = format!("{}:{remote_tracking_ref}", upstream.merge_ref.as_str());
+        self.git
+            .run_check(["fetch", self.metadata.remote_name.as_str(), &fetch_refspec])?;
+
+        let local_ref = format!("refs/heads/{}", branch.as_str());
+        let range = format!("{local_ref}...{remote_tracking_ref}");
+        parse_ahead_behind(
+            &self.work_tree,
+            self.git
+                .run_capture(["rev-list", "--left-right", "--count", &range])?,
+        )
+    }
+
     pub fn upstream_tracking(&self) -> OutpostResult<Option<UpstreamRef>> {
         let branch = self.current_branch()?;
         let remote_key = format!("branch.{}.remote", branch.as_str());
@@ -115,6 +151,33 @@ impl Outpost {
     #[cfg(any(test, feature = "test-helpers"))]
     pub fn test_invoker(&self) -> &GitInvoker {
         &self.git
+    }
+}
+
+fn parse_ahead_behind(repo: &Path, output: String) -> OutpostResult<AheadBehind> {
+    let mut parts = output.split_whitespace();
+    let ahead = parts
+        .next()
+        .and_then(|value| value.parse::<u32>().ok())
+        .ok_or_else(|| invalid_ahead_behind_output(repo, &output))?;
+    let behind = parts
+        .next()
+        .and_then(|value| value.parse::<u32>().ok())
+        .ok_or_else(|| invalid_ahead_behind_output(repo, &output))?;
+    if parts.next().is_some() {
+        return Err(invalid_ahead_behind_output(repo, &output));
+    }
+
+    Ok(AheadBehind { ahead, behind })
+}
+
+fn invalid_ahead_behind_output(repo: &Path, output: &str) -> OutpostError {
+    OutpostError::IoAt {
+        path: repo.to_path_buf(),
+        source: std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unexpected rev-list output: {output}"),
+        ),
     }
 }
 
