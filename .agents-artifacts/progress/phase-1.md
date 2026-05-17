@@ -133,7 +133,7 @@ QA/Test Plan Gate:
 - `add-baseline-clone`
 - Scope: add `ops::add` baseline clone path for existing source branches, registry/metadata setup, local safety prechecks, reporter config event, and QA-owned core integration coverage for C-01, C-02, C-10..C-12, C-14..C-16, C-20
 - Test IDs: C-01, C-02, C-10, C-11a, C-11b, C-11c, C-11d, C-12, C-14, C-15, C-16, C-20
-- Status: implementation evidence recorded; pre-review commit pending
+- Status: implementation evidence committed; under review
 
 ## Remaining Chunks
 
@@ -327,7 +327,7 @@ Remaining chunk order:
   - Milestone: fixed Normal Reviewer finding for `safety-gates`
 - `e7d7a47 phase-1: record safety review approvals`
   - Milestone: `safety-gates` reviewers approved after rerun
-- pending `phase-1: add baseline add clone`
+- `8b894d9 phase-1: add baseline add clone`
   - Milestone: `add-baseline-clone` implementation evidence recorded before review
 
 ## Protected-Path Exception Log
@@ -341,4 +341,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `add-baseline-clone` implementation evidence, then run scope, normal, and independent reviews.
+- Run `add-baseline-clone` scope, normal, and independent reviews.
