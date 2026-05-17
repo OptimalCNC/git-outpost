@@ -109,7 +109,7 @@
 | L-02 | `ops::list` reports three added outposts with correct paths | implemented passing | `list_reports_three_added_outpost_paths` |
 | L-03 | `ops::list` reports current branch | implemented passing | `list_reports_current_branch_for_each_outpost` |
 | L-04 | `ops::list` reports dirty outpost | implemented passing | `list_reports_dirty_for_untracked_outpost_file` |
-| L-05..L-06 | `ops::list` ahead/behind counts | planned | assigned to `list-ahead-behind` |
+| L-05..L-06 | `ops::list` ahead/behind counts | implemented passing | `list_reports_outpost_ahead_of_source`, `list_reports_outpost_behind_source` |
 | L-07 | `ops::list` reports missing registered outpost | implemented passing | `list_reports_missing_registered_outpost` |
 | L-08 | `ops::list` reports not-managed registered path | implemented passing | `list_reports_not_managed_registered_path` |
 | L-09 | `ops::list` outside source repo returns `NotARepo` | implemented passing | `list_outside_source_repo_returns_not_a_repo` |
@@ -392,6 +392,11 @@ Remaining chunk order:
   - Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/list-basic-summaries/independent-review.md`
   - Normal Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/list-basic-summaries/normal-review-rerun.md`
   - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/list-basic-summaries/independent-review-rerun.md`
+- `list-ahead-behind`:
+  - Scope Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/list-ahead-behind/scope-review.md`
+  - Normal Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/list-ahead-behind/normal-review.md`
+  - Independent Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-1/list-ahead-behind/independent-review.md`
+  - Blocking finding fixed locally: progress log must mark L-05/L-06 implemented, record the chunk commits, update next action, and add the no-docs rationale.
 
 ## Docs Log
 
@@ -399,6 +404,7 @@ Remaining chunk order:
 - `safety-gates`: no docs changes; stable contracts already covered by architecture section 5.8.
 - `add-baseline-clone`: no docs changes; stable add contracts already covered by product `add` behavior and architecture section 5.9.1.
 - `list-basic-summaries`: no docs changes; stable list contracts already covered by product `list` behavior and architecture section 5.9.2.
+- `list-ahead-behind`: no docs changes; stable list ahead/behind contracts already covered by product `list` behavior and architecture sections 5.5 and 5.9.2.
 
 ## Commit Log
 
@@ -444,6 +450,10 @@ Remaining chunk order:
   - Milestone: fixed Normal Reviewer wrong-source outpost classification finding
 - `83199e5 phase-1: record list review approvals`
   - Milestone: recorded `list-basic-summaries` normal and independent rerun approvals
+- `a2ec631 phase-1: assign list ahead behind`
+  - Milestone: assigned final Phase 1 chunk `list-ahead-behind`
+- `d5280eb phase-1: add list ahead behind`
+  - Milestone: implemented L-05/L-06 ahead/behind list summaries before review
 
 ## Protected-Path Exception Log
 
@@ -456,4 +466,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Start `list-ahead-behind`.
+- Rerun `list-ahead-behind` independent review after progress-log accuracy fixes.
