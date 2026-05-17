@@ -19,6 +19,19 @@ pub fn check_clean(work_tree: &Path, git: &GitInvoker) -> OutpostResult<()> {
     }
 }
 
+pub fn check_no_unpushed(outpost: &Outpost, source: &SourceRepo) -> OutpostResult<()> {
+    let count = outpost.unpushed_commits(source)?;
+    if count == 0 {
+        Ok(())
+    } else {
+        Err(OutpostError::UnpushedCommits {
+            repo: outpost.work_tree().to_path_buf(),
+            branch: outpost.current_branch()?.as_str().to_owned(),
+            hint: FORCE_HINT,
+        })
+    }
+}
+
 pub fn check_path_is_managed_outpost_of(
     source: &SourceRepo,
     candidate: &Path,
@@ -316,6 +329,51 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn check_no_unpushed_reports_unpushed_commits() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("source");
+        let outpost = temp.path().join("outpost");
+        init_repo_at(&source);
+        init_repo_at(&outpost);
+        let source_git = GitInvoker::at(&source);
+        source_git
+            .run_check(["commit", "--allow-empty", "-m", "source"])
+            .expect("source commit");
+        let outpost_git = GitInvoker::at(&outpost);
+        outpost_git
+            .run_check(["pull", &source.to_string_lossy(), "main"])
+            .expect("pull source into outpost");
+        outpost_git
+            .run_check(["remote", "add", "local", &source.to_string_lossy()])
+            .expect("add source remote");
+        outpost_git
+            .run_check(["fetch", "local", "main"])
+            .expect("fetch source remote");
+        outpost_git
+            .run_check(["branch", "--set-upstream-to", "local/main", "main"])
+            .expect("set upstream");
+        Metadata {
+            source_repo: source.clone(),
+            remote_name: RemoteName::parse("local").unwrap(),
+        }
+        .write(&outpost_git)
+        .expect("metadata write");
+        outpost_git
+            .run_check(["commit", "--allow-empty", "-m", "outpost"])
+            .expect("outpost commit");
+        let source = SourceRepo::at(&source).expect("source repo");
+        let outpost = Outpost::at(&outpost).expect("outpost");
+
+        let err = check_no_unpushed(&outpost, &source).expect_err("unpushed should fail");
+
+        assert!(matches!(
+            err,
+            OutpostError::UnpushedCommits { repo, branch, hint }
+                if repo == outpost.work_tree() && branch == "main" && hint == FORCE_HINT
+        ));
+    }
+
     fn assert_dirty(result: OutpostResult<()>, repo: &Path) {
         assert!(matches!(
             result,
@@ -332,8 +390,12 @@ mod tests {
 
     fn init_repo_at(path: &Path) {
         fs::create_dir_all(path).expect("repo dir");
-        GitInvoker::at(path)
-            .run_check(["init", "--initial-branch=main"])
+        let git = GitInvoker::at(path);
+        git.run_check(["init", "--initial-branch=main"])
             .expect("init repo");
+        git.run_check(["config", "user.name", "Test Author"])
+            .expect("set user.name");
+        git.run_check(["config", "user.email", "test@example.com"])
+            .expect("set user.email");
     }
 }

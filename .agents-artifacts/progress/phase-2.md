@@ -90,17 +90,17 @@
 | LMU-06 | `move C D` refuses dirty C; force succeeds | implemented passing | `move_refuses_dirty_outpost_but_force_succeeds` |
 | LMU-07 | `move C D` refuses non-empty destination | implemented passing | `move_refuses_non_empty_destination` |
 | LMU-08 | `lock`, `move`, and `unlock` reject paths not registered to current source | implemented passing | `lock_move_unlock_reject_unregistered_paths`, `lock_move_unlock_reject_wrong_source_registered_path` |
-| R-01 | `remove C` clean fully-pushed C deletes path and registry entry | planned | `crates/core/tests/remove.rs` |
-| R-02 | `remove C` dirty C returns `DirtyTree { hint: "pass --force" }` | planned | `crates/core/tests/remove.rs` |
-| R-03 | `remove C` unpushed C returns `UnpushedCommits` | planned | `crates/core/tests/remove.rs` |
-| R-04 | `remove --force C` succeeds despite dirty tree | planned | `crates/core/tests/remove.rs` |
-| R-05 | `remove --force C` succeeds despite unpushed commits | planned | `crates/core/tests/remove.rs` |
-| R-06 | `remove` on path not in registry returns `RegistryEntryNotFound` | planned | `crates/core/tests/remove.rs` |
-| R-07 | unlocked registered-but-missing path is deregistered, no rmtree | planned | `crates/core/tests/remove.rs` |
-| R-08 | registry entry pointing at unrelated directory returns `RegistryEntryNotManaged` and deletes nothing | planned | `crates/core/tests/remove.rs` |
-| R-09 | wrong-source registered outpost returns `RegistryEntryNotManaged` | planned | `crates/core/tests/remove.rs` |
-| R-10 | locked C refused; force deletes and deregisters | planned | `crates/core/tests/remove.rs` |
-| R-11 | locked missing path returns `OutpostLocked`; force deregisters without rmtree | planned | `crates/core/tests/remove.rs` |
+| R-01 | `remove C` clean fully-pushed C deletes path and registry entry | implemented passing | `remove_clean_fully_pushed_outpost_deletes_dir_and_registry_entry` |
+| R-02 | `remove C` dirty C returns `DirtyTree { hint: "pass --force" }` | implemented passing | `remove_dirty_outpost_returns_dirty_tree_with_force_hint` |
+| R-03 | `remove C` unpushed C returns `UnpushedCommits` | implemented passing | `remove_unpushed_outpost_returns_unpushed_commits` |
+| R-04 | `remove --force C` succeeds despite dirty tree | implemented passing | `remove_force_deletes_dirty_outpost` |
+| R-05 | `remove --force C` succeeds despite unpushed commits | implemented passing | `remove_force_deletes_outpost_with_unpushed_commits` |
+| R-06 | `remove` on path not in registry returns `RegistryEntryNotFound` | implemented passing | `remove_unregistered_path_returns_registry_entry_not_found` |
+| R-07 | unlocked registered-but-missing path is deregistered, no rmtree | implemented passing | `remove_unlocked_missing_registered_path_deregisters_without_rmtree` |
+| R-08 | registry entry pointing at unrelated directory returns `RegistryEntryNotManaged` and deletes nothing | implemented passing | `remove_registry_entry_pointing_at_unrelated_dir_returns_not_managed` |
+| R-09 | wrong-source registered outpost returns `RegistryEntryNotManaged` | implemented passing | `remove_wrong_source_outpost_returns_not_managed` |
+| R-10 | locked C refused; force deletes and deregisters | implemented passing | `remove_refuses_locked_outpost_unless_forced` |
+| R-11 | locked missing path returns `OutpostLocked`; force deregisters without rmtree | implemented passing | `remove_locked_missing_path_requires_force_then_deregisters` |
 | Pr-01 | `prune` removes registry entries whose paths no longer exist | planned | `crates/core/tests/prune.rs` |
 | Pr-02 | `prune` keeps existing valid outposts | planned | `crates/core/tests/prune.rs` |
 | Pr-03 | `prune` does not delete real directories or source branches | planned | `crates/core/tests/prune.rs` |
@@ -142,11 +142,12 @@
 
 ## Active Chunk
 
-- `lock-move-unlock`
-- Scope: implement `ops::lock`, `ops::unlock`, and `ops::move`; add QA-owned core integration coverage for LMU-01..LMU-08.
-- Test IDs: LMU-01, LMU-02, LMU-03, LMU-04, LMU-05, LMU-06, LMU-07, LMU-08
-- Out of scope: CLI contextual path omission, CLI formatting/dispatch/global `-C`, remove/prune behavior, Phase 3+ status/sync behavior, registry file locking/concurrency.
-- Status: approved; next chunk pending
+- `remove-safety`
+- Scope: implement `ops::remove` and minimal unpushed safety support; add QA-owned core integration coverage for R-01..R-11.
+- Test IDs: R-01, R-02, R-03, R-04, R-05, R-06, R-07, R-08, R-09, R-10, R-11
+- Out of scope: CLI contextual path omission, CLI formatting/dispatch/global `-C`, prune behavior, Phase 3+ status/sync behavior, registry file locking/concurrency.
+- Status: implementation complete; review pending
+- QA worker: `019e384b-ddb5-7fd2-96b5-a99e956f0a8c`; write scope `crates/core/tests/remove.rs`.
 
 ## Remaining Chunks
 
@@ -174,7 +175,6 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `remove-safety`
 - `prune`
 
 ## Completed Chunks
@@ -199,6 +199,17 @@ Remaining chunk order:
   - Adopted nits: progress log now records checkpoint commit `786473d`
   - Residual notes: no dedicated LMU integration test for moving into an existing empty destination; shared destination-safety coverage exists and reviewers did not require a change
   - Status: approved
+- `remove-safety` implementation evidence recorded:
+  - Files changed: `crates/core/src/ops/mod.rs`, `crates/core/src/ops/remove.rs`, `crates/core/src/outpost.rs`, `crates/core/src/safety.rs`, `crates/core/tests/remove.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-2.md`, `.agents-artifacts/reviews/phase-2/remove-safety/evidence-pack.md`, `.agents-artifacts/qa/phase-2/remove-safety.md`
+  - Test IDs advanced: R-01..R-11
+  - Evidence pack: `.agents-artifacts/reviews/phase-2/remove-safety/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-2/remove-safety.md`
+  - Unit tests added: `outpost::tests::unpushed_commits_reports_local_commits_ahead_of_source`, `safety::tests::check_no_unpushed_reports_unpushed_commits`
+  - Integration tests added: `remove_clean_fully_pushed_outpost_deletes_dir_and_registry_entry`, `remove_dirty_outpost_returns_dirty_tree_with_force_hint`, `remove_unpushed_outpost_returns_unpushed_commits`, `remove_force_deletes_dirty_outpost`, `remove_force_deletes_outpost_with_unpushed_commits`, `remove_unregistered_path_returns_registry_entry_not_found`, `remove_unlocked_missing_registered_path_deregisters_without_rmtree`, `remove_registry_entry_pointing_at_unrelated_dir_returns_not_managed`, `remove_wrong_source_outpost_returns_not_managed`, `remove_refuses_locked_outpost_unless_forced`, `remove_locked_missing_path_requires_force_then_deregisters`
+  - Docs updated: none; existing product and architecture document remove safety ordering and unpushed support
+  - Architecture deviations: none for claimed remove behavior
+  - Status: implementation evidence recorded; awaiting review
 
 ## Verification Log
 
@@ -214,6 +225,14 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- `remove-safety` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core --test remove`: pass; 11 remove integration tests
+  - `cargo test -p outpost-core`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 11 remove integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 11 remove integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 11 remove integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 11 remove integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -224,6 +243,7 @@ Remaining chunk order:
 ## Docs Log
 
 - `lock-move-unlock`: no docs changes; stable lock/move/unlock contracts already covered by product behavior and architecture sections 5.9.9..5.9.11.
+- `remove-safety`: no docs changes; stable remove contracts and unpushed safety helpers already covered by product behavior and architecture sections 5.5, 5.8, 5.9.12, and 11.10.
 
 ## Commit Log
 
@@ -237,10 +257,10 @@ Remaining chunk order:
 
 ## Open Risks / Questions
 
-- `Outpost::unpushed_commits` and `safety::check_no_unpushed` are required support for `ops::remove` R-03/R-05 and should remain scoped to remove safety.
+- `Outpost::unpushed_commits` and `safety::check_no_unpushed` were added only as required support for `ops::remove` R-03/R-05.
 - CLI/global `-C`/contextual omission behavior for lock/unlock remains Phase 5.
 - Registry file locking remains post-MVP and out of scope.
 
 ## Next Recommended Action
 
-- Run `lock-move-unlock` scope, normal, and independent reviews.
+- Commit `remove-safety` implementation evidence, then run scope, normal, and independent reviews.

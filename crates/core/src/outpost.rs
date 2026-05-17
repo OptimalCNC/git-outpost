@@ -131,6 +131,51 @@ impl Outpost {
         )
     }
 
+    pub fn unpushed_commits(&self, source: &SourceRepo) -> OutpostResult<u32> {
+        let branch = self.current_branch()?;
+        if !source.branch_exists(&branch)? {
+            return Err(OutpostError::BranchNotFound {
+                branch: branch.as_str().to_owned(),
+                repo: source.work_tree().to_path_buf(),
+            });
+        }
+
+        let upstream =
+            self.upstream_tracking()?
+                .ok_or_else(|| OutpostError::NoUpstreamTracking {
+                    branch: branch.as_str().to_owned(),
+                })?;
+        if upstream.remote != self.metadata.remote_name {
+            return Err(OutpostError::NoUpstreamTracking {
+                branch: branch.as_str().to_owned(),
+            });
+        }
+        let remote_branch =
+            upstream
+                .short_branch()
+                .ok_or_else(|| OutpostError::UpstreamNotABranch {
+                    merge_ref: upstream.merge_ref.as_str().to_owned(),
+                })?;
+        if remote_branch != branch.as_str() {
+            return Err(OutpostError::NoUpstreamTracking {
+                branch: branch.as_str().to_owned(),
+            });
+        }
+
+        let remote_tracking_ref = format!(
+            "refs/remotes/{}/{}",
+            self.metadata.remote_name.as_str(),
+            remote_branch
+        );
+        let fetch_refspec = format!("{}:{remote_tracking_ref}", upstream.merge_ref.as_str());
+        self.git
+            .run_check(["fetch", self.metadata.remote_name.as_str(), &fetch_refspec])?;
+        let local_ref = format!("refs/heads/{}", branch.as_str());
+        let range = format!("{remote_tracking_ref}..{local_ref}");
+        let output = self.git.run_capture(["rev-list", "--count", &range])?;
+        parse_count(&self.work_tree, &output)
+    }
+
     pub fn upstream_tracking(&self) -> OutpostResult<Option<UpstreamRef>> {
         let branch = self.current_branch()?;
         let remote_key = format!("branch.{}.remote", branch.as_str());
@@ -183,6 +228,18 @@ fn invalid_ahead_behind_output(repo: &Path, output: &str) -> OutpostError {
             format!("unexpected rev-list output: {output}"),
         ),
     }
+}
+
+fn parse_count(repo: &Path, output: &str) -> OutpostResult<u32> {
+    let count = output
+        .split_whitespace()
+        .next()
+        .and_then(|value| value.parse::<u32>().ok())
+        .ok_or_else(|| invalid_ahead_behind_output(repo, output))?;
+    if output.split_whitespace().nth(1).is_some() {
+        return Err(invalid_ahead_behind_output(repo, output));
+    }
+    Ok(count)
 }
 
 fn canonicalize_git_path(start: &Path, value: &str) -> OutpostResult<PathBuf> {
@@ -267,10 +324,53 @@ mod tests {
         );
     }
 
+    #[test]
+    fn unpushed_commits_reports_local_commits_ahead_of_source() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("source");
+        let outpost = temp.path().join("outpost");
+        init_repo(&source);
+        init_repo(&outpost);
+        let source_git = GitInvoker::at(&source);
+        source_git
+            .run_check(["commit", "--allow-empty", "-m", "source"])
+            .expect("source commit");
+        let outpost_git = GitInvoker::at(&outpost);
+        outpost_git
+            .run_check(["pull", &source.to_string_lossy(), "main"])
+            .expect("pull source into outpost");
+        outpost_git
+            .run_check(["remote", "add", "local", &source.to_string_lossy()])
+            .expect("add source remote");
+        outpost_git
+            .run_check(["fetch", "local", "main"])
+            .expect("fetch source remote");
+        outpost_git
+            .run_check(["branch", "--set-upstream-to", "local/main", "main"])
+            .expect("set upstream");
+        let metadata = Metadata {
+            source_repo: source.clone(),
+            remote_name: RemoteName::parse("local").unwrap(),
+        };
+        metadata.write(&outpost_git).unwrap();
+        outpost_git
+            .run_check(["commit", "--allow-empty", "-m", "outpost"])
+            .expect("outpost commit");
+
+        let source = SourceRepo::at(&source).expect("source repo");
+        let outpost = Outpost::at(&outpost).expect("outpost");
+
+        assert_eq!(outpost.unpushed_commits(&source).expect("unpushed"), 1);
+    }
+
     fn init_repo(path: &Path) {
         fs::create_dir_all(path).expect("repo dir");
-        GitInvoker::at(path)
-            .run_check(["init", "--initial-branch=main"])
+        let git = GitInvoker::at(path);
+        git.run_check(["init", "--initial-branch=main"])
             .expect("init");
+        git.run_check(["config", "user.name", "Test Author"])
+            .expect("set user.name");
+        git.run_check(["config", "user.email", "test@example.com"])
+            .expect("set user.email");
     }
 }
