@@ -13,3 +13,6 @@ serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+outpost-core = { path = ".", features = ["test-helpers"] }

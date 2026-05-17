@@ -178,14 +178,15 @@ Remaining chunk order:
   - Architecture deviations: minimal `SourceRepo` storage carrier added because registry APIs require it; full discovery remains deferred
   - Status: complete; post-fix normal and independent reviewers approved
 - `source-outpost-discovery` implementation evidence recorded:
-  - Files changed: `crates/core/src/lib.rs`, `crates/core/src/source_repo.rs`, `crates/core/src/outpost.rs`, `crates/core/tests/common/fixture.rs`, `crates/core/tests/fixture_smoke.rs`
+  - Files changed: `Cargo.lock`, `crates/core/Cargo.toml`, `crates/core/src/lib.rs`, `crates/core/src/source_repo.rs`, `crates/core/src/outpost.rs`, `crates/core/tests/common/fixture.rs`, `crates/core/tests/fixture_smoke.rs`
   - Test IDs advanced: none directly; supports U-10, U-13, C-01..C-20, L-01..L-10
   - Evidence pack: `.agents-artifacts/reviews/phase-1/source-outpost-discovery/evidence-pack.md`
   - Unit tests added: `source_at_canonicalizes_paths_and_reads_current_branch`, `source_discover_rejects_non_repo`, `source_dirty_detects_untracked_files`, `source_branch_helpers_read_local_heads_upstream_and_worktrees`, `outpost_at_rejects_unmanaged_repo`, `outpost_at_reads_metadata_and_source_repo`, `outpost_reports_missing_source_repo_from_metadata`
-  - Integration tests touched: `abc_fixture_builds_a_b_with_hermetic_git_env` now verifies `AbcFixture::source_repo`
+  - Integration tests touched: `abc_fixture_builds_a_b_with_hermetic_git_env` now verifies `AbcFixture::source_repo` and normal integration-test access to `SourceRepo::test_invoker().argv_log()`
   - Docs updated: none; existing architecture documents the stable `SourceRepo`, `Outpost`, and fixture env-threading contracts
   - Architecture deviations: none; ahead/behind behavior remains deferred to the planned `list-ahead-behind` chunk
-  - Status: implementation complete; awaiting three-reviewer gate
+  - Review-fix delta: added documented `outpost-core` self dev-dependency with `test-helpers` for integration tests; updated lockfile for that self edge
+  - Status: review fix implemented; awaiting rerun review
 
 ## Verification Log
 
@@ -209,6 +210,13 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- `source-outpost-discovery` review-fix verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core --tests`: pass; 28 unit tests, 1 fixture smoke test
+  - `cargo test -p outpost-core`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test --workspace`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -220,9 +228,10 @@ Remaining chunk order:
   - Normal Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/storage-foundations/normal-review-rerun.md`
   - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/storage-foundations/independent-review-rerun.md`
 - `source-outpost-discovery`:
-  - Scope Reviewer: pending; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/scope-review.md`
-  - Normal Reviewer: pending; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/normal-review.md`
-  - Independent Reviewer: pending; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/independent-review.md`
+  - Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/scope-review.md`
+  - Normal Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/normal-review.md`
+  - Independent Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/independent-review.md`
+  - Blocking finding to fix: integration tests must be able to call `SourceRepo::test_invoker()` / `Outpost::test_invoker()` under `cargo test -p outpost-core --tests`, not only under an explicit `--features test-helpers` command.
 
 ## Docs Log
 
@@ -236,8 +245,10 @@ Remaining chunk order:
   - Milestone: `storage-foundations` implementation evidence recorded before review
 - `98591c6 phase-1: address storage review findings`
   - Milestone: fixed Normal and Independent Reviewer findings for `storage-foundations`
-- pending `phase-1: add source and outpost discovery`
+- `fd66377 phase-1: add source and outpost discovery`
   - Milestone: `source-outpost-discovery` implementation evidence recorded before review
+- pending `phase-1: address discovery review finding`
+  - Milestone: fixed Normal Reviewer finding for `source-outpost-discovery`
 
 ## Protected-Path Exception Log
 
@@ -250,4 +261,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `source-outpost-discovery` implementation evidence, then run the Scope Reviewer.
+- Commit `source-outpost-discovery` review fix, then rerun reviewers as needed.

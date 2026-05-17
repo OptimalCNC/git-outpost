@@ -1,0 +1,20 @@
+- **Verdict**: needs changes
+
+- **Evidence Reviewed**: commit `fd66377`, evidence pack, scope review, staged progress/scope-review delta, `docs/src/product.md`, `docs/src/architecture.md` §§5.2/5.4/5.5/10.2/11.1-11.3, `docs/src/roadmap.md` Phase 1, `docs/coordinator-prompt.md` Documentation Policy, `crates/core/src/{lib.rs,source_repo.rs,outpost.rs,git.rs}`, `crates/core/tests/common/fixture.rs`, `crates/core/tests/fixture_smoke.rs`, `crates/core/Cargo.toml`, recorded verification commands in the evidence pack.
+
+- **Requirement Reasoning**: `SourceRepo` discovery/opening, canonical path storage, env threading, branch/upstream/worktree helpers, dirty detection, and registry access are implemented in line with architecture §§5.4/10.2. `Outpost` discovery/opening, metadata validation, source resolution, dirty/current-branch/upstream helpers, and deferred ahead/behind behavior mostly fit §§5.5 and the chunk plan. Command behavior beyond discovery is not implemented, which matches the chunk scope and evidence-pack deferral. Blocking gap: the architecture requires `test_invoker`/`argv_log` access to be available to core integration tests through `crates/core/Cargo.toml` dev-dependency feature wiring, but the current manifest only defines the feature and has no `[dev-dependencies]` self dependency.
+
+- **Test Reasoning**: Added unit tests cover canonical source opening, non-repo rejection, untracked dirty detection, local branch/upstream/worktree helpers, unmanaged outpost rejection, metadata-backed source opening, and missing source reporting. Fixture smoke covers `AbcFixture::source_repo()` opening the canonical source. Recorded commands show core/package/workspace tests pass. They do not prove that `crates/core/tests/*.rs` can call `SourceRepo::test_invoker()` or `Outpost::test_invoker()` under the required normal integration-test command.
+
+- **Docs Reasoning**: No new docs were required for the implemented stable concepts because the contracts are already documented in architecture §§5.4, 5.5, and 10.2, and the Documentation Policy allows avoiding stale duplicate docs. However, the existing developer-facing docs explicitly describe how integration tests get `test-helpers`; the implementation does not satisfy that documented contract.
+
+- **Verification Reasoning**: Evidence pack records `cargo fmt --check`, `cargo test -p outpost-core`, `cargo test -p outpost-core --tests`, `cargo test --workspace`, `cargo test -p outpost-core --features test-helpers`, and `git diff --check` as passing. Verification gap: passing `--features test-helpers` is not a substitute for the documented integration-test wiring, and no supplied test exercises `test_invoker` from `crates/core/tests`.
+
+- **Findings**:
+  - Blocking. Evidence: architecture states core integration tests need public `test_invoker` access and that `crates/core/Cargo.toml` should declare `outpost-core = { path = ".", features = ["test-helpers"] }` under `[dev-dependencies]`; progress says C-11d/C-16 need recorded `GitInvoker` argv access from `SourceRepo`/`Outpost`; the accessors are feature-gated in code; the manifest has only `[features] test-helpers = []` and no `[dev-dependencies]`. Issue: normal integration tests cannot rely on the documented helper availability. Why it matters: add/list QA tests are planned in `crates/core/tests` and require argv inspection for clone safety assertions; without the documented wiring, those tests either fail to compile or must deviate from the required verification workflow.
+
+- **Missing Evidence**: Evidence that `crates/core/tests/*.rs` can access `SourceRepo::test_invoker()` / `Outpost::test_invoker()` under `cargo test -p outpost-core --tests`.
+
+- **Required Changes**: Add the documented integration-test feature wiring in `crates/core/Cargo.toml` or otherwise update implementation/docs/tests so core integration tests can use the helper under the required test command without exposing it to production consumers. Include verification that demonstrates this path.
+
+- **Notes**: Evidence pack omits the evidence-pack file itself from its changed-file list; scope review already recorded that nit.

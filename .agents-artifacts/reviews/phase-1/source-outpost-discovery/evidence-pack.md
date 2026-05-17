@@ -12,6 +12,9 @@
 ## Changed Files
 
 - `.agents-artifacts/progress/phase-1.md`
+- `.agents-artifacts/reviews/phase-1/source-outpost-discovery/evidence-pack.md`
+- `Cargo.lock`
+- `crates/core/Cargo.toml`
 - `crates/core/src/lib.rs`
 - `crates/core/src/outpost.rs`
 - `crates/core/src/source_repo.rs`
@@ -40,6 +43,13 @@
 - `tests/fixture_smoke.rs`
   - Verifies the new fixture helper opens the source repo at its canonical work tree.
 
+## Review Fix Delta
+
+- Normal Reviewer finding fixed:
+  - Added the documented self dev-dependency feature wiring in `crates/core/Cargo.toml`: `outpost-core = { path = ".", features = ["test-helpers"] }`.
+  - Updated `Cargo.lock` for the self dev-dependency edge.
+  - Updated `abc_fixture_builds_a_b_with_hermetic_git_env` to call `SourceRepo::test_invoker().argv_log()` under the normal integration-test target, proving `cargo test -p outpost-core --tests` can access the helper without passing `--features test-helpers`.
+
 ## Tests Added / Updated
 
 - Unit tests added:
@@ -51,7 +61,7 @@
   - `outpost_at_reads_metadata_and_source_repo`
   - `outpost_reports_missing_source_repo_from_metadata`
 - Integration tests updated:
-  - `abc_fixture_builds_a_b_with_hermetic_git_env` now covers `AbcFixture::source_repo`.
+  - `abc_fixture_builds_a_b_with_hermetic_git_env` now covers `AbcFixture::source_repo` and integration-test access to `SourceRepo::test_invoker().argv_log()`.
 
 ## Docs Added / Updated
 
@@ -63,6 +73,15 @@
 - `cargo fmt --check`: pass
 - `cargo test -p outpost-core`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
 - `cargo test -p outpost-core --tests`: pass; 28 unit tests, 1 fixture smoke test
+- `cargo test --workspace`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
+- `cargo test -p outpost-core --features test-helpers`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
+- `git diff --check`: pass
+
+Review-fix verification:
+
+- `cargo fmt --check`: pass
+- `cargo test -p outpost-core --tests`: pass; 28 unit tests, 1 fixture smoke test
+- `cargo test -p outpost-core`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
 - `cargo test --workspace`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
 - `cargo test -p outpost-core --features test-helpers`: pass; 28 unit tests, 1 fixture smoke test, 0 doctests
 - `git diff --check`: pass
