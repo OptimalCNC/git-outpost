@@ -141,7 +141,7 @@ QA/Test Plan Gate:
 - `add-baseline-clone`
 - Scope: add `ops::add` for Phase 1, including baseline clone path, branch creation mode, custom remote, destination/branch refusal behavior, registry/metadata setup, local safety prechecks, reporter config event, and QA-owned core integration coverage for C-01..C-20
 - Test IDs: C-01..C-20
-- Status: scope-review fix implemented; rerun review pending
+- Status: scope-review fix committed; rerun review pending
 - Scope update note: initial Scope Reviewer found `AddCheckout::NewBranch` execution exceeded the baseline-only chunk claim. Coordinator resolved this by expanding the current add chunk evidence and QA coverage to all C-01..C-20 instead of leaving a temporary unimplemented public enum arm.
 
 ## Remaining Chunks
@@ -350,7 +350,7 @@ Remaining chunk order:
   - Milestone: `add-baseline-clone` implementation evidence recorded before review
 - `2d377aa phase-1: record add baseline checkpoint`
   - Milestone: recorded `add-baseline-clone` implementation checkpoint hash before review
-- pending `phase-1: address add scope review`
+- `1227687 phase-1: address add scope review`
   - Milestone: fixed Scope Reviewer finding by expanding add coverage to C-01..C-20
 
 ## Protected-Path Exception Log
@@ -364,4 +364,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `add-baseline-clone` scope-review fix, then rerun scope review.
+- Rerun `add-baseline-clone` scope review.
