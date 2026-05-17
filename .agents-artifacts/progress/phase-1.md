@@ -20,6 +20,7 @@
   - `cargo test -p outpost-core`
   - `cargo test -p outpost-core --tests`
   - `cargo test --workspace`
+- Closeout status: passed; all Phase 1 roadmap IDs implemented and passing, all chunk review gates complete, and required verification passed at HEAD `0a07ffd`
 - Invocation note: Phase 1 was started from the user's phase-by-phase instruction after Phase 0 closeout, using roadmap scope and coordinator defaults rather than a separate pasted Phase 1 invocation block.
 
 ## Source Docs
@@ -36,6 +37,7 @@
 - Workspace: one member, `outpost-core`
 - Existing implementation: Phase 0 modules only (`error.rs`, `git.rs`, `refname.rs`, `reporter.rs`) plus A/B fixture smoke test
 - Missing Phase 1 files at start: `source_repo.rs`, `outpost.rs`, `metadata.rs`, `registry.rs`, `safety.rs`, `ops/add.rs`, `ops/list.rs`, Phase 1 integration tests
+- Final Phase 1 state: `source_repo.rs`, `outpost.rs`, `metadata.rs`, `registry.rs`, `safety.rs`, `ops/add.rs`, and `ops/list.rs` implemented with U-01..U-06, U-10, U-13..U-15, C-01..C-20, and L-01..L-10 passing
 - Toolchain observed: `cargo 1.94.0`, `rustc 1.94.0`, `git version 2.43.0`
 - Baseline verification before Phase 1 planning: `cargo test --workspace` passed with 10 unit tests, 1 fixture smoke test, 0 doctests
 
@@ -146,11 +148,7 @@ QA/Test Plan Gate:
 
 ## Active Chunk
 
-- `list-ahead-behind`
-- Scope: add outpost ahead/behind computation relative to the local source repository and surface it through `ops::list` summaries.
-- Test IDs: L-05, L-06
-- Out of scope: CLI formatting, CLI dispatch/global `-C`, Phase 2+ command behavior, unrelated source/upstream status behavior, unrelated docs cleanup/refactors.
-- Status: complete; scope, normal, and independent reviewers approved after rerun
+- none; Phase 1 closeout gate passed
 
 ## Remaining Chunks
 
@@ -186,7 +184,7 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- none; `list-ahead-behind` is active
+- none
 
 ## Completed Chunks
 
@@ -351,6 +349,14 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- Phase 1 closeout verification at HEAD `0a07ffd`:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
+  - `git status --short --untracked-files=all`: clean
 
 ## Review Log
 
@@ -458,6 +464,8 @@ Remaining chunk order:
   - Milestone: implemented L-05/L-06 ahead/behind list summaries before review
 - `ca90b98 phase-1: address list ahead review`
   - Milestone: fixed Independent Reviewer progress-log accuracy findings for `list-ahead-behind`
+- `0a07ffd phase-1: record list ahead approval`
+  - Milestone: recorded `list-ahead-behind` independent rerun approval
 
 ## Protected-Path Exception Log
 
@@ -465,9 +473,9 @@ Remaining chunk order:
 
 ## Open Risks / Questions
 
-- Phase 1 is broad; chunk plan should keep storage foundations, source/outpost/safety, add integration, and list integration reviewable.
-- Keep CLI/e2e behavior out of Phase 1.
+- none blocking
+- CLI/e2e behavior intentionally remains Phase 5 scope.
 
 ## Next Recommended Action
 
-- Run Phase 1 closeout verification.
+- Create the Phase 1 closeout commit, report Phase 1 complete, then begin Phase 2 readiness.
