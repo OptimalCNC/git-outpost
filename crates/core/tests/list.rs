@@ -102,6 +102,23 @@ fn list_reports_not_managed_registered_path() {
 }
 
 #[test]
+fn list_reports_wrong_source_outpost_as_not_managed() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+    fs::remove_dir_all(&outpost).expect("remove original outpost");
+    let other = AbcFixture::new();
+    let other_outpost = other.add_outpost("C").expect("add other C");
+    fs::rename(&other_outpost, &outpost).expect("move wrong-source outpost");
+    let source = fixture.source_repo().expect("source repo");
+
+    let summaries = run(&source).expect("list summaries");
+
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].state, OutpostState::NotManaged);
+    assert!(summaries[0].current_branch.is_none());
+}
+
+#[test]
 fn list_outside_source_repo_returns_not_a_repo() {
     let temp = tempfile::tempdir().expect("tempdir");
 

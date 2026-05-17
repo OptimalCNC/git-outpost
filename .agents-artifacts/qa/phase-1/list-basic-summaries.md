@@ -18,11 +18,15 @@
 - L-09: `list_outside_source_repo_returns_not_a_repo`
 - L-10: `list_includes_lock_reason_from_registry`
 
+## Regression Coverage
+
+- `list_reports_wrong_source_outpost_as_not_managed`: registered path containing an outpost managed by a different source is reported as `NotManaged`.
+
 ## Deferred IDs
 
 - L-05, L-06: ahead/behind counts, assigned to `list-ahead-behind`.
 
 ## Verification
 
-- `cargo test -p outpost-core --test list`: pass; 8 tests
-- `cargo test -p outpost-core --tests`: pass; 43 unit tests, 22 add integration tests, 8 list integration tests, 1 fixture smoke test
+- `cargo test -p outpost-core --test list`: pass; 9 tests
+- `cargo test -p outpost-core --tests`: pass; 43 unit tests, 22 add integration tests, 9 list integration tests, 1 fixture smoke test

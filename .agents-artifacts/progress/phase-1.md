@@ -150,7 +150,7 @@ QA/Test Plan Gate:
 - Scope: add `ops::list` basic summaries from a `SourceRepo`, including registered outpost paths, current branch, clean/dirty/missing/not-managed state, lock fields, and QA-owned core integration coverage for L-01..L-04 and L-07..L-10
 - Test IDs: L-01, L-02, L-03, L-04, L-07, L-08, L-09, L-10
 - Out of scope: ahead/behind counts L-05/L-06, CLI formatting, CLI dispatch/global `-C`, Phase 2 lock/unlock command behavior
-- Status: scope review approved; normal and independent reviews pending
+- Status: normal-review finding addressed; independent first pass approved original range; review reruns pending on the fix
 
 ## Remaining Chunks
 

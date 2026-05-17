@@ -46,9 +46,9 @@ fn summarize_entry(
         return Ok(summary);
     }
 
-    let outpost = match source.outpost_at(&entry.path) {
+    let outpost = match crate::safety::check_path_is_managed_outpost_of(source, &entry.path) {
         Ok(outpost) => outpost,
-        Err(OutpostError::NotAnOutpost(_) | OutpostError::NotARepo(_)) => {
+        Err(OutpostError::RegistryEntryNotManaged(_)) => {
             summary.state = OutpostState::NotManaged;
             return Ok(summary);
         }
