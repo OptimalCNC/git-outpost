@@ -13,6 +13,9 @@
 
 - `.agents-artifacts/progress/phase-1.md`
 - `.agents-artifacts/reviews/phase-1/storage-foundations/evidence-pack.md`
+- `.agents-artifacts/reviews/phase-1/storage-foundations/independent-review.md`
+- `.agents-artifacts/reviews/phase-1/storage-foundations/normal-review.md`
+- `.agents-artifacts/reviews/phase-1/storage-foundations/scope-review.md`
 - `Cargo.toml`
 - `Cargo.lock`
 - `crates/core/Cargo.toml`
@@ -34,6 +37,12 @@
 - Exported storage types from `lib.rs`.
 - Updated `Cargo.lock` for the new storage dependency tree.
 
+## Review Fixes
+
+- Normal review finding: `RegistryMut::save()` could mask a typed save error with the dirty Drop guard panic in debug builds. Fix: `RegistryMut::save()` marks the consumed guard as an attempted save before calling the fallible save; a failed save now returns the original `OutpostResult` error and does not trip the Drop guard.
+- Normal review finding: `RegistryMut::update_path()` canonicalized the old path, which failed after filesystem rename. Fix: lookup accepts an already-recorded canonical old path when the filesystem path is gone, while still canonicalizing/storing the new path.
+- Independent review finding: `RegistryMut::remove_by_path()` canonicalized the path, which failed for stale registered paths. Fix: removal uses the same existing-or-recorded lookup so callers can remove a missing registered canonical path.
+
 ## Tests Added / Updated
 
 - `metadata::tests::metadata_write_sets_local_outpost_config_keys` (U-05)
@@ -45,6 +54,9 @@
 - `registry::tests::load_malformed_json_returns_bad_registry` (U-04)
 - `registry::tests::dropping_dirty_registry_mut_trips_debug_drop_guard` (U-15, debug builds)
 - `registry::tests::dropping_dirty_registry_mut_does_not_panic_in_release_builds` (U-15, release builds)
+- `registry::tests::failed_save_returns_error_without_drop_guard_panic` (review fix)
+- `registry::tests::update_path_handles_registered_old_path_after_rename` (review fix)
+- `registry::tests::remove_by_path_handles_registered_missing_path` (review fix)
 
 ## Integration Tests
 
@@ -57,10 +69,11 @@
 ## Verification
 
 - `cargo fmt --check`: pass.
-- `cargo test -p outpost-core`: pass; 18 unit tests, 1 fixture smoke test, 0 doctests.
-- `cargo test -p outpost-core --tests`: pass; 18 unit tests, 1 fixture smoke test.
-- `cargo test --workspace`: pass; 18 unit tests, 1 fixture smoke test, 0 doctests.
-- `cargo test -p outpost-core --features test-helpers`: pass; 18 unit tests, 1 fixture smoke test, 0 doctests.
+- `cargo test -p outpost-core`: pass; 21 unit tests, 1 fixture smoke test, 0 doctests.
+- `cargo test -p outpost-core --tests`: pass; 21 unit tests, 1 fixture smoke test.
+- `cargo test --workspace`: pass; 21 unit tests, 1 fixture smoke test, 0 doctests.
+- `cargo test -p outpost-core --features test-helpers`: pass; 21 unit tests, 1 fixture smoke test, 0 doctests.
+- `cargo test -p outpost-core registry::tests::`: pass; 8 registry unit tests.
 - `cargo metadata --format-version 1 --no-deps --offline`: pass; workspace member `outpost-core`, Rust version `1.75`, storage dependencies present.
 - `cargo tree -p outpost-core --offline`: pass; active target dependency tree includes `chrono v0.4.44`, `serde v1.0.228`, `serde_json v1.0.149`, `tempfile v3.10.0`, and existing `thiserror`.
 - Local registry manifest audit for active target dependency tree: locked active crates checked have `rust-version <= 1.75` (`chrono 1.62`, `serde/serde_core 1.56`, `serde_derive 1.61`, `serde_json 1.68`, `itoa 1.68`, `memchr 1.61`, `num-traits 1.60`, `iana-time-zone 1.62`, `proc-macro2/quote/syn/unicode-ident/zmij 1.68-1.71`).

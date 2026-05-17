@@ -128,6 +128,22 @@ impl Registry {
     fn find(&self, path: &Path) -> Option<usize> {
         self.entries.iter().position(|entry| entry.path == path)
     }
+
+    fn find_existing_or_recorded(&self, path: &Path) -> OutpostResult<(PathBuf, Option<usize>)> {
+        match canonicalize_path(path) {
+            Ok(canonical) => {
+                let index = self.find(&canonical);
+                Ok((canonical, index))
+            }
+            Err(canonicalize_err) => {
+                if let Some(index) = self.entries.iter().position(|entry| entry.path == path) {
+                    Ok((path.to_path_buf(), Some(index)))
+                } else {
+                    Err(canonicalize_err)
+                }
+            }
+        }
+    }
 }
 
 impl RegistryEntry {
@@ -171,12 +187,9 @@ impl<'src> RegistryMut<'src> {
     }
 
     pub fn update_path(&mut self, old: &Path, new: PathBuf) -> OutpostResult<()> {
-        let old = canonicalize_path(old)?;
+        let (old, index) = self.inner.find_existing_or_recorded(old)?;
         let new = canonicalize_path(&new)?;
-        let index = self
-            .inner
-            .find(&old)
-            .ok_or_else(|| OutpostError::RegistryEntryNotFound(old.clone()))?;
+        let index = index.ok_or_else(|| OutpostError::RegistryEntryNotFound(old.clone()))?;
         self.inner.entries[index].path = new;
         self.dirty = true;
         Ok(())
@@ -211,8 +224,8 @@ impl<'src> RegistryMut<'src> {
     }
 
     pub fn remove_by_path(&mut self, path: &Path) -> OutpostResult<bool> {
-        let path = canonicalize_path(path)?;
-        if let Some(index) = self.inner.find(&path) {
+        let (_path, index) = self.inner.find_existing_or_recorded(path)?;
+        if let Some(index) = index {
             self.inner.entries.remove(index);
             self.dirty = true;
             Ok(true)
@@ -226,10 +239,12 @@ impl<'src> RegistryMut<'src> {
     }
 
     pub fn save(mut self) -> OutpostResult<()> {
-        self.inner.save()?;
         self.saved = true;
-        self.dirty = false;
-        Ok(())
+        let result = self.inner.save();
+        if result.is_ok() {
+            self.dirty = false;
+        }
+        result
     }
 }
 
@@ -426,6 +441,54 @@ mod tests {
     }
 
     #[test]
+    fn update_path_handles_registered_old_path_after_rename() {
+        let (temp, source) = init_source_repo();
+        let old = temp.path().join("C");
+        let new = temp.path().join("D");
+        fs::create_dir_all(&old).expect("old outpost dir");
+        let canonical_old = fs::canonicalize(&old).expect("canonical old path");
+
+        let mut registry = source.registry_mut().expect("registry mut");
+        registry
+            .add(entry_at(&old, "local", 1))
+            .expect("add old path");
+        fs::rename(&old, &new).expect("rename outpost");
+
+        registry
+            .update_path(&canonical_old, new.clone())
+            .expect("update renamed path");
+        registry.save().expect("save");
+
+        let loaded = Registry::load(&source).expect("reload");
+        assert_eq!(loaded.entries().len(), 1);
+        assert_eq!(loaded.entries()[0].path, fs::canonicalize(&new).unwrap());
+    }
+
+    #[test]
+    fn remove_by_path_handles_registered_missing_path() {
+        let (temp, source) = init_source_repo();
+        let outpost = temp.path().join("C");
+        fs::create_dir_all(&outpost).expect("outpost dir");
+        let canonical_outpost = fs::canonicalize(&outpost).expect("canonical outpost");
+
+        let mut registry = source.registry_mut().expect("registry mut");
+        registry
+            .add(entry_at(&outpost, "local", 1))
+            .expect("add path");
+        fs::remove_dir(&outpost).expect("remove outpost dir");
+
+        assert!(registry
+            .remove_by_path(&canonical_outpost)
+            .expect("remove missing registered path"));
+        registry.save().expect("save");
+
+        assert!(Registry::load(&source)
+            .expect("reload")
+            .entries()
+            .is_empty());
+    }
+
+    #[test]
     fn load_malformed_json_returns_bad_registry() {
         let (_temp, source) = init_source_repo();
         fs::create_dir_all(source.registry_path().parent().unwrap()).expect("registry dir");
@@ -453,6 +516,31 @@ mod tests {
         }));
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn failed_save_returns_error_without_drop_guard_panic() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let work_tree = temp.path().join("source");
+        let git_dir = temp.path().join("git-file");
+        let outpost = temp.path().join("C");
+        fs::create_dir_all(&work_tree).expect("source dir");
+        fs::write(&git_dir, "not a dir").expect("git file");
+        fs::create_dir_all(&outpost).expect("outpost dir");
+        let source =
+            SourceRepo::from_storage_paths(&work_tree, &git_dir).expect("source repo storage");
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let mut registry = source.registry_mut().expect("registry mut");
+            registry
+                .add(entry_at(&outpost, "local", 1))
+                .expect("add entry");
+            registry.save()
+        }));
+
+        let save_result = result.expect("save error should not panic");
+        assert!(matches!(save_result, Err(OutpostError::IoAt { .. })));
     }
 
     #[test]

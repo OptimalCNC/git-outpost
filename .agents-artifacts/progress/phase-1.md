@@ -176,10 +176,11 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 10 unit tests, 1 fixture smoke test, 0 doctests
 - `storage-foundations` local verification:
   - `cargo fmt --check`: pass
-  - `cargo test -p outpost-core`: pass; 18 unit tests, 1 fixture smoke test, 0 doctests
-  - `cargo test -p outpost-core --tests`: pass; 18 unit tests, 1 fixture smoke test
-  - `cargo test --workspace`: pass; 18 unit tests, 1 fixture smoke test, 0 doctests
-  - `cargo test -p outpost-core --features test-helpers`: pass; 18 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core`: pass; 21 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 21 unit tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 21 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 21 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core registry::tests::`: pass; 8 registry unit tests
   - `cargo metadata --format-version 1 --no-deps --offline`: pass
   - `cargo tree -p outpost-core --offline`: pass; active target storage dependency tree audited for Rust 1.75-compatible locked manifests
   - `cargo metadata --format-version 1`: failed under restricted network while trying to download target-specific crates; not required for the gate
@@ -187,7 +188,11 @@ Remaining chunk order:
 
 ## Review Log
 
-- none
+- `storage-foundations`:
+  - Scope Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/storage-foundations/scope-review.md`
+  - Normal Reviewer: `changes requested`; artifact `.agents-artifacts/reviews/phase-1/storage-foundations/normal-review.md`
+  - Independent Reviewer: `changes requested`; artifact `.agents-artifacts/reviews/phase-1/storage-foundations/independent-review.md`
+  - Blocking findings fixed locally: `RegistryMut::save()` failure no longer trips Drop guard; `update_path()` and `remove_by_path()` handle already-recorded canonical paths after the filesystem path is missing.
 
 ## Docs Log
 
@@ -209,4 +214,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `storage-foundations` implementation evidence, then run the three-reviewer gate.
+- Commit `storage-foundations` review fixes, then rerun required reviewers.
