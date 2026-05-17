@@ -50,9 +50,9 @@
 | --- | --- | --- | --- |
 | U-07 | `error.rs` display strings | implemented passing | `display_strings_match_snapshot` in `crates/core/src/error.rs` |
 | U-08 | `OutpostError::exit_code` mapping | implemented passing | `exit_code_maps_each_variant` in `crates/core/src/error.rs` |
-| U-09 | `GitInvoker::run_check` preserves failed argv | pending | Unit test expected in `crates/core/src/git.rs` |
-| U-11 | `GitInvoker::run_capture` handles `-` argv after `--` | pending | Unit test expected in `crates/core/src/git.rs` |
-| U-12 | refname validation | pending | Unit test expected in `crates/core/src/refname.rs` |
+| U-09 | `GitInvoker::run_check` preserves failed argv | implemented passing | `run_check_bad_command_preserves_failed_argv` in `crates/core/src/git.rs` |
+| U-11 | `GitInvoker::run_capture` handles `-` argv after `--` | implemented passing | `run_capture_keeps_leading_dash_value_positional_after_separator` in `crates/core/src/git.rs` |
+| U-12 | refname validation | implemented passing | `branch_parse_rejects_leading_dash_and_accepts_feature_branch` and `remote_parse_rejects_shell_like_value` in `crates/core/src/refname.rs` |
 
 QA/Test Plan Gate:
 
@@ -74,12 +74,11 @@ QA/Test Plan Gate:
 
 ## Active Chunk
 
-- `core-foundation` selected after Chunk Planning Gate
-- Scope: minimal Cargo workspace/core crate skeleton plus `error.rs`, `reporter.rs`, and public exports
-- Test IDs: U-07, U-08
-- Status: complete; three-reviewer gate passed
-- Developer subagent: `019e36ee-8703-7de3-812a-beb5e1d25fdf`
-- Coordinator supplement: added `.gitignore` `/target/` entry because Phase 0 introduces Cargo build output
+- `git-and-ref-boundary`
+- Scope: implement `git.rs`, `refname.rs`, and minimal exports/feature support
+- Test IDs: U-09, U-11, U-12
+- Status: implementation complete; evidence recorded; pending milestone commit and review
+- Developer subagent: `019e36fd-54c6-7761-bafb-44d317521eaf`
 
 ## Remaining Chunks
 
@@ -113,6 +112,14 @@ Chunk Planning Gate:
   - Integration tests touched: none; QA-owned and not needed for these IDs
   - Docs updated: none; existing architecture already documents the stable contract
   - Architecture deviations: none; `PushIntoCheckedOutBranch` uses raw field identifier `r#source` internally to avoid `thiserror` source-field handling, while construction remains `source: ...`
+- `git-and-ref-boundary` implementation evidence recorded:
+  - Files changed: `crates/core/Cargo.toml`, `crates/core/src/lib.rs`, `crates/core/src/git.rs`, `crates/core/src/refname.rs`
+  - Test IDs advanced: U-09, U-11, U-12
+  - Evidence pack: `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/evidence-pack.md`
+  - Unit tests added: `run_check_bad_command_preserves_failed_argv`, `run_capture_keeps_leading_dash_value_positional_after_separator`, `run_status_distinguishes_exit_one_from_real_failure`, `branch_parse_rejects_leading_dash_and_accepts_feature_branch`, `remote_parse_rejects_shell_like_value`, `ref_parse_uses_full_ref_validation`, `source_remote_ref_parses_remote_and_branch`, `upstream_short_branch_returns_only_heads_refs`
+  - Integration tests touched: none; QA-owned and not needed for these IDs
+  - Docs updated: none; existing architecture already documents the stable contract
+  - Architecture deviations: none
 
 ## Verification Log
 
@@ -125,6 +132,12 @@ Chunk Planning Gate:
   - `cargo test -p outpost-core`: pass; 2 unit tests passed, 0 doctests
   - `cargo test -p outpost-core --tests`: pass; 2 unit tests passed
   - `cargo test --workspace`: pass; 2 unit tests passed, 0 doctests
+- `git-and-ref-boundary` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core`: pass; 10 unit tests passed, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 10 unit tests passed
+  - `cargo test --workspace`: pass; 10 unit tests passed, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 10 unit tests passed, 0 doctests
 
 ## Review Log
 
@@ -145,6 +158,8 @@ Chunk Planning Gate:
   - Includes Phase 0 progress log, evidence pack, workspace/core skeleton, `error.rs`, `reporter.rs`, U-07/U-08 tests, and `.gitignore` `/target/`
 - `3dafbfd phase-0: address core foundation scope review`
   - Milestone: adopted Scope Reviewer nit and recorded scope review artifact
+- `85c6563 phase-0: record core foundation reviews`
+  - Milestone: recorded Normal Reviewer and Independent Reviewer approvals for `core-foundation`
 
 ## Protected-Path Exception Log
 
@@ -156,4 +171,4 @@ Chunk Planning Gate:
 
 ## Next Recommended Action
 
-- Start `git-and-ref-boundary`.
+- Commit `git-and-ref-boundary` implementation milestone, then run Scope Reviewer.
