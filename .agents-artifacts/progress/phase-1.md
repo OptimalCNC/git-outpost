@@ -150,7 +150,7 @@ QA/Test Plan Gate:
 - Scope: add `ops::list` basic summaries from a `SourceRepo`, including registered outpost paths, current branch, clean/dirty/missing/not-managed state, lock fields, and QA-owned core integration coverage for L-01..L-04 and L-07..L-10
 - Test IDs: L-01, L-02, L-03, L-04, L-07, L-08, L-09, L-10
 - Out of scope: ahead/behind counts L-05/L-06, CLI formatting, CLI dispatch/global `-C`, Phase 2 lock/unlock command behavior
-- Status: implementation evidence recorded; pre-review commit pending
+- Status: implementation evidence committed; under review
 
 ## Remaining Chunks
 
@@ -399,7 +399,7 @@ Remaining chunk order:
   - Milestone: recorded `add-baseline-clone` normal rerun approval
 - `548ca5d phase-1: record add review approvals`
   - Milestone: recorded `add-baseline-clone` independent rerun approval
-- pending `phase-1: add list basic summaries`
+- `4bb8bb2 phase-1: add list basic summaries`
   - Milestone: `list-basic-summaries` implementation evidence recorded before review
 
 ## Protected-Path Exception Log
@@ -413,4 +413,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `list-basic-summaries` implementation evidence, then run scope, normal, and independent reviews.
+- Run `list-basic-summaries` scope, normal, and independent reviews.
