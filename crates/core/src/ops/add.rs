@@ -35,6 +35,7 @@ pub fn run(
         checkout,
         remote_name,
     } = opts;
+    let destination = resolve_destination(source, &destination)?;
     check_destination_clean(&destination)?;
 
     let branch = resolve_existing_branch(source, &checkout)?;
@@ -79,6 +80,21 @@ pub fn run(
     registry.save()?;
 
     source.outpost_at(&destination)
+}
+
+fn resolve_destination(source: &SourceRepo, destination: &Path) -> OutpostResult<PathBuf> {
+    let anchored = if destination.is_absolute() {
+        destination.to_path_buf()
+    } else {
+        source.work_tree().join(destination)
+    };
+    let (parent, name) = destination_parent_and_name(&anchored)?;
+    let parent = std::fs::canonicalize(&parent).map_err(|source| OutpostError::IoAt {
+        path: parent.clone(),
+        source,
+    })?;
+
+    Ok(parent.join(name))
 }
 
 fn resolve_existing_branch(

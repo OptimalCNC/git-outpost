@@ -35,7 +35,12 @@
 
 - none for `ops::add`; C-01..C-20 are implemented and passing.
 
+## Regression Coverage
+
+- `add_rejects_relative_destination_inside_source_repo`: relative destination `C` resolves under the source repo and is refused consistently.
+- `add_relative_sibling_destination_uses_same_resolved_path_for_all_steps`: relative destination `../C` uses the same resolved sibling path for clone, metadata, registry, and returned `Outpost`.
+
 ## Verification
 
-- `cargo test -p outpost-core --test add`: pass; 20 tests
-- `cargo test -p outpost-core --tests`: pass; 43 unit tests, 20 add integration tests, 1 fixture smoke test
+- `cargo test -p outpost-core --test add`: pass; 22 tests
+- `cargo test -p outpost-core --tests`: pass; 43 unit tests, 22 add integration tests, 1 fixture smoke test

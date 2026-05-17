@@ -166,6 +166,55 @@ fn add_rejects_destination_inside_existing_repo() {
 }
 
 #[test]
+fn add_rejects_relative_destination_inside_source_repo() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+
+    let err = expect_error(
+        add_existing(&source, Path::new("C"), None),
+        "source-relative destination should fail inside repo",
+    );
+
+    assert!(matches!(
+        err,
+        OutpostError::DestinationInsideRepo(path) if path == source.work_tree().join("C")
+    ));
+    assert!(!source.work_tree().join("C").exists());
+}
+
+#[test]
+fn add_relative_sibling_destination_uses_same_resolved_path_for_all_steps() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+
+    let outpost =
+        add_existing(&source, Path::new("../C"), None).expect("add relative sibling outpost");
+
+    assert_eq!(outpost.work_tree(), canonical(&destination));
+    assert_eq!(
+        outpost.metadata().source_repo,
+        source.work_tree().to_path_buf()
+    );
+    assert_eq!(
+        source.registry().expect("registry").entries()[0].path,
+        canonical(&destination)
+    );
+    assert_eq!(
+        fixture
+            .invoker(&destination)
+            .run_capture(["remote", "get-url", "local"])
+            .expect("local remote url"),
+        source.work_tree().to_string_lossy()
+    );
+    let clone_argv = recorded_clone_argv(&source).expect("clone argv should be recorded");
+    assert_eq!(
+        clone_argv.last().expect("clone destination"),
+        destination.as_os_str()
+    );
+}
+
+#[test]
 fn add_rejects_missing_existing_branch_before_clone() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");

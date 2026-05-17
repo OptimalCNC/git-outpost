@@ -141,7 +141,7 @@ QA/Test Plan Gate:
 - `add-baseline-clone`
 - Scope: add `ops::add` for Phase 1, including baseline clone path, branch creation mode, custom remote, destination/branch refusal behavior, registry/metadata setup, local safety prechecks, reporter config event, and QA-owned core integration coverage for C-01..C-20
 - Test IDs: C-01..C-20
-- Status: scope review approved; normal and independent reviews pending
+- Status: normal-review fix implemented; rerun review pending
 - Scope update note: initial Scope Reviewer found `AddCheckout::NewBranch` execution exceeded the baseline-only chunk claim. Coordinator resolved this by expanding the current add chunk evidence and QA coverage to all C-01..C-20 instead of leaving a temporary unimplemented public enum arm.
 
 ## Remaining Chunks
@@ -224,7 +224,8 @@ Remaining chunk order:
   - Docs updated: none; existing product and architecture document add contracts
   - Architecture deviations: none
   - Review-fix delta: scope-review fix expanded add evidence and QA coverage to C-01..C-20; `NewBranch` now has direct integration coverage, tracking setup, missing-target preclone rejection, and source-checkout-preservation coverage
-  - Status: scope-review fix implemented; awaiting rerun review
+  - Normal-review fix delta: add resolves the caller destination once before validation and uses that effective path for clone, metadata, registry, and return; added regressions for relative source-internal `C` refusal and relative sibling `../C` success
+  - Status: normal-review fix implemented; awaiting rerun review
 
 ## Verification Log
 
@@ -287,6 +288,14 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 43 unit tests, 20 add integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 20 add integration tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- `add-baseline-clone` normal-review-fix verification:
+  - `cargo test -p outpost-core --test add`: pass; 22 add integration tests
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core`: pass; 43 unit tests, 22 add integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 43 unit tests, 22 add integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 43 unit tests, 22 add integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 22 add integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -317,8 +326,10 @@ Remaining chunk order:
   - Scope Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-1/add-baseline-clone/scope-review.md`
   - Blocking finding fixed locally: `AddCheckout::NewBranch` behavior exceeded the baseline-only chunk claim; evidence and QA coverage now explicitly include all C-01..C-20 add behavior, with direct tests for branch modes, custom remote, refusal paths, and unborn `HEAD`.
   - Scope Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/add-baseline-clone/scope-review-rerun.md`
-  - Normal Reviewer: pending
-  - Independent Reviewer: pending
+  - Normal Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-1/add-baseline-clone/normal-review.md`
+  - Blocking finding fixed locally: relative add destinations were validated/cloned/opened relative to different directories; add now resolves one effective destination path up front and regression tests cover source-internal and sibling relative destinations.
+  - Normal Reviewer rerun: pending
+  - Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-1/add-baseline-clone/independent-review.md`
 
 ## Docs Log
 
@@ -352,6 +363,10 @@ Remaining chunk order:
   - Milestone: recorded `add-baseline-clone` implementation checkpoint hash before review
 - `1227687 phase-1: address add scope review`
   - Milestone: fixed Scope Reviewer finding by expanding add coverage to C-01..C-20
+- `7691332 phase-1: record add scope approval`
+  - Milestone: recorded `add-baseline-clone` scope rerun approval
+- pending `phase-1: address add normal review`
+  - Milestone: fixed Normal Reviewer relative destination finding
 
 ## Protected-Path Exception Log
 
@@ -364,4 +379,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Run `add-baseline-clone` normal and independent reviews.
+- Commit `add-baseline-clone` normal-review fix, then rerun normal review.

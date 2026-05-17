@@ -41,6 +41,7 @@
   - Renames the clone's default remote to `remote_name` when needed, checks out the target branch, writes outpost metadata, emits the required `ConfigChange` reporter event, configures source `receive.denyCurrentBranch=updateInstead`, writes the registry entry, and returns `source.outpost_at(destination)`.
   - Splits destination parent/name for safety checks so nested relative paths are not double-prefixed.
   - Implements `NewBranch` by creating the source branch from the resolved target without switching the source checkout, fetching it into the outpost, and checking it out with tracking.
+  - Resolves the caller destination once before validation and uses that effective path for safety checks, clone destination, post-clone Git operations, registry insertion, and return.
   - Maps destination refusal errors back to the caller-supplied destination path while keeping parent-relative safety resolution.
   - Treats an omitted target on an unborn source `HEAD` as `BranchNotFound { branch: "HEAD" }` before cloning.
 - `tests/common/fixture.rs`
@@ -64,6 +65,8 @@
 - `add_rejects_existing_file` covers C-06.
 - `add_outside_git_repo_cannot_discover_source` covers C-07.
 - `add_rejects_destination_inside_existing_repo` covers C-08.
+- `add_rejects_relative_destination_inside_source_repo` regresses relative destination safety under the source repo.
+- `add_relative_sibling_destination_uses_same_resolved_path_for_all_steps` regresses single effective-path handling for relative sibling destinations.
 - `add_rejects_missing_existing_branch_before_clone` covers C-09.
 - `add_writes_outpost_metadata_keys` covers C-10.
 - `add_configures_local_remote_and_non_shared_clone` covers C-11a, C-11c, and C-11d.
@@ -99,6 +102,14 @@
   - `cargo test -p outpost-core --tests`: pass; 43 unit tests, 20 add integration tests, 1 fixture smoke test
   - `cargo test --workspace`: pass; 43 unit tests, 20 add integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 20 add integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
+- Normal-review fix verification:
+  - `cargo test -p outpost-core --test add`: pass; 22 add integration tests
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core`: pass; 43 unit tests, 22 add integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 43 unit tests, 22 add integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 43 unit tests, 22 add integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 22 add integration tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
 
 ## Verification Not Run
