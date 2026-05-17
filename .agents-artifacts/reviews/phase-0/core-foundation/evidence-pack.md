@@ -11,6 +11,8 @@
 
 ## Changed Files
 
+- `.agents-artifacts/progress/phase-0.md`
+- `.agents-artifacts/reviews/phase-0/core-foundation/evidence-pack.md`
 - `.gitignore`
 - `Cargo.toml`
 - `Cargo.lock`

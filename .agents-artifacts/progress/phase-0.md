@@ -127,7 +127,9 @@ Chunk Planning Gate:
 
 ## Review Log
 
-- none
+- `core-foundation`:
+  - Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-0/core-foundation/scope-review.md`
+  - Scope review nit adopted: evidence pack changed-file list now includes progress/evidence artifact paths
 
 ## Docs Log
 
@@ -135,7 +137,9 @@ Chunk Planning Gate:
 
 ## Commit Log
 
-- none
+- `7128367 phase-0: add core foundation`
+  - Milestone: `core-foundation` implementation evidence recorded before review
+  - Includes Phase 0 progress log, evidence pack, workspace/core skeleton, `error.rs`, `reporter.rs`, U-07/U-08 tests, and `.gitignore` `/target/`
 
 ## Protected-Path Exception Log
 
