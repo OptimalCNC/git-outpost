@@ -77,7 +77,7 @@ QA/Test Plan Gate:
 - `git-and-ref-boundary`
 - Scope: implement `git.rs`, `refname.rs`, and minimal exports/feature support
 - Test IDs: U-09, U-11, U-12
-- Status: implementation complete; evidence recorded; pending milestone commit and review
+- Status: complete; three-reviewer gate passed after review fix
 - Developer subagent: `019e36fd-54c6-7761-bafb-44d317521eaf`
 
 ## Remaining Chunks
@@ -116,6 +116,7 @@ Chunk Planning Gate:
   - Files changed: `crates/core/Cargo.toml`, `crates/core/src/lib.rs`, `crates/core/src/git.rs`, `crates/core/src/refname.rs`
   - Test IDs advanced: U-09, U-11, U-12
   - Evidence pack: `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/evidence-pack.md`
+  - Review artifacts: `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/scope-review.md`, `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/normal-review.md`, `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/independent-review.md`, `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/normal-review-rerun.md`, `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/independent-review-rerun.md`
   - Unit tests added: `run_check_bad_command_preserves_failed_argv`, `run_capture_keeps_leading_dash_value_positional_after_separator`, `run_status_distinguishes_exit_one_from_real_failure`, `branch_parse_rejects_leading_dash_and_accepts_feature_branch`, `remote_parse_rejects_shell_like_value`, `ref_parse_uses_full_ref_validation`, `source_remote_ref_parses_remote_and_branch`, `upstream_short_branch_returns_only_heads_refs`
   - Integration tests touched: none; QA-owned and not needed for these IDs
   - Docs updated: none; existing architecture already documents the stable contract
@@ -158,6 +159,8 @@ Chunk Planning Gate:
   - Normal Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/normal-review.md`
   - Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/independent-review.md`
   - Blocking finding fixed: U-09 failed argv preservation now keeps argv boundaries unambiguous and test distinguishes a single arg containing spaces from multiple args
+  - Normal Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/normal-review-rerun.md`
+  - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/independent-review-rerun.md`
 
 ## Docs Log
 
@@ -175,6 +178,8 @@ Chunk Planning Gate:
 - `c144b69 phase-0: add git and ref boundary`
   - Milestone: `git-and-ref-boundary` implementation evidence recorded before review
   - Includes `git.rs`, `refname.rs`, exports, `test-helpers` feature, U-09/U-11/U-12 tests, and evidence/progress artifacts
+- `83a1f74 phase-0: address git argv review finding`
+  - Milestone: fixed Normal Reviewer blocking finding for `git-and-ref-boundary` U-09 argv boundary preservation and recorded review artifacts
 
 ## Protected-Path Exception Log
 
@@ -186,4 +191,4 @@ Chunk Planning Gate:
 
 ## Next Recommended Action
 
-- Commit `git-and-ref-boundary` review-fix milestone, then rerun needed reviews.
+- Commit `git-and-ref-boundary` review-result artifacts, then start `phase0-fixture-scaffold`.
