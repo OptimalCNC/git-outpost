@@ -3,6 +3,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use outpost_core::ops::add::{run as add_run, AddCheckout, AddOptions};
 use outpost_core::{BranchName, GitInvoker, OutpostError, OutpostResult, SourceRepo};
 
 pub struct AbcFixture {
@@ -101,6 +102,35 @@ impl AbcFixture {
         Ok(branch)
     }
 
+    #[allow(dead_code)]
+    pub fn add_outpost(&self, name: &str) -> OutpostResult<PathBuf> {
+        let source = self.source_repo()?;
+        let destination = self.root.join(name);
+        let mut reporter = SilentReporter;
+        add_run(
+            &source,
+            AddOptions {
+                destination: destination.clone(),
+                checkout: AddCheckout::CheckoutExisting {
+                    target_branch: None,
+                },
+                remote_name: outpost_core::RemoteName::parse("local")?,
+            },
+            &mut reporter,
+        )?;
+        Ok(destination)
+    }
+
+    #[allow(dead_code)]
+    pub fn dirty_outpost(&self, name: &str) -> OutpostResult<PathBuf> {
+        let outpost = self.add_outpost(name)?;
+        fs::write(outpost.join("x.txt"), "dirty").map_err(|source| OutpostError::IoAt {
+            path: outpost.join("x.txt"),
+            source,
+        })?;
+        Ok(outpost)
+    }
+
     pub fn commit_in_upstream(&self, branch: &str, msg: &str) -> OutpostResult<String> {
         let scratch = tempfile::tempdir_in(&self.root).map_err(|source| OutpostError::IoAt {
             path: self.root.clone(),
@@ -155,4 +185,13 @@ fn hermetic_git_env(empty_gitconfig: &Path) -> BTreeMap<OsString, OsString> {
 
 fn os(value: &'static str) -> &'static OsStr {
     OsStr::new(value)
+}
+
+#[allow(dead_code)]
+struct SilentReporter;
+
+impl outpost_core::Reporter for SilentReporter {
+    fn step(&mut self, _kind: outpost_core::StepKind, _message: &str) {}
+
+    fn warn(&mut self, _message: &str) {}
 }

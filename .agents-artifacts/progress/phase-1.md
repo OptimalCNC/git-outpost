@@ -105,15 +105,15 @@
 | C-18 | `ops::add -b` rejects missing target before clone | implemented passing | `add_new_branch_rejects_missing_target_before_clone` |
 | C-19 | `ops::add -b` leaves source checkout unchanged | implemented passing | `add_new_branch_does_not_switch_source_checkout` |
 | C-20 | `ops::add` local `.outpost/` exclude | implemented passing | `add_ignores_source_registry_directory_locally` |
-| L-01 | `ops::list` empty source repo returns no summaries | planned | current chunk |
-| L-02 | `ops::list` reports three added outposts with correct paths | planned | current chunk |
-| L-03 | `ops::list` reports current branch | planned | current chunk |
-| L-04 | `ops::list` reports dirty outpost | planned | current chunk |
+| L-01 | `ops::list` empty source repo returns no summaries | implemented passing | `list_empty_source_returns_no_summaries` |
+| L-02 | `ops::list` reports three added outposts with correct paths | implemented passing | `list_reports_three_added_outpost_paths` |
+| L-03 | `ops::list` reports current branch | implemented passing | `list_reports_current_branch_for_each_outpost` |
+| L-04 | `ops::list` reports dirty outpost | implemented passing | `list_reports_dirty_for_untracked_outpost_file` |
 | L-05..L-06 | `ops::list` ahead/behind counts | planned | assigned to `list-ahead-behind` |
-| L-07 | `ops::list` reports missing registered outpost | planned | current chunk |
-| L-08 | `ops::list` reports not-managed registered path | planned | current chunk |
-| L-09 | `ops::list` outside source repo returns `NotARepo` | planned | current chunk |
-| L-10 | `ops::list` includes lock reason | planned | current chunk |
+| L-07 | `ops::list` reports missing registered outpost | implemented passing | `list_reports_missing_registered_outpost` |
+| L-08 | `ops::list` reports not-managed registered path | implemented passing | `list_reports_not_managed_registered_path` |
+| L-09 | `ops::list` outside source repo returns `NotARepo` | implemented passing | `list_outside_source_repo_returns_not_a_repo` |
+| L-10 | `ops::list` includes lock reason | implemented passing | `list_includes_lock_reason_from_registry` |
 
 QA/Test Plan Gate:
 
@@ -150,7 +150,7 @@ QA/Test Plan Gate:
 - Scope: add `ops::list` basic summaries from a `SourceRepo`, including registered outpost paths, current branch, clean/dirty/missing/not-managed state, lock fields, and QA-owned core integration coverage for L-01..L-04 and L-07..L-10
 - Test IDs: L-01, L-02, L-03, L-04, L-07, L-08, L-09, L-10
 - Out of scope: ahead/behind counts L-05/L-06, CLI formatting, CLI dispatch/global `-C`, Phase 2 lock/unlock command behavior
-- Status: assigned; implementation in progress
+- Status: implementation evidence recorded; pre-review commit pending
 
 ## Remaining Chunks
 
@@ -186,7 +186,6 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `list-basic-summaries`
 - `list-ahead-behind`
 
 ## Completed Chunks
@@ -233,7 +232,18 @@ Remaining chunk order:
   - Architecture deviations: none
   - Review-fix delta: scope-review fix expanded add evidence and QA coverage to C-01..C-20; `NewBranch` now has direct integration coverage, tracking setup, missing-target preclone rejection, and source-checkout-preservation coverage
   - Normal-review fix delta: add resolves the caller destination once before validation and uses that effective path for clone, metadata, registry, and return; added regressions for relative source-internal `C` refusal and relative sibling `../C` success
-  - Status: normal-review fix implemented; awaiting rerun review
+  - Status: complete; all reviewers approved after reruns
+- `list-basic-summaries` implementation evidence recorded:
+  - Files changed: `crates/core/src/ops/mod.rs`, `crates/core/src/ops/list.rs`, `crates/core/tests/list.rs`, `crates/core/tests/common/fixture.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-1.md`, `.agents-artifacts/reviews/phase-1/list-basic-summaries/evidence-pack.md`, `.agents-artifacts/qa/phase-1/list-basic-summaries.md`
+  - Test IDs advanced: L-01, L-02, L-03, L-04, L-07, L-08, L-09, L-10
+  - Evidence pack: `.agents-artifacts/reviews/phase-1/list-basic-summaries/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-1/list-basic-summaries.md`
+  - Unit tests added: none; behavior covered by core integration tests
+  - Integration tests added: `list_empty_source_returns_no_summaries`, `list_reports_three_added_outpost_paths`, `list_reports_current_branch_for_each_outpost`, `list_reports_dirty_for_untracked_outpost_file`, `list_reports_missing_registered_outpost`, `list_reports_not_managed_registered_path`, `list_outside_source_repo_returns_not_a_repo`, `list_includes_lock_reason_from_registry`
+  - Docs updated: none; existing product and architecture document list contracts
+  - Architecture deviations: none for claimed basic list behavior; L-05/L-06 ahead/behind remain assigned to `list-ahead-behind`
+  - Status: implementation evidence recorded; awaiting review
 
 ## Verification Log
 
@@ -304,6 +314,14 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 43 unit tests, 22 add integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 22 add integration tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- `list-basic-summaries` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core --test list`: pass; 8 list integration tests
+  - `cargo test -p outpost-core`: pass; 43 unit tests, 22 add integration tests, 8 list integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 43 unit tests, 22 add integration tests, 8 list integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 43 unit tests, 22 add integration tests, 8 list integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 22 add integration tests, 8 list integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -345,6 +363,7 @@ Remaining chunk order:
 - `source-outpost-discovery`: no docs changes; stable contracts already covered by architecture sections 5.4, 5.5, and 10.2.
 - `safety-gates`: no docs changes; stable contracts already covered by architecture section 5.8.
 - `add-baseline-clone`: no docs changes; stable add contracts already covered by product `add` behavior and architecture section 5.9.1.
+- `list-basic-summaries`: no docs changes; stable list contracts already covered by product `list` behavior and architecture section 5.9.2.
 
 ## Commit Log
 
@@ -380,6 +399,8 @@ Remaining chunk order:
   - Milestone: recorded `add-baseline-clone` normal rerun approval
 - `548ca5d phase-1: record add review approvals`
   - Milestone: recorded `add-baseline-clone` independent rerun approval
+- pending `phase-1: add list basic summaries`
+  - Milestone: `list-basic-summaries` implementation evidence recorded before review
 
 ## Protected-Path Exception Log
 
@@ -392,4 +413,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Implement `list-basic-summaries`, run verification, and record evidence.
+- Commit `list-basic-summaries` implementation evidence, then run scope, normal, and independent reviews.
