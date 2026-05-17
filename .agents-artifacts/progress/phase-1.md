@@ -105,7 +105,15 @@
 | C-18 | `ops::add -b` rejects missing target before clone | implemented passing | `add_new_branch_rejects_missing_target_before_clone` |
 | C-19 | `ops::add -b` leaves source checkout unchanged | implemented passing | `add_new_branch_does_not_switch_source_checkout` |
 | C-20 | `ops::add` local `.outpost/` exclude | implemented passing | `add_ignores_source_registry_directory_locally` |
-| L-01..L-10 | `ops::list` core integration behavior | planned | QA-owned integration tests |
+| L-01 | `ops::list` empty source repo returns no summaries | planned | current chunk |
+| L-02 | `ops::list` reports three added outposts with correct paths | planned | current chunk |
+| L-03 | `ops::list` reports current branch | planned | current chunk |
+| L-04 | `ops::list` reports dirty outpost | planned | current chunk |
+| L-05..L-06 | `ops::list` ahead/behind counts | planned | assigned to `list-ahead-behind` |
+| L-07 | `ops::list` reports missing registered outpost | planned | current chunk |
+| L-08 | `ops::list` reports not-managed registered path | planned | current chunk |
+| L-09 | `ops::list` outside source repo returns `NotARepo` | planned | current chunk |
+| L-10 | `ops::list` includes lock reason | planned | current chunk |
 
 QA/Test Plan Gate:
 
@@ -138,11 +146,11 @@ QA/Test Plan Gate:
 
 ## Active Chunk
 
-- `add-baseline-clone`
-- Scope: add `ops::add` for Phase 1, including baseline clone path, branch creation mode, custom remote, destination/branch refusal behavior, registry/metadata setup, local safety prechecks, reporter config event, and QA-owned core integration coverage for C-01..C-20
-- Test IDs: C-01..C-20
-- Status: complete; all reviewers approved after reruns
-- Scope update note: initial Scope Reviewer found `AddCheckout::NewBranch` execution exceeded the baseline-only chunk claim. Coordinator resolved this by expanding the current add chunk evidence and QA coverage to all C-01..C-20 instead of leaving a temporary unimplemented public enum arm.
+- `list-basic-summaries`
+- Scope: add `ops::list` basic summaries from a `SourceRepo`, including registered outpost paths, current branch, clean/dirty/missing/not-managed state, lock fields, and QA-owned core integration coverage for L-01..L-04 and L-07..L-10
+- Test IDs: L-01, L-02, L-03, L-04, L-07, L-08, L-09, L-10
+- Out of scope: ahead/behind counts L-05/L-06, CLI formatting, CLI dispatch/global `-C`, Phase 2 lock/unlock command behavior
+- Status: assigned; implementation in progress
 
 ## Remaining Chunks
 
@@ -370,7 +378,7 @@ Remaining chunk order:
   - Milestone: fixed Normal Reviewer relative destination finding
 - `f7b33ed phase-1: record add normal approval`
   - Milestone: recorded `add-baseline-clone` normal rerun approval
-- pending `phase-1: record add review approvals`
+- `548ca5d phase-1: record add review approvals`
   - Milestone: recorded `add-baseline-clone` independent rerun approval
 
 ## Protected-Path Exception Log
@@ -384,4 +392,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `add-baseline-clone` review approvals, then assign `list-basic-summaries`.
+- Implement `list-basic-summaries`, run verification, and record evidence.
