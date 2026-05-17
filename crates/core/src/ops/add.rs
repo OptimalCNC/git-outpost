@@ -35,8 +35,7 @@ pub fn run(
         checkout,
         remote_name,
     } = opts;
-    let (parent, name) = destination_parent_and_name(&destination)?;
-    safety::check_destination_clean(&parent, &name)?;
+    check_destination_clean(&destination)?;
 
     let branch = resolve_existing_branch(source, &checkout)?;
 
@@ -88,20 +87,33 @@ fn resolve_existing_branch(
 ) -> OutpostResult<BranchName> {
     match checkout {
         AddCheckout::CheckoutExisting { target_branch } => {
-            let branch = match target_branch {
-                Some(branch) => branch.clone(),
-                None => source.current_branch()?,
-            };
-            require_branch_exists(source, &branch)?;
-            Ok(branch)
+            resolve_target_branch(source, target_branch)
         }
         AddCheckout::NewBranch { target_branch, .. } => {
-            let branch = match target_branch {
-                Some(branch) => branch.clone(),
-                None => source.current_branch()?,
-            };
-            require_branch_exists(source, &branch)?;
-            Ok(branch)
+            resolve_target_branch(source, target_branch)
+        }
+    }
+}
+
+fn resolve_target_branch(
+    source: &SourceRepo,
+    target_branch: &Option<BranchName>,
+) -> OutpostResult<BranchName> {
+    match target_branch {
+        Some(branch) => {
+            require_branch_exists(source, branch)?;
+            Ok(branch.clone())
+        }
+        None => {
+            let branch = source.current_branch()?;
+            if source.branch_exists(&branch)? {
+                Ok(branch)
+            } else {
+                Err(OutpostError::BranchNotFound {
+                    branch: "HEAD".to_owned(),
+                    repo: source.work_tree().to_path_buf(),
+                })
+            }
         }
     }
 }
@@ -115,6 +127,19 @@ fn require_branch_exists(source: &SourceRepo, branch: &BranchName) -> OutpostRes
             repo: source.work_tree().to_path_buf(),
         })
     }
+}
+
+fn check_destination_clean(destination: &Path) -> OutpostResult<()> {
+    let (parent, name) = destination_parent_and_name(destination)?;
+    safety::check_destination_clean(&parent, &name).map_err(|err| match err {
+        OutpostError::DestinationExists(_) => {
+            OutpostError::DestinationExists(destination.to_path_buf())
+        }
+        OutpostError::DestinationInsideRepo(_) => {
+            OutpostError::DestinationInsideRepo(destination.to_path_buf())
+        }
+        other => other,
+    })
 }
 
 fn destination_parent_and_name(destination: &Path) -> OutpostResult<(PathBuf, PathBuf)> {
@@ -147,8 +172,12 @@ fn apply_checkout(
             source
                 .git()
                 .run_check(["branch", name.as_str(), target_branch.as_str()])?;
-            git.run_check(["fetch", remote_name.as_str(), name.as_str()])?;
-            git.run_check(["switch", name.as_str()])
+            let remote_tracking_ref =
+                format!("refs/remotes/{}/{}", remote_name.as_str(), name.as_str());
+            let fetch_refspec = format!("{}:{remote_tracking_ref}", name.as_str());
+            let remote_branch = format!("{}/{}", remote_name.as_str(), name.as_str());
+            git.run_check(["fetch", remote_name.as_str(), &fetch_refspec])?;
+            git.run_check(["switch", "--track", &remote_branch])
         }
     }
 }

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use common::fixture::AbcFixture;
 use outpost_core::ops::add::{run, AddCheckout, AddOptions};
 use outpost_core::{
-    BranchName, Outpost, OutpostResult, RemoteName, Reporter, SourceRepo, StepKind,
+    BranchName, Outpost, OutpostError, OutpostResult, RemoteName, Reporter, SourceRepo, StepKind,
 };
 
 #[test]
@@ -55,6 +55,132 @@ fn add_existing_branch_checks_out_branch_and_tracks_local_remote() {
         .expect("outpost branch should track source remote");
     assert_eq!(tracking.remote.as_str(), "local");
     assert_eq!(tracking.merge_ref.as_str(), "refs/heads/feature/add");
+}
+
+#[test]
+fn add_new_branch_from_target_creates_source_branch_and_tracks_it() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    let name = BranchName::parse("feature/new").expect("new branch");
+    let target = BranchName::parse("main").expect("target branch");
+    let target_oid = branch_oid(&fixture, &target);
+
+    let outpost =
+        add_new_branch(&source, &destination, name.clone(), Some(target)).expect("add outpost");
+
+    assert_eq!(branch_oid(&fixture, &name), target_oid);
+    assert_eq!(
+        outpost
+            .current_branch()
+            .expect("outpost current branch")
+            .as_str(),
+        "feature/new"
+    );
+    let tracking = outpost
+        .upstream_tracking()
+        .expect("upstream tracking")
+        .expect("new branch should track source remote");
+    assert_eq!(tracking.remote.as_str(), "local");
+    assert_eq!(tracking.merge_ref.as_str(), "refs/heads/feature/new");
+}
+
+#[test]
+fn add_new_branch_without_target_uses_source_current_branch() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    let name = BranchName::parse("feature/current").expect("new branch");
+    let current = source.current_branch().expect("source current branch");
+    let current_oid = branch_oid(&fixture, &current);
+
+    add_new_branch(&source, &destination, name.clone(), None).expect("add outpost");
+
+    assert_eq!(branch_oid(&fixture, &name), current_oid);
+    assert_eq!(
+        source
+            .current_branch()
+            .expect("source current branch")
+            .as_str(),
+        current.as_str()
+    );
+}
+
+#[test]
+fn add_rejects_existing_non_empty_directory() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    fs::create_dir(&destination).expect("destination dir");
+    fs::write(destination.join("file.txt"), "content").expect("destination content");
+
+    let err = expect_error(
+        add_existing(&source, &destination, None),
+        "non-empty dir should fail",
+    );
+
+    assert!(matches!(err, OutpostError::DestinationExists(path) if path == destination));
+    assert!(!destination.join(".git").exists());
+}
+
+#[test]
+fn add_rejects_existing_file() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    fs::write(&destination, "content").expect("destination file");
+
+    let err = expect_error(
+        add_existing(&source, &destination, None),
+        "file should fail",
+    );
+
+    assert!(matches!(err, OutpostError::DestinationExists(path) if path == destination));
+}
+
+#[test]
+fn add_outside_git_repo_cannot_discover_source() {
+    let temp = tempfile::tempdir().expect("tempdir");
+
+    let err = expect_error(
+        SourceRepo::discover(temp.path()),
+        "outside repo should fail",
+    );
+
+    assert!(matches!(err, OutpostError::NotARepo(path) if path == temp.path()));
+}
+
+#[test]
+fn add_rejects_destination_inside_existing_repo() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.source.join("C");
+
+    let err = expect_error(
+        add_existing(&source, &destination, None),
+        "repo-contained dest fails",
+    );
+
+    assert!(matches!(err, OutpostError::DestinationInsideRepo(path) if path == destination));
+    assert!(!destination.exists());
+}
+
+#[test]
+fn add_rejects_missing_existing_branch_before_clone() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    let missing = BranchName::parse("bogus-branch").expect("branch name");
+
+    let err = expect_error(
+        add_existing(&source, &destination, Some(missing)),
+        "missing branch should fail",
+    );
+
+    assert!(
+        matches!(err, OutpostError::BranchNotFound { branch, repo } if branch == "bogus-branch" && repo == source.work_tree())
+    );
+    assert!(!destination.exists());
 }
 
 #[test]
@@ -113,6 +239,44 @@ fn add_configures_local_remote_and_non_shared_clone() {
 }
 
 #[test]
+fn add_custom_remote_name_replaces_origin_and_updates_metadata() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    let mut reporter = RecordingReporter::default();
+
+    let outpost = run(
+        &source,
+        AddOptions {
+            destination: destination.clone(),
+            checkout: AddCheckout::CheckoutExisting {
+                target_branch: None,
+            },
+            remote_name: RemoteName::parse("custom").expect("remote name"),
+        },
+        &mut reporter,
+    )
+    .expect("add outpost");
+
+    let git = fixture.invoker(&destination);
+    assert_eq!(
+        git.run_capture(["remote", "get-url", "custom"])
+            .expect("custom remote url"),
+        source.work_tree().to_string_lossy()
+    );
+    assert!(matches!(
+        git.run_capture(["remote", "get-url", "origin"]),
+        Err(OutpostError::GitFailed { .. })
+    ));
+    assert_eq!(outpost.metadata().remote_name.as_str(), "custom");
+    let tracking = outpost
+        .upstream_tracking()
+        .expect("upstream tracking")
+        .expect("outpost branch should track custom source remote");
+    assert_eq!(tracking.remote.as_str(), "custom");
+}
+
+#[test]
 fn add_registers_outpost_path_in_source_registry() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");
@@ -165,6 +329,84 @@ fn add_reports_source_config_change() {
         reporter.warnings.is_empty(),
         "add should not warn on baseline path: {:?}",
         reporter.warnings
+    );
+}
+
+#[test]
+fn add_rejects_unborn_source_head_before_clone() {
+    let fixture = AbcFixture::new();
+    let unborn = fixture.root.join("unborn");
+    fixture
+        .invoker(&fixture.root)
+        .run_check([
+            std::ffi::OsStr::new("init"),
+            std::ffi::OsStr::new("--initial-branch=main"),
+            unborn.as_os_str(),
+        ])
+        .expect("init unborn repo");
+    let source = SourceRepo::at_with(&unborn, &fixture.git_env).expect("unborn source repo");
+    let destination = fixture.root.join("C");
+
+    let err = expect_error(
+        add_existing(&source, &destination, None),
+        "unborn source should fail",
+    );
+
+    assert!(
+        matches!(err, OutpostError::BranchNotFound { branch, repo } if branch == "HEAD" && repo == source.work_tree())
+    );
+    assert!(!destination.exists());
+}
+
+#[test]
+fn add_new_branch_rejects_missing_target_before_clone() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    let name = BranchName::parse("feature/new").expect("new branch");
+    let missing = BranchName::parse("missing").expect("missing branch");
+
+    let err = expect_error(
+        add_new_branch(&source, &destination, name.clone(), Some(missing)),
+        "missing target should fail",
+    );
+
+    assert!(
+        matches!(err, OutpostError::BranchNotFound { branch, repo } if branch == "missing" && repo == source.work_tree())
+    );
+    assert!(!source.branch_exists(&name).expect("branch exists check"));
+    assert!(!destination.exists());
+}
+
+#[test]
+fn add_new_branch_does_not_switch_source_checkout() {
+    let fixture = AbcFixture::new();
+    fixture
+        .invoker(&fixture.source)
+        .run_check(["switch", "-c", "work"])
+        .expect("switch source branch");
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    let name = BranchName::parse("feature/review").expect("new branch");
+    let target = BranchName::parse("main").expect("target branch");
+
+    let outpost =
+        add_new_branch(&source, &destination, name.clone(), Some(target)).expect("add outpost");
+
+    assert!(source.branch_exists(&name).expect("branch exists check"));
+    assert_eq!(
+        source
+            .current_branch()
+            .expect("source current branch")
+            .as_str(),
+        "work"
+    );
+    assert_eq!(
+        outpost
+            .current_branch()
+            .expect("outpost current branch")
+            .as_str(),
+        "feature/review"
     );
 }
 
@@ -230,6 +472,42 @@ fn add_existing_with_reporter(
         },
         reporter,
     )
+}
+
+fn add_new_branch(
+    source: &SourceRepo,
+    destination: &Path,
+    name: BranchName,
+    target_branch: Option<BranchName>,
+) -> OutpostResult<Outpost> {
+    let mut reporter = RecordingReporter::default();
+    run(
+        source,
+        AddOptions {
+            destination: destination.to_path_buf(),
+            checkout: AddCheckout::NewBranch {
+                name,
+                target_branch,
+            },
+            remote_name: RemoteName::parse("local")?,
+        },
+        &mut reporter,
+    )
+}
+
+fn branch_oid(fixture: &AbcFixture, branch: &BranchName) -> String {
+    let branch_ref = format!("refs/heads/{}", branch.as_str());
+    fixture
+        .invoker(&fixture.source)
+        .run_capture(["rev-parse", &branch_ref])
+        .expect("branch oid")
+}
+
+fn expect_error<T>(result: OutpostResult<T>, message: &str) -> OutpostError {
+    match result {
+        Ok(_) => panic!("{message}"),
+        Err(err) => err,
+    }
 }
 
 fn recorded_clone_argv(source: &SourceRepo) -> Option<Vec<OsString>> {

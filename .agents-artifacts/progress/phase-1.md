@@ -87,15 +87,23 @@
 | U-15 | `registry.rs` unsaved `RegistryMut` Drop guard | implemented passing | `dropping_dirty_registry_mut_trips_debug_drop_guard`; release behavior test is cfg-gated |
 | C-01 | `ops::add` current-branch clone | implemented passing | `add_without_branch_clones_current_branch_with_real_git_dir` |
 | C-02 | `ops::add` existing branch checkout/tracking | implemented passing | `add_existing_branch_checks_out_branch_and_tracks_local_remote` |
-| C-03..C-09 | `ops::add` branch/refusal behavior | planned | assigned to later add chunks |
+| C-03 | `ops::add -b <new> <path> <target>` branch creation | implemented passing | `add_new_branch_from_target_creates_source_branch_and_tracks_it` |
+| C-04 | `ops::add -b <new> <path>` uses source current branch | implemented passing | `add_new_branch_without_target_uses_source_current_branch` |
+| C-05 | `ops::add` rejects non-empty destination directory | implemented passing | `add_rejects_existing_non_empty_directory` |
+| C-06 | `ops::add` rejects existing destination file | implemented passing | `add_rejects_existing_file` |
+| C-07 | `ops::add` source discovery outside repo returns `NotARepo` | implemented passing | `add_outside_git_repo_cannot_discover_source` |
+| C-08 | `ops::add` rejects destination inside existing repo | implemented passing | `add_rejects_destination_inside_existing_repo` |
+| C-09 | `ops::add` rejects missing existing branch before clone | implemented passing | `add_rejects_missing_existing_branch_before_clone` |
 | C-10 | `ops::add` outpost metadata config | implemented passing | `add_writes_outpost_metadata_keys` |
 | C-11a..C-11d | `ops::add` remote/real-git-dir/no-shared clone invariants | implemented passing | `add_configures_local_remote_and_non_shared_clone`; C-11b also covered by C-01 test |
 | C-12 | `ops::add` source registry entry | implemented passing | `add_registers_outpost_path_in_source_registry` |
-| C-13 | `ops::add` custom remote name | planned | assigned to later add chunk |
+| C-13 | `ops::add` custom remote name | implemented passing | `add_custom_remote_name_replaces_origin_and_updates_metadata` |
 | C-14 | `ops::add` source `receive.denyCurrentBranch` config | implemented passing | `add_sets_source_receive_deny_current_branch_update_instead` |
 | C-15 | `ops::add` config change reporter event | implemented passing | `add_reports_source_config_change` |
 | C-16 | `ops::add` file protocol clone override | implemented passing | `add_clone_allows_user_file_protocol` |
-| C-17..C-19 | `ops::add` unborn/branch-mode behavior | planned | assigned to later add chunks |
+| C-17 | `ops::add` rejects unborn source `HEAD` before clone | implemented passing | `add_rejects_unborn_source_head_before_clone` |
+| C-18 | `ops::add -b` rejects missing target before clone | implemented passing | `add_new_branch_rejects_missing_target_before_clone` |
+| C-19 | `ops::add -b` leaves source checkout unchanged | implemented passing | `add_new_branch_does_not_switch_source_checkout` |
 | C-20 | `ops::add` local `.outpost/` exclude | implemented passing | `add_ignores_source_registry_directory_locally` |
 | L-01..L-10 | `ops::list` core integration behavior | planned | QA-owned integration tests |
 
@@ -131,9 +139,10 @@ QA/Test Plan Gate:
 ## Active Chunk
 
 - `add-baseline-clone`
-- Scope: add `ops::add` baseline clone path for existing source branches, registry/metadata setup, local safety prechecks, reporter config event, and QA-owned core integration coverage for C-01, C-02, C-10..C-12, C-14..C-16, C-20
-- Test IDs: C-01, C-02, C-10, C-11a, C-11b, C-11c, C-11d, C-12, C-14, C-15, C-16, C-20
-- Status: implementation evidence committed; under review
+- Scope: add `ops::add` for Phase 1, including baseline clone path, branch creation mode, custom remote, destination/branch refusal behavior, registry/metadata setup, local safety prechecks, reporter config event, and QA-owned core integration coverage for C-01..C-20
+- Test IDs: C-01..C-20
+- Status: scope-review fix implemented; rerun review pending
+- Scope update note: initial Scope Reviewer found `AddCheckout::NewBranch` execution exceeded the baseline-only chunk claim. Coordinator resolved this by expanding the current add chunk evidence and QA coverage to all C-01..C-20 instead of leaving a temporary unimplemented public enum arm.
 
 ## Remaining Chunks
 
@@ -146,7 +155,7 @@ Chunk Planning Gate:
   - `source-outpost-discovery`: `source_repo.rs`, `outpost.rs`, minimal fixture support; supports C/L behavior; no command orchestration
   - `safety-gates`: `safety.rs`; U-10, U-13; supports add refusal tests
   - `add-baseline-clone`: `ops/mod.rs`, `ops/add.rs`, add integration tests for existing-branch clone path; C-01, C-02, C-10..C-12, C-14..C-16, C-20
-  - `add-branch-modes`: `ops/add.rs` branch creation/custom remote/refusal paths; C-03..C-09, C-13, C-17..C-19
+  - `add-branch-modes`: absorbed into `add-baseline-clone` scope-review fix; C-03..C-09, C-13, C-17..C-19
   - `list-basic-summaries`: `ops/list.rs`; L-01..L-04, L-07..L-10
   - `list-ahead-behind`: `Outpost::ahead_behind_source` support and `ops/list.rs`; L-05, L-06
 - Dependencies:
@@ -169,7 +178,6 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `add-branch-modes`
 - `list-basic-summaries`
 - `list-ahead-behind`
 
@@ -208,14 +216,15 @@ Remaining chunk order:
 - `add-baseline-clone` implementation evidence recorded:
   - Files changed: `crates/core/src/lib.rs`, `crates/core/src/source_repo.rs`, `crates/core/src/ops/mod.rs`, `crates/core/src/ops/add.rs`, `crates/core/tests/add.rs`, `crates/core/tests/common/fixture.rs`
   - Artifact files changed: `.agents-artifacts/progress/phase-1.md`, `.agents-artifacts/reviews/phase-1/add-baseline-clone/evidence-pack.md`, `.agents-artifacts/qa/phase-1/add-baseline-clone.md`
-  - Test IDs advanced: C-01, C-02, C-10, C-11a, C-11b, C-11c, C-11d, C-12, C-14, C-15, C-16, C-20
+  - Test IDs advanced: C-01..C-20
   - Evidence pack: `.agents-artifacts/reviews/phase-1/add-baseline-clone/evidence-pack.md`
   - QA note: `.agents-artifacts/qa/phase-1/add-baseline-clone.md`
   - Unit tests added: `ops::add::tests::destination_parent_and_name_splits_bare_relative_path`, `ops::add::tests::destination_parent_and_name_splits_nested_relative_path`
-  - Integration tests added: `add_without_branch_clones_current_branch_with_real_git_dir`, `add_existing_branch_checks_out_branch_and_tracks_local_remote`, `add_writes_outpost_metadata_keys`, `add_configures_local_remote_and_non_shared_clone`, `add_registers_outpost_path_in_source_registry`, `add_sets_source_receive_deny_current_branch_update_instead`, `add_reports_source_config_change`, `add_clone_allows_user_file_protocol`, `add_ignores_source_registry_directory_locally`
+  - Integration tests added: `add_without_branch_clones_current_branch_with_real_git_dir`, `add_existing_branch_checks_out_branch_and_tracks_local_remote`, `add_new_branch_from_target_creates_source_branch_and_tracks_it`, `add_new_branch_without_target_uses_source_current_branch`, `add_rejects_existing_non_empty_directory`, `add_rejects_existing_file`, `add_outside_git_repo_cannot_discover_source`, `add_rejects_destination_inside_existing_repo`, `add_rejects_missing_existing_branch_before_clone`, `add_writes_outpost_metadata_keys`, `add_configures_local_remote_and_non_shared_clone`, `add_custom_remote_name_replaces_origin_and_updates_metadata`, `add_registers_outpost_path_in_source_registry`, `add_sets_source_receive_deny_current_branch_update_instead`, `add_reports_source_config_change`, `add_rejects_unborn_source_head_before_clone`, `add_new_branch_rejects_missing_target_before_clone`, `add_new_branch_does_not_switch_source_checkout`, `add_clone_allows_user_file_protocol`, `add_ignores_source_registry_directory_locally`
   - Docs updated: none; existing product and architecture document add contracts
-  - Architecture deviations: none for claimed baseline behavior; branch-mode/custom-remote/refusal/unborn-HEAD QA remains assigned to later add chunks
-  - Status: implementation evidence recorded; awaiting review
+  - Architecture deviations: none
+  - Review-fix delta: scope-review fix expanded add evidence and QA coverage to C-01..C-20; `NewBranch` now has direct integration coverage, tracking setup, missing-target preclone rejection, and source-checkout-preservation coverage
+  - Status: scope-review fix implemented; awaiting rerun review
 
 ## Verification Log
 
@@ -270,6 +279,14 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 43 unit tests, 9 add integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 9 add integration tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- `add-baseline-clone` scope-review-fix verification:
+  - `cargo test -p outpost-core --test add`: pass; 20 add integration tests
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core`: pass; 43 unit tests, 20 add integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 43 unit tests, 20 add integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 43 unit tests, 20 add integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 20 add integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -297,7 +314,9 @@ Remaining chunk order:
   - Normal Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/safety-gates/normal-review-rerun.md`
   - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-1/safety-gates/independent-review-rerun.md`
 - `add-baseline-clone`:
-  - Scope Reviewer: pending
+  - Scope Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-1/add-baseline-clone/scope-review.md`
+  - Blocking finding fixed locally: `AddCheckout::NewBranch` behavior exceeded the baseline-only chunk claim; evidence and QA coverage now explicitly include all C-01..C-20 add behavior, with direct tests for branch modes, custom remote, refusal paths, and unborn `HEAD`.
+  - Scope Reviewer rerun: pending
   - Normal Reviewer: pending
   - Independent Reviewer: pending
 
@@ -329,6 +348,10 @@ Remaining chunk order:
   - Milestone: `safety-gates` reviewers approved after rerun
 - `8b894d9 phase-1: add baseline add clone`
   - Milestone: `add-baseline-clone` implementation evidence recorded before review
+- `2d377aa phase-1: record add baseline checkpoint`
+  - Milestone: recorded `add-baseline-clone` implementation checkpoint hash before review
+- pending `phase-1: address add scope review`
+  - Milestone: fixed Scope Reviewer finding by expanding add coverage to C-01..C-20
 
 ## Protected-Path Exception Log
 
@@ -341,4 +364,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Run `add-baseline-clone` scope, normal, and independent reviews.
+- Commit `add-baseline-clone` scope-review fix, then rerun scope review.
