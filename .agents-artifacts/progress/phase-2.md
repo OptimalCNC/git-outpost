@@ -209,7 +209,8 @@ Remaining chunk order:
   - Integration tests added: `remove_clean_fully_pushed_outpost_deletes_dir_and_registry_entry`, `remove_dirty_outpost_returns_dirty_tree_with_force_hint`, `remove_unpushed_outpost_returns_unpushed_commits`, `remove_force_deletes_dirty_outpost`, `remove_force_deletes_outpost_with_unpushed_commits`, `remove_unregistered_path_returns_registry_entry_not_found`, `remove_unlocked_missing_registered_path_deregisters_without_rmtree`, `remove_registry_entry_pointing_at_unrelated_dir_returns_not_managed`, `remove_wrong_source_outpost_returns_not_managed`, `remove_refuses_locked_outpost_unless_forced`, `remove_locked_missing_path_requires_force_then_deregisters`
   - Docs updated: none; existing product and architecture document remove safety ordering and unpushed support
   - Architecture deviations: none for claimed remove behavior
-  - Status: implementation evidence recorded; awaiting review
+  - Implementation commit: `9d0348c phase-2: add remove safety`
+  - Status: implementation committed; awaiting review
 
 ## Verification Log
 
@@ -250,6 +251,7 @@ Remaining chunk order:
 - `88e1b09 phase-2: record readiness and plan`
 - `700689e phase-2: add lock move unlock`
 - `786473d phase-2: record lock move unlock checkpoint`
+- `9d0348c phase-2: add remove safety`
 
 ## Protected-Path Exception Log
 
