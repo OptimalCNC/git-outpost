@@ -148,6 +148,10 @@ impl Outpost {
         }))
     }
 
+    pub(crate) fn git(&self) -> &GitInvoker {
+        &self.git
+    }
+
     #[cfg(any(test, feature = "test-helpers"))]
     pub fn test_invoker(&self) -> &GitInvoker {
         &self.git

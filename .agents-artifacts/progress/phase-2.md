@@ -82,14 +82,14 @@
 
 | ID | Scope | Status | Notes |
 | --- | --- | --- | --- |
-| LMU-01 | `lock --reason keep C` marks C locked in registry | planned | `crates/core/tests/lock_move_unlock.rs` |
-| LMU-02 | `unlock C` clears locked state and reason | planned | `crates/core/tests/lock_move_unlock.rs` |
-| LMU-03 | `move C D` moves outpost and updates registry path | planned | `crates/core/tests/lock_move_unlock.rs` |
-| LMU-04 | `move C D` refuses locked C with `OutpostLocked` | planned | `crates/core/tests/lock_move_unlock.rs` |
-| LMU-05 | `move --force C D` moves locked C and preserves lock state | planned | `crates/core/tests/lock_move_unlock.rs` |
-| LMU-06 | `move C D` refuses dirty C; force succeeds | planned | `crates/core/tests/lock_move_unlock.rs` |
-| LMU-07 | `move C D` refuses non-empty destination | planned | `crates/core/tests/lock_move_unlock.rs` |
-| LMU-08 | `lock`, `move`, and `unlock` reject paths not registered to current source | planned | `crates/core/tests/lock_move_unlock.rs` |
+| LMU-01 | `lock --reason keep C` marks C locked in registry | implemented passing | `lock_with_reason_marks_registry_entry_locked` |
+| LMU-02 | `unlock C` clears locked state and reason | implemented passing | `unlock_clears_registry_lock_state_and_reason` |
+| LMU-03 | `move C D` moves outpost and updates registry path | implemented passing | `move_updates_filesystem_and_registry_path` |
+| LMU-04 | `move C D` refuses locked C with `OutpostLocked` | implemented passing | `move_refuses_locked_outpost_without_force` |
+| LMU-05 | `move --force C D` moves locked C and preserves lock state | implemented passing | `move_force_moves_locked_outpost_and_preserves_lock` |
+| LMU-06 | `move C D` refuses dirty C; force succeeds | implemented passing | `move_refuses_dirty_outpost_but_force_succeeds` |
+| LMU-07 | `move C D` refuses non-empty destination | implemented passing | `move_refuses_non_empty_destination` |
+| LMU-08 | `lock`, `move`, and `unlock` reject paths not registered to current source | implemented passing | `lock_move_unlock_reject_unregistered_paths`, `lock_move_unlock_reject_wrong_source_registered_path` |
 | R-01 | `remove C` clean fully-pushed C deletes path and registry entry | planned | `crates/core/tests/remove.rs` |
 | R-02 | `remove C` dirty C returns `DirtyTree { hint: "pass --force" }` | planned | `crates/core/tests/remove.rs` |
 | R-03 | `remove C` unpushed C returns `UnpushedCommits` | planned | `crates/core/tests/remove.rs` |
@@ -142,7 +142,11 @@
 
 ## Active Chunk
 
-- none; initial planning complete
+- `lock-move-unlock`
+- Scope: implement `ops::lock`, `ops::unlock`, and `ops::move`; add QA-owned core integration coverage for LMU-01..LMU-08.
+- Test IDs: LMU-01, LMU-02, LMU-03, LMU-04, LMU-05, LMU-06, LMU-07, LMU-08
+- Out of scope: CLI contextual path omission, CLI formatting/dispatch/global `-C`, remove/prune behavior, Phase 3+ status/sync behavior, registry file locking/concurrency.
+- Status: implementation complete; review pending
 
 ## Remaining Chunks
 
@@ -170,13 +174,23 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `lock-move-unlock`
 - `remove-safety`
 - `prune`
 
 ## Completed Chunks
 
 - none yet
+- `lock-move-unlock` implementation evidence recorded:
+  - Files changed: `crates/core/src/ops/mod.rs`, `crates/core/src/ops/lock.rs`, `crates/core/src/ops/move.rs`, `crates/core/src/ops/unlock.rs`, `crates/core/src/outpost.rs`, `crates/core/tests/lock_move_unlock.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-2.md`, `.agents-artifacts/reviews/phase-2/lock-move-unlock/evidence-pack.md`, `.agents-artifacts/qa/phase-2/lock-move-unlock.md`
+  - Test IDs advanced: LMU-01..LMU-08
+  - Evidence pack: `.agents-artifacts/reviews/phase-2/lock-move-unlock/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-2/lock-move-unlock.md`
+  - Unit tests added: none; behavior covered by core integration tests
+  - Integration tests added: `lock_with_reason_marks_registry_entry_locked`, `unlock_clears_registry_lock_state_and_reason`, `move_updates_filesystem_and_registry_path`, `move_refuses_locked_outpost_without_force`, `move_force_moves_locked_outpost_and_preserves_lock`, `move_refuses_dirty_outpost_but_force_succeeds`, `move_refuses_non_empty_destination`, `lock_move_unlock_reject_unregistered_paths`, `lock_move_unlock_reject_wrong_source_registered_path`
+  - Docs updated: none; existing product and architecture document lock/move/unlock contracts
+  - Architecture deviations: none for claimed lock/move/unlock behavior
+  - Status: implementation evidence recorded; awaiting review
 
 ## Verification Log
 
@@ -184,6 +198,14 @@ Remaining chunk order:
   - `cargo test -p outpost-core`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --tests`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 1 fixture smoke test
   - `cargo test --workspace`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 1 fixture smoke test, 0 doctests
+- `lock-move-unlock` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core --test lock_move_unlock`: pass; 9 lock/move/unlock integration tests
+  - `cargo test -p outpost-core`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 43 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -191,7 +213,7 @@ Remaining chunk order:
 
 ## Docs Log
 
-- none yet
+- `lock-move-unlock`: no docs changes; stable lock/move/unlock contracts already covered by product behavior and architecture sections 5.9.9..5.9.11.
 
 ## Commit Log
 
@@ -209,4 +231,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Start `lock-move-unlock`.
+- Run `lock-move-unlock` scope, normal, and independent reviews.
