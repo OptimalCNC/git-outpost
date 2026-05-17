@@ -75,16 +75,16 @@
 
 | ID | Scope | Status | Notes |
 | --- | --- | --- | --- |
-| U-01 | `registry.rs` empty registry JSON/round-trip | planned |  |
-| U-02 | `registry.rs` add/re-add/remove round-trip | planned |  |
-| U-03 | `registry.rs` missing file loads empty | planned |  |
-| U-04 | `registry.rs` malformed JSON returns `BadRegistry` | planned |  |
-| U-05 | `metadata.rs` writes local outpost config keys | planned |  |
-| U-06 | `metadata.rs` unmanaged raw metadata promotes to `NotAnOutpost` | planned |  |
+| U-01 | `registry.rs` empty registry JSON/round-trip | implemented passing | `empty_registry_serializes_to_expected_json_and_round_trips` |
+| U-02 | `registry.rs` add/re-add/remove round-trip | implemented passing | `add_readd_remove_and_add_round_trips_by_canonical_path` |
+| U-03 | `registry.rs` missing file loads empty | implemented passing | `load_missing_registry_returns_empty_registry` |
+| U-04 | `registry.rs` malformed JSON returns `BadRegistry` | implemented passing | `load_malformed_json_returns_bad_registry` |
+| U-05 | `metadata.rs` writes local outpost config keys | implemented passing | `metadata_write_sets_local_outpost_config_keys` |
+| U-06 | `metadata.rs` unmanaged raw metadata promotes to `NotAnOutpost` | implemented passing | `raw_metadata_on_non_managed_repo_promotes_to_not_an_outpost` |
 | U-10 | `safety.rs` dirty detection staged/unstaged/untracked | planned |  |
 | U-13 | `safety.rs` managed outpost path gate rejects invalid/wrong-source paths | planned |  |
-| U-14 | `metadata.rs` `RawMetadata::read` ignores global config | planned |  |
-| U-15 | `registry.rs` unsaved `RegistryMut` Drop guard | planned |  |
+| U-14 | `metadata.rs` `RawMetadata::read` ignores global config | implemented passing | `raw_metadata_read_ignores_global_outpost_managed_config` |
+| U-15 | `registry.rs` unsaved `RegistryMut` Drop guard | implemented passing | `dropping_dirty_registry_mut_trips_debug_drop_guard`; release behavior test is cfg-gated |
 | C-01..C-20 | `ops::add` core integration behavior | planned | QA-owned integration tests |
 | L-01..L-10 | `ops::list` core integration behavior | planned | QA-owned integration tests |
 
@@ -119,8 +119,10 @@ QA/Test Plan Gate:
 
 ## Active Chunk
 
-- none
-- Status: Chunk 1 ready to assign
+- `storage-foundations`
+- Scope: `metadata.rs`, `registry.rs`, minimal storage dependencies/exports, and minimal `SourceRepo` storage carrier
+- Test IDs: U-01, U-02, U-03, U-04, U-05, U-06, U-14, U-15
+- Status: implementation complete; evidence recorded; pending milestone commit and review
 
 ## Remaining Chunks
 
@@ -166,12 +168,22 @@ Remaining chunk order:
 
 ## Completed Chunks
 
-- none
+- none; `storage-foundations` implementation is pending review
 
 ## Verification Log
 
 - Baseline before Phase 1 planning:
   - `cargo test --workspace`: pass; 10 unit tests, 1 fixture smoke test, 0 doctests
+- `storage-foundations` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core`: pass; 18 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 18 unit tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 18 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 18 unit tests, 1 fixture smoke test, 0 doctests
+  - `cargo metadata --format-version 1 --no-deps --offline`: pass
+  - `cargo tree -p outpost-core --offline`: pass; active target storage dependency tree audited for Rust 1.75-compatible locked manifests
+  - `cargo metadata --format-version 1`: failed under restricted network while trying to download target-specific crates; not required for the gate
+  - `cargo tree -p outpost-core --target all --offline`: failed because uncached target-specific crates were unavailable offline; not required for the gate
 
 ## Review Log
 
@@ -183,7 +195,8 @@ Remaining chunk order:
 
 ## Commit Log
 
-- none for Phase 1 yet
+- `3de288d phase-1: record readiness and plan`
+  - Milestone: Phase 1 readiness, QA/Test Plan Gate, and Chunk Planning Gate recorded before implementation
 
 ## Protected-Path Exception Log
 
@@ -196,4 +209,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit Phase 1 readiness/planning artifacts, then assign `storage-foundations`.
+- Commit `storage-foundations` implementation evidence, then run the three-reviewer gate.
