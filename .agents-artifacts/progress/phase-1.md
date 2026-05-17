@@ -119,10 +119,8 @@ QA/Test Plan Gate:
 
 ## Active Chunk
 
-- `source-outpost-discovery`
-- Scope: expand `source_repo.rs`, add `outpost.rs`, and add minimal fixture support for hermetic SourceRepo/Outpost access
-- Test IDs: none directly; supports C/L integration behavior and later U-10/U-13
-- Status: implementation complete; evidence recorded; awaiting review
+- none
+- Status: `source-outpost-discovery` complete; next chunk ready to assign
 
 ## Remaining Chunks
 
@@ -232,6 +230,9 @@ Remaining chunk order:
   - Normal Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/normal-review.md`
   - Independent Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/independent-review.md`
   - Blocking finding to fix: integration tests must be able to call `SourceRepo::test_invoker()` / `Outpost::test_invoker()` under `cargo test -p outpost-core --tests`, not only under an explicit `--features test-helpers` command.
+  - Scope Reviewer rerun: `approved with nits`; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/scope-review-rerun.md`
+  - Normal Reviewer rerun: `approved with nits`; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/normal-review-rerun.md`
+  - Independent Reviewer rerun: `approved with nits`; artifact `.agents-artifacts/reviews/phase-1/source-outpost-discovery/independent-review-rerun.md`
 
 ## Docs Log
 
@@ -247,8 +248,10 @@ Remaining chunk order:
   - Milestone: fixed Normal and Independent Reviewer findings for `storage-foundations`
 - `fd66377 phase-1: add source and outpost discovery`
   - Milestone: `source-outpost-discovery` implementation evidence recorded before review
-- pending `phase-1: address discovery review finding`
+- `bad1609 phase-1: address discovery review finding`
   - Milestone: fixed Normal Reviewer finding for `source-outpost-discovery`
+- pending `phase-1: record discovery review approvals`
+  - Milestone: `source-outpost-discovery` reviewers approved after rerun
 
 ## Protected-Path Exception Log
 
@@ -261,4 +264,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `source-outpost-discovery` review fix, then rerun reviewers as needed.
+- Commit `source-outpost-discovery` review approvals, then assign `safety-gates`.
