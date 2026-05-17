@@ -120,6 +120,7 @@ Chunk Planning Gate:
   - Integration tests touched: none; QA-owned and not needed for these IDs
   - Docs updated: none; existing architecture already documents the stable contract
   - Architecture deviations: none
+  - Review fix applied: `GitFailed.args`/`GitTerminatedBySignal.args` now render argv as a bracketed per-argument list to preserve argument boundaries; U-09 test now distinguishes one arg containing spaces from multiple args
 
 ## Verification Log
 
@@ -138,6 +139,12 @@ Chunk Planning Gate:
   - `cargo test -p outpost-core --tests`: pass; 10 unit tests passed
   - `cargo test --workspace`: pass; 10 unit tests passed, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 10 unit tests passed, 0 doctests
+- `git-and-ref-boundary` review-fix verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core`: pass; 10 unit tests passed, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 10 unit tests passed
+  - `cargo test --workspace`: pass; 10 unit tests passed, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 10 unit tests passed, 0 doctests
 
 ## Review Log
 
@@ -146,6 +153,11 @@ Chunk Planning Gate:
   - Scope review nit adopted: evidence pack changed-file list now includes progress/evidence artifact paths
   - Normal Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-0/core-foundation/normal-review.md`
   - Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-0/core-foundation/independent-review.md`
+- `git-and-ref-boundary`:
+  - Scope Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/scope-review.md`
+  - Normal Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/normal-review.md`
+  - Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/independent-review.md`
+  - Blocking finding fixed: U-09 failed argv preservation now keeps argv boundaries unambiguous and test distinguishes a single arg containing spaces from multiple args
 
 ## Docs Log
 
@@ -160,6 +172,9 @@ Chunk Planning Gate:
   - Milestone: adopted Scope Reviewer nit and recorded scope review artifact
 - `85c6563 phase-0: record core foundation reviews`
   - Milestone: recorded Normal Reviewer and Independent Reviewer approvals for `core-foundation`
+- `c144b69 phase-0: add git and ref boundary`
+  - Milestone: `git-and-ref-boundary` implementation evidence recorded before review
+  - Includes `git.rs`, `refname.rs`, exports, `test-helpers` feature, U-09/U-11/U-12 tests, and evidence/progress artifacts
 
 ## Protected-Path Exception Log
 
@@ -171,4 +186,4 @@ Chunk Planning Gate:
 
 ## Next Recommended Action
 
-- Commit `git-and-ref-boundary` implementation milestone, then run Scope Reviewer.
+- Commit `git-and-ref-boundary` review-fix milestone, then rerun needed reviews.

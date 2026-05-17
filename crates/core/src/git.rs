@@ -6,6 +6,8 @@ use std::process::{Command, ExitStatus, Output};
 use crate::{OutpostError, OutpostResult};
 
 #[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 
 #[derive(Clone)]
@@ -129,10 +131,48 @@ fn git_terminated(argv: &[OsString], status: ExitStatus) -> OutpostError {
 }
 
 fn display_argv(argv: &[OsString]) -> String {
-    argv.iter()
-        .map(|arg| arg.to_string_lossy())
+    let args = argv
+        .iter()
+        .map(|arg| display_arg(arg.as_os_str()))
         .collect::<Vec<_>>()
-        .join(" ")
+        .join(", ");
+    format!("[{args}]")
+}
+
+#[cfg(unix)]
+fn display_arg(arg: &OsStr) -> String {
+    let mut rendered = String::from("\"");
+    for byte in arg.as_bytes() {
+        for escaped in byte.escape_ascii() {
+            rendered.push(escaped as char);
+        }
+    }
+    rendered.push('"');
+    rendered
+}
+
+#[cfg(windows)]
+fn display_arg(arg: &OsStr) -> String {
+    use std::fmt::Write;
+    use std::os::windows::ffi::OsStrExt;
+
+    let mut rendered = String::from("w\"");
+    for unit in arg.encode_wide() {
+        match char::from_u32(u32::from(unit)) {
+            Some('\\') => rendered.push_str("\\\\"),
+            Some('"') => rendered.push_str("\\\""),
+            Some(c) if !c.is_control() => rendered.push(c),
+            Some(c) => write!(rendered, "\\u{{{:x}}}", c as u32).expect("write to string"),
+            None => write!(rendered, "\\u{{{:x}}}", unit).expect("write to string"),
+        }
+    }
+    rendered.push('"');
+    rendered
+}
+
+#[cfg(not(any(unix, windows)))]
+fn display_arg(arg: &OsStr) -> String {
+    format!("{arg:?}")
 }
 
 fn trimmed_lossy(bytes: &[u8]) -> String {
@@ -171,7 +211,11 @@ mod tests {
             OutpostError::GitFailed { args, code, stderr } => {
                 assert_eq!(
                     args,
-                    "definitely-not-a-git-outpost-command --literal value with spaces"
+                    r#"["definitely-not-a-git-outpost-command", "--literal", "value with spaces"]"#
+                );
+                assert_ne!(
+                    args,
+                    r#"["definitely-not-a-git-outpost-command", "--literal", "value", "with", "spaces"]"#
                 );
                 assert_ne!(code, 0);
                 assert!(stderr.contains("git") || stderr.contains("not a git command"));

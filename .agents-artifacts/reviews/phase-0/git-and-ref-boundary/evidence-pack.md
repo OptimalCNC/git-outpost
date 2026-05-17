@@ -59,6 +59,18 @@
 - `cargo test --workspace`: pass; 10 unit tests passed, 0 doctests.
 - `cargo test -p outpost-core --features test-helpers`: pass; 10 unit tests passed, 0 doctests.
 
+## Review Fixes
+
+- Normal review finding: `GitFailed.args`/`GitTerminatedBySignal.args` used a space-joined rendering that lost argv element boundaries, so U-09 did not prove exact argv preservation.
+- Fix: `crates/core/src/git.rs` now renders argv as a bracketed per-argument list with escaped argument contents, preserving element boundaries within the existing `String` field.
+- Test update: U-09 now asserts that a single argv element containing spaces renders differently from multiple argv elements.
+- Post-fix verification:
+  - `cargo fmt --check`: pass.
+  - `cargo test -p outpost-core`: pass; 10 unit tests passed, 0 doctests.
+  - `cargo test -p outpost-core --tests`: pass; 10 unit tests passed.
+  - `cargo test --workspace`: pass; 10 unit tests passed, 0 doctests.
+  - `cargo test -p outpost-core --features test-helpers`: pass; 10 unit tests passed, 0 doctests.
+
 ## Protected Path Exceptions
 
 - none
