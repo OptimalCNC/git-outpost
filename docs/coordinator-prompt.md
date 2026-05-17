@@ -44,9 +44,9 @@ Phase Invocation Block:
 
 - phase_id: <roadmap phase number or name, e.g. "phase-0">
 - phase_scope: <exact roadmap scope text, or "read from docs/src/roadmap.md">
-- progress_log_path: <path, default ".agents/progress/<phase_id>.md">
-- review_artifact_root: <path, default ".agents/reviews/<phase_id>/">
-- qa_artifact_root: <path, default ".agents/qa/<phase_id>/">
+- progress_log_path: <path, default ".agents-artifacts/progress/<phase_id>.md">
+- review_artifact_root: <path, default ".agents-artifacts/reviews/<phase_id>/">
+- qa_artifact_root: <path, default ".agents-artifacts/qa/<phase_id>/">
 - source_docs:
   - docs/src/product.md
   - docs/src/architecture.md
@@ -65,9 +65,9 @@ Phase Invocation Block:
 
 Defaults:
 
-- `progress_log_path`: `.agents/progress/<phase_id>.md`
-- `review_artifact_root`: `.agents/reviews/<phase_id>/`
-- `qa_artifact_root`: `.agents/qa/<phase_id>/`
+- `progress_log_path`: `.agents-artifacts/progress/<phase_id>.md`
+- `review_artifact_root`: `.agents-artifacts/reviews/<phase_id>/`
+- `qa_artifact_root`: `.agents-artifacts/qa/<phase_id>/`
 - `protected_paths`: `none`
 - `protected_exception_paths`: `none`
 - `forbidden_scope`: anything outside the selected roadmap phase unless the
