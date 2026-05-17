@@ -77,7 +77,7 @@ QA/Test Plan Gate:
 - `core-foundation` selected after Chunk Planning Gate
 - Scope: minimal Cargo workspace/core crate skeleton plus `error.rs`, `reporter.rs`, and public exports
 - Test IDs: U-07, U-08
-- Status: implementation complete; evidence recorded; pending milestone commit and review
+- Status: complete; three-reviewer gate passed
 - Developer subagent: `019e36ee-8703-7de3-812a-beb5e1d25fdf`
 - Coordinator supplement: added `.gitignore` `/target/` entry because Phase 0 introduces Cargo build output
 
@@ -108,6 +108,7 @@ Chunk Planning Gate:
   - Files changed: `.gitignore`, `Cargo.toml`, `Cargo.lock`, `crates/core/Cargo.toml`, `crates/core/src/lib.rs`, `crates/core/src/error.rs`, `crates/core/src/reporter.rs`
   - Test IDs advanced: U-07, U-08
   - Evidence pack: `.agents-artifacts/reviews/phase-0/core-foundation/evidence-pack.md`
+  - Review artifacts: `.agents-artifacts/reviews/phase-0/core-foundation/scope-review.md`, `.agents-artifacts/reviews/phase-0/core-foundation/normal-review.md`, `.agents-artifacts/reviews/phase-0/core-foundation/independent-review.md`
   - Unit tests added: `display_strings_match_snapshot`, `exit_code_maps_each_variant`
   - Integration tests touched: none; QA-owned and not needed for these IDs
   - Docs updated: none; existing architecture already documents the stable contract
@@ -130,6 +131,8 @@ Chunk Planning Gate:
 - `core-foundation`:
   - Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-0/core-foundation/scope-review.md`
   - Scope review nit adopted: evidence pack changed-file list now includes progress/evidence artifact paths
+  - Normal Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-0/core-foundation/normal-review.md`
+  - Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-0/core-foundation/independent-review.md`
 
 ## Docs Log
 
@@ -140,6 +143,8 @@ Chunk Planning Gate:
 - `7128367 phase-0: add core foundation`
   - Milestone: `core-foundation` implementation evidence recorded before review
   - Includes Phase 0 progress log, evidence pack, workspace/core skeleton, `error.rs`, `reporter.rs`, U-07/U-08 tests, and `.gitignore` `/target/`
+- `3dafbfd phase-0: address core foundation scope review`
+  - Milestone: adopted Scope Reviewer nit and recorded scope review artifact
 
 ## Protected-Path Exception Log
 
@@ -151,4 +156,4 @@ Chunk Planning Gate:
 
 ## Next Recommended Action
 
-- Commit `core-foundation` implementation milestone, then run Scope Reviewer.
+- Start `git-and-ref-boundary`.
