@@ -129,6 +129,7 @@ Chunk Planning Gate:
   - Integration tests added: `abc_fixture_builds_a_b_with_hermetic_git_env`
   - Docs updated: none; existing architecture documents fixture intent
   - Architecture deviations: full C/outpost helpers deferred because they require Phase 1 APIs and command behavior
+  - Review fix applied: `tempfile` pinned to `=3.10.0`; lockfile no longer contains `getrandom`/Rust 1.85 dependency chain; audited locked fixture dependencies are Rust 1.75-compatible
 
 ## Verification Log
 
@@ -158,6 +159,14 @@ Chunk Planning Gate:
   - `cargo test -p outpost-core`: pass; 10 unit tests passed, 1 fixture smoke test passed, 0 doctests
   - `cargo test -p outpost-core --tests`: pass; 10 unit tests passed, 1 fixture smoke test passed
   - `cargo test --workspace`: pass; 10 unit tests passed, 1 fixture smoke test passed, 0 doctests
+- `phase0-fixture-scaffold` review-fix verification:
+  - `cargo metadata --format-version 1 --no-deps`: pass; `tempfile` requirement `=3.10.0`, workspace `rust_version` `1.75`
+  - `cargo tree -p outpost-core --offline`: pass; dev dependency tree uses `tempfile v3.10.0`, `rustix v0.38.31`, `linux-raw-sys v0.4.13`
+  - Local registry manifest audit: locked fixture dependencies checked have `rust-version <= 1.75`; `Cargo.lock` no longer contains `getrandom`, `wasip*`, `wit-*`, or `wasm*`
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core`: pass; 10 unit tests passed, 1 fixture smoke test passed, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 10 unit tests passed, 1 fixture smoke test passed
+  - `cargo test --workspace`: pass; 10 unit tests passed, 1 fixture smoke test passed, 0 doctests
 
 ## Review Log
 
@@ -173,6 +182,11 @@ Chunk Planning Gate:
   - Blocking finding fixed: U-09 failed argv preservation now keeps argv boundaries unambiguous and test distinguishes a single arg containing spaces from multiple args
   - Normal Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/normal-review-rerun.md`
   - Independent Reviewer rerun: `approved`; artifact `.agents-artifacts/reviews/phase-0/git-and-ref-boundary/independent-review-rerun.md`
+- `phase0-fixture-scaffold`:
+  - Scope Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/scope-review.md`
+  - Normal Reviewer: `needs changes`; artifact `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/normal-review.md`
+  - Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-0/phase0-fixture-scaffold/independent-review.md`
+  - Blocking finding fixed: `tempfile` pinned to `=3.10.0`; audited locked dependency tree is Rust 1.75-compatible and Rust 1.85 chain is absent
 
 ## Docs Log
 
@@ -194,6 +208,9 @@ Chunk Planning Gate:
   - Milestone: fixed Normal Reviewer blocking finding for `git-and-ref-boundary` U-09 argv boundary preservation and recorded review artifacts
 - `9f2fc35 phase-0: record git boundary review approvals`
   - Milestone: recorded post-fix Normal Reviewer and Independent Reviewer approvals for `git-and-ref-boundary`
+- `2361d90 phase-0: add fixture scaffold`
+  - Milestone: `phase0-fixture-scaffold` implementation evidence recorded before review
+  - Includes A/B fixture scaffold, hermetic Git env, smoke integration test, `tempfile` dev-dependency, and evidence/progress artifacts
 
 ## Protected-Path Exception Log
 
@@ -205,4 +222,4 @@ Chunk Planning Gate:
 
 ## Next Recommended Action
 
-- Commit `phase0-fixture-scaffold` implementation milestone, then run Scope Reviewer.
+- Commit `phase0-fixture-scaffold` MSRV review-fix milestone, then rerun needed reviews.

@@ -52,6 +52,21 @@
 - `cargo test -p outpost-core --tests`: pass; 10 unit tests, 1 fixture smoke test.
 - `cargo test --workspace`: pass; 10 unit tests, 1 fixture smoke test, 0 doctests.
 
+## Review Fixes
+
+- Normal review finding: `tempfile = "^3.0"` resolved to `tempfile 3.27.0` and a dependency chain containing `getrandom 0.4.2`, whose manifest requires Rust 1.85, conflicting with the Rust 1.75 MSRV.
+- Fix: pinned workspace `tempfile` to `=3.10.0` and regenerated `Cargo.lock` offline.
+- Dependency audit evidence:
+  - `cargo metadata --format-version 1 --no-deps` reports `tempfile` requirement `=3.10.0` and workspace `rust_version` `1.75`.
+  - `cargo tree -p outpost-core --offline` shows dev dependency `tempfile v3.10.0 -> cfg-if v1.0.4, fastrand v2.4.1, rustix v0.38.31 -> bitflags v2.11.1, linux-raw-sys v0.4.13`.
+  - Local registry manifests report `tempfile 3.10.0` rust-version `1.63`, `rustix 0.38.31` rust-version `1.63`, `linux-raw-sys 0.4.13` rust-version `1.63`, `fastrand 2.4.1` rust-version `1.63`, `libc 0.2.186` rust-version `1.65`, `bitflags 2.11.1` rust-version `1.56.0`, and `cfg-if 1.0.4` rust-version `1.32`.
+  - `Cargo.lock` no longer contains `getrandom`, `wasip*`, `wit-*`, or `wasm*` packages.
+- Post-fix verification:
+  - `cargo fmt --check`: pass.
+  - `cargo test -p outpost-core`: pass; 10 unit tests, 1 fixture smoke test, 0 doctests.
+  - `cargo test -p outpost-core --tests`: pass; 10 unit tests, 1 fixture smoke test.
+  - `cargo test --workspace`: pass; 10 unit tests, 1 fixture smoke test, 0 doctests.
+
 ## Protected Path Exceptions
 
 - none
