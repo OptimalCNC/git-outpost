@@ -146,7 +146,7 @@
 - Scope: implement `ops::prune` with structured `PruneReport`; add QA-owned core integration coverage for Pr-01..Pr-09.
 - Test IDs: Pr-01, Pr-02, Pr-03, Pr-04, Pr-05, Pr-06, Pr-07, Pr-08, Pr-09
 - Out of scope: CLI formatting/dispatch/global `-C`, Phase 3+ status/sync behavior, registry file locking/concurrency.
-- Status: implementation complete; review pending
+- Status: approved; phase closeout pending
 - QA worker: `019e3864-f449-7a90-90dc-eb0ac78df901`; write scope `crates/core/tests/prune.rs`.
 
 ## Remaining Chunks
@@ -228,7 +228,14 @@ Remaining chunk order:
   - Docs updated: none; existing product and architecture document prune report fields and classification order
   - Architecture deviations: none for claimed prune behavior
   - Implementation commit: `8fc9c6b phase-2: add prune`
-  - Status: implementation committed; awaiting review
+  - Review artifacts:
+    - Scope Reviewer: `.agents-artifacts/reviews/phase-2/prune/scope-review.md`
+    - Normal Reviewer: `.agents-artifacts/reviews/phase-2/prune/normal-review.md`
+    - Independent Reviewer: `.agents-artifacts/reviews/phase-2/prune/independent-review.md`
+  - Review verdicts: scope `approved with nits`; normal `approved`; independent `approved`
+  - Required review changes: none
+  - Adopted nits: progress log now records checkpoint commit `37b89c6`
+  - Status: approved
 
 ## Verification Log
 
@@ -269,6 +276,9 @@ Remaining chunk order:
 - `remove-safety` Scope Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-2/remove-safety/scope-review.md`; no required changes.
 - `remove-safety` Normal Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-2/remove-safety/normal-review.md`; no required changes.
 - `remove-safety` Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-2/remove-safety/independent-review.md`; no required changes.
+- `prune` Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-2/prune/scope-review.md`; nit was to record checkpoint commit `37b89c6`.
+- `prune` Normal Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-2/prune/normal-review.md`; no required changes.
+- `prune` Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-2/prune/independent-review.md`; no required changes.
 
 ## Docs Log
 
@@ -283,6 +293,7 @@ Remaining chunk order:
 - `786473d phase-2: record lock move unlock checkpoint`
 - `9d0348c phase-2: add remove safety`
 - `8fc9c6b phase-2: add prune`
+- `37b89c6 phase-2: record prune checkpoint`
 
 ## Protected-Path Exception Log
 
