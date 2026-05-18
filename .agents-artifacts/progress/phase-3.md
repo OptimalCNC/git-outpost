@@ -214,9 +214,13 @@ Remaining chunk order:
   - Docs updated: none; existing product and architecture document relationship fields, health problems, and read-only status behavior
   - Architecture deviations: none for claimed `status-relationship-health` behavior
   - Implementation commit: `fbf2cdd phase-3: add status relationship health`
-  - Review artifacts: pending
-  - Review verdicts: pending
-  - Status: review pending
+  - Checkpoint record commit: `71250bd phase-3: record status relationship health checkpoint`
+  - Review artifacts:
+    - Scope Reviewer: `.agents-artifacts/reviews/phase-3/status-relationship-health/scope-review.md`
+  - Review verdicts: scope `approved with nits`
+  - Required review changes: none
+  - Adopted nits: progress log now records checkpoint record commit `71250bd`
+  - Status: normal and independent review pending
 
 ## Verification Log
 
@@ -280,7 +284,8 @@ Remaining chunk order:
 - `7daa316 phase-3: record status local state reviews`
 - `b289f74 phase-3: start status relationship health`
 - `fbf2cdd phase-3: add status relationship health`
-- pending `status-relationship-health` checkpoint-record commit
+- `71250bd phase-3: record status relationship health checkpoint`
+- pending `status-relationship-health` review-artifact commit
 
 ## Protected-Path Exception Log
 
@@ -294,4 +299,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `status-relationship-health` implementation/evidence, record the checkpoint hash, then run the three-review gate.
+- Commit `status-relationship-health` scope review artifact, then run normal and independent reviews.
