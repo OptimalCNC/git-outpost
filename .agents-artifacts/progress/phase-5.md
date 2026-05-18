@@ -190,7 +190,7 @@ Remaining chunk order:
   - CLI integration tests added: `e_02_invocation_forms_produce_same_status_stdout`, `e_04_basic_cli_lifecycle_round_trip_exits_zero`, `e_05_push_makes_outpost_commit_visible_upstream`, `e_06_two_outposts_round_trip_via_source`, `e_10_story_flow_exits_zero`, `e_11_merge_and_rebase_accept_story_source_ref`, `e_12_global_c_changes_effective_cwd`, `e_14_add_target_branch_starting_with_dash_returns_invalid_ref`
   - Docs updated: none
   - Architecture deviations: none for claimed `P5-C2-dispatch-e2e` behavior. CLI fixture uses sibling paths such as `../C` from source repo to preserve the core invariant that outposts are separate checkouts outside the source work tree.
-  - Implementation/evidence commit: pending `phase-5: add dispatch e2e`
+  - Implementation/evidence commit: `6f68b95 phase-5: add dispatch e2e`
   - Status: review pending
 
 ## Verification Log
@@ -253,7 +253,8 @@ Remaining chunk order:
 - `a885c59 phase-5: fix cli surface review findings`
 - `cc22594 phase-5: record cli surface reviews`
 - `0b4ea9c phase-5: start dispatch e2e`
-- pending `phase-5: add dispatch e2e`
+- `6f68b95 phase-5: add dispatch e2e`
+- pending `phase-5: record dispatch e2e reviews`
 
 ## Protected-Path Exception Log
 
