@@ -102,16 +102,16 @@
 | MR-04 | `merge origin/main` / `rebase origin/main` from `local` outpost returns `InvalidRefName` before fetching | completed | `crates/core/tests/merge.rs`, `crates/core/tests/rebase.rs` |
 | MR-05 | `merge local/main` and `rebase local/main` record `OutpostFetch` step events | completed | `crates/core/tests/merge.rs`, `crates/core/tests/rebase.rs` |
 | MR-06 | `merge local/main` and `rebase local/main` on detached HEAD return attached-branch error before fetching | completed | `crates/core/tests/merge.rs`, `crates/core/tests/rebase.rs` |
-| Pu-01 | `push` sends C current branch to B and then B to `origin/<branch>` | planned | `crates/core/tests/push.rs` |
-| Pu-02 | `push` records `OutpostPush` and `SourcePush` step events | planned | `crates/core/tests/push.rs` |
-| Pu-03 | `push` from branch only in C returns `AmbiguousBranchCreation` | planned | `crates/core/tests/push.rs` |
-| Pu-04 | `push` when B diverged from C returns `Divergence` | planned | `crates/core/tests/push.rs` |
-| Pu-05 | `push` on dirty C succeeds | planned | `crates/core/tests/push.rs` |
-| Pu-06 | `push` with B moved/deleted returns `SourceMissing` | planned | `crates/core/tests/push.rs` |
-| Pu-07 | `push` uses custom remote for C->B and `origin` for B->A | planned | `crates/core/tests/push.rs` |
-| Pu-08 | `push` into dirty checked-out source branch surfaces `GitFailed` with stderr | planned | `crates/core/tests/push.rs` |
-| Pu-09 | `push` with `denyCurrentBranch=refuse` and checked-out B branch returns `PushIntoCheckedOutBranch` | planned | `crates/core/tests/push.rs` |
-| Pu-10 | `push` on detached HEAD returns `NoUpstreamTracking { branch: "HEAD" }` before pushing | planned | `crates/core/tests/push.rs` |
+| Pu-01 | `push` sends C current branch to B and then B to `origin/<branch>` | completed | `crates/core/tests/push.rs` |
+| Pu-02 | `push` records `OutpostPush` and `SourcePush` step events | completed | `crates/core/tests/push.rs` |
+| Pu-03 | `push` from branch only in C returns `AmbiguousBranchCreation` | completed | `crates/core/tests/push.rs` |
+| Pu-04 | `push` when B diverged from C returns `Divergence` | completed | `crates/core/tests/push.rs` |
+| Pu-05 | `push` on dirty C succeeds | completed | `crates/core/tests/push.rs` |
+| Pu-06 | `push` with B moved/deleted returns `SourceMissing` | completed | `crates/core/tests/push.rs` |
+| Pu-07 | `push` uses custom remote for C->B and `origin` for B->A | completed | `crates/core/tests/push.rs` |
+| Pu-08 | `push` into dirty checked-out source branch surfaces `GitFailed` with stderr | completed | `crates/core/tests/push.rs` |
+| Pu-09 | `push` with `denyCurrentBranch=refuse` and checked-out B branch returns `PushIntoCheckedOutBranch` | completed | `crates/core/tests/push.rs` |
+| Pu-10 | `push` on detached HEAD returns `NoUpstreamTracking { branch: "HEAD" }` before pushing | completed | `crates/core/tests/push.rs` |
 
 ## QA/Test Plan Gate
 
@@ -144,7 +144,7 @@
 - Scope: `ops::push`, C->B then B->A publication, branch-creation refusal, divergence checks, checked-out source policy, and `OutpostPush`/`SourcePush` reporting.
 - Test IDs: Pu-01..Pu-10
 - Out of scope: Phase 5 CLI/global `-C`/E2E/cross-platform behavior, new push flags or routing options, source-branch auto-creation, unrelated docs cleanup, unrelated refactors.
-- Status: started.
+- Status: implementation and QA evidence recorded; review pending.
 
 ## Remaining Chunks
 
@@ -224,6 +224,17 @@ Remaining chunk order:
   - Adopted nits: progress log records review-fix commit `6d5ee16`; architecture command prose now matches the full-ref implementation.
   - Required review changes: none open
   - Status: approved
+- `P4-C3-push-publication` implementation evidence recorded:
+  - Files changed: `crates/core/src/ops/mod.rs`, `crates/core/src/ops/push.rs`, `crates/core/tests/push.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-4.md`, `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/evidence-pack.md`, `.agents-artifacts/qa/phase-4/P4-C3-push-publication.md`
+  - Test IDs advanced: Pu-01..Pu-10
+  - Evidence pack: `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-4/P4-C3-push-publication.md`
+  - Unit tests added: none
+  - Integration tests added: `pu01_push_sends_outpost_branch_to_source_then_origin`, `pu02_push_records_outpost_push_and_source_push_events`, `pu03_push_from_outpost_only_branch_returns_ambiguous_branch_creation`, `pu04_push_when_source_diverged_from_outpost_returns_divergence`, `pu05_push_dirty_outpost_succeeds`, `pu06_push_with_missing_source_returns_source_missing`, `pu07_push_uses_custom_remote_for_outpost_to_source_and_origin_for_source_to_upstream`, `pu08_push_into_dirty_checked_out_source_branch_surfaces_update_instead_git_failed`, `pu09_push_with_deny_current_branch_refuse_returns_push_into_checked_out_branch`, `pu10_push_on_detached_head_returns_no_upstream_tracking_head_before_push`
+  - Docs updated: none; existing product and architecture document push sequencing, branch-creation refusal, checked-out source policy, reporter events, and test scenarios
+  - Architecture deviations: none for claimed `P4-C3-push-publication` behavior
+  - Status: review pending
 
 ## Verification Log
 
@@ -255,6 +266,14 @@ Remaining chunk order:
   - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --tests`: pass; same test binaries excluding doctests
   - `cargo test --workspace`: pass; same workspace coverage, 0 doctests
+- `P4-C3-push-publication` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo check -p outpost-core`: pass
+  - `cargo test -p outpost-core --test push`: pass; 10 push integration tests
+  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 10 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; same test binaries excluding doctests
+  - `cargo test --workspace`: pass; same workspace coverage, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -289,6 +308,7 @@ Remaining chunk order:
 
 - `P4-C1-source-pull-foundation`: no docs changes; stable concepts are already covered by product `pull`/`source pull` and architecture sections 5.8, 5.9.0, 5.9.4, 5.9.5, 11.6, and 11.7.
 - `P4-C2-merge-rebase`: `docs/src/architecture.md` updated sections 5.9.6 and 5.9.7 to document full `refs/remotes/<remote>/<branch>` operands for final merge/rebase commands; this matches the adopted safety invariant and review fix.
+- `P4-C3-push-publication`: no docs changes; stable concepts are already covered by product `push` and architecture sections 5.9.0, 5.9.8, and 11.9.
 
 ## Commit Log
 
@@ -301,7 +321,8 @@ Remaining chunk order:
 - `4a68f15 phase-4: add merge rebase`
 - `6d5ee16 phase-4: fix merge rebase review findings`
 - `69bc123 phase-4: record merge rebase reviews`
-- pending `P4-C3-push-publication` start commit
+- `5e42d0b phase-4: start push publication`
+- pending `P4-C3-push-publication` implementation/evidence commit
 
 ## Protected-Path Exception Log
 
@@ -315,4 +336,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Implement `P4-C3-push-publication` production code and QA tests.
+- Commit `P4-C3-push-publication` implementation/evidence, then run scope, normal, and independent reviews.
