@@ -12,12 +12,14 @@
 - Hardened status output to print `health: ok` when no problems are present and `health: problems` before problem details when degraded.
 - Added a Rust recursive copy helper for CLI tests, including platform-specific symlink handling for Unix and Windows.
 - Added E-07 CLI integration coverage that copies an outpost with Rust filesystem APIs, deletes the source repository, proves ordinary Git still works in the copy, and verifies degraded `gop status` output.
-- Added E-08 coverage with a complete `OutpostError` variant-to-exit-code table plus representative black-box CLI exit-code smoke cases for documented user-facing error buckets.
+- Added E-08 coverage with a complete `OutpostError` variant-to-exit-code table plus focused black-box CLI broken states and stderr assertions for every variant the CLI can realistically surface.
+- Fixed `GitFailed` exit-code clamping so negative process status values map to failure exit code 1 instead of success exit code 0.
 - Added E-09 coverage that verifies `gop --no-color status` and `NO_COLOR=1 gop status` emit no ANSI escape bytes on stdout or stderr.
 
 ## Files Changed
 
 - `crates/cli/src/output.rs`
+- `crates/core/src/error.rs`
 - `crates/cli/tests/common/mod.rs`
 - `crates/cli/tests/e2e.rs`
 - `crates/cli/tests/flags.rs`
@@ -45,5 +47,5 @@
 ## Notes
 
 - The roadmap calls for ANSI matching via `strip-ansi-escapes`; the local test uses an equivalent stricter assertion that rejects any ESC byte and avoids adding a new dev dependency.
-- Some `OutpostError` variants, such as `GitTerminatedBySignal`, are not practical to force through a stable black-box CLI fixture. E-08 therefore combines exhaustive variant mapping with representative actual CLI failures.
+- `GitTerminatedBySignal` is not practical to force through a stable black-box CLI fixture. E-08 covers it in the exhaustive mapping table and covers reachable CLI variants with broken-state fixtures.
 - Existing unrelated local changes were left unstaged: `crates/cli/Cargo.toml`, `.github/`, and `README.md`.

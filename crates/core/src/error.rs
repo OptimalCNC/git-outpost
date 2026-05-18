@@ -124,7 +124,7 @@ impl OutpostError {
             | BadMetadata { .. }
             | RegistryEntryNotManaged(_)
             | RegistryEntryNotFound(_) => 6,
-            GitFailed { code, .. } => (*code).clamp(0, 125) as u8,
+            GitFailed { code, .. } => (*code).clamp(1, 125) as u8,
             GitTerminatedBySignal { .. } => 137,
             IoAt { .. } => 70,
         }
@@ -434,7 +434,7 @@ mod tests {
                 stderr: "fatal".to_owned(),
             }
             .exit_code(),
-            0
+            1
         );
         assert_eq!(
             OutpostError::GitFailed {

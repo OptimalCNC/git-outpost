@@ -90,7 +90,7 @@
 | E-05 | `gop push` makes C commit visible in A | completed | `crates/cli/tests/e2e.rs::e_05_push_makes_outpost_commit_visible_upstream` |
 | E-06 | two outposts round trip via source | completed | `crates/cli/tests/e2e.rs::e_06_two_outposts_round_trip_via_source` |
 | E-07 | copied outpost remains Git-independent after deleting source and reports degraded status | completed | `crates/cli/tests/e2e.rs::e_07_copied_outpost_is_git_independent_when_source_is_missing` |
-| E-08 | every `OutpostError` variant maps to documented exit code | completed | `crates/cli/tests/flags.rs::e_08_outpost_errors_map_to_documented_exit_codes`; CLI smoke in `e_08_cli_errors_return_documented_exit_codes` |
+| E-08 | every `OutpostError` variant maps to documented exit code | completed | `crates/cli/tests/flags.rs::e_08_outpost_errors_map_to_documented_exit_codes`; reachable CLI broken-state coverage in `e_08_cli_errors_return_documented_exit_codes` |
 | E-09 | `--no-color` and `NO_COLOR=1` output contains no ANSI escapes | completed | `crates/cli/tests/flags.rs::e_09_no_color_flag_and_env_do_not_emit_ansi_output` |
 | E-10 | full Story flow exits 0 | completed | `crates/cli/tests/e2e.rs::e_10_story_flow_exits_zero` |
 | E-11 | `merge local/main` and `rebase local/main` accept Story source-ref form | completed | `crates/cli/tests/e2e.rs::e_11_merge_and_rebase_accept_story_source_ref` |
@@ -206,14 +206,14 @@ Remaining chunk order:
   - Adopted nits: `add` with global `-C` and representative matrix negative/dual-context tests. Remaining low-severity nit: status healthy output currently prints `problems: none` instead of literal `ok`; P5-C3 may address if output hardening touches status formatting.
   - Status: approved
 - `P5-C3-exit-color-platform-hardening` implementation evidence recorded:
-  - Files changed: `crates/cli/src/output.rs`, `crates/cli/tests/common/mod.rs`, `crates/cli/tests/e2e.rs`, `crates/cli/tests/flags.rs`
+  - Files changed: `crates/cli/src/output.rs`, `crates/core/src/error.rs`, `crates/cli/tests/common/mod.rs`, `crates/cli/tests/e2e.rs`, `crates/cli/tests/flags.rs`
   - Artifact files changed: `.agents-artifacts/progress/phase-5.md`, `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/evidence-pack.md`, `.agents-artifacts/qa/phase-5/P5-C3-exit-color-platform-hardening.md`
   - Test IDs advanced: E-07, E-08, E-09
   - Evidence pack: `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/evidence-pack.md`
   - QA note: `.agents-artifacts/qa/phase-5/P5-C3-exit-color-platform-hardening.md`
   - CLI integration tests added: `e_07_copied_outpost_is_git_independent_when_source_is_missing`, `e_08_outpost_errors_map_to_documented_exit_codes`, `e_08_cli_errors_return_documented_exit_codes`, `e_09_no_color_flag_and_env_do_not_emit_ansi_output`
   - Docs updated: none. Status output already matched product source text after changing the CLI line to `health: ok` / `health: problems`.
-  - Architecture deviations: E-09 uses an equivalent stricter ESC-byte assertion instead of adding `strip-ansi-escapes`; E-08 uses exhaustive variant mapping plus representative black-box CLI failures because not every variant is practical to force through stable CLI process fixtures.
+  - Architecture deviations: E-09 uses an equivalent stricter ESC-byte assertion instead of adding `strip-ansi-escapes`; E-08 keeps `GitTerminatedBySignal` table-driven because reliably forcing that process-control state through the CLI would be brittle.
   - Implementation/evidence commit: `47d10fd phase-5: harden exit color platform behavior`
   - Review artifacts: pending
   - Review verdicts: pending
@@ -303,7 +303,9 @@ Remaining chunk order:
 - `56eadac phase-5: fix dispatch e2e review findings`
 - `fe717b6 phase-5: record dispatch review-fix commit`
 - `6631f42 phase-5: record dispatch e2e reviews`
-- pending `phase-5: start exit color platform hardening`
+- `f0c41c7 phase-5: start exit color platform hardening`
+- `47d10fd phase-5: harden exit color platform behavior`
+- `858f61e phase-5: record exit color hardening commit`
 
 ## Protected-Path Exception Log
 
@@ -311,10 +313,10 @@ Remaining chunk order:
 
 ## Open Risks / Questions
 
-- P5-C3 owns copied-outpost degradation, full exit-code coverage, and no-color/NO_COLOR hardening.
+- P5-C3 review fixes are in progress for exit-code traceability, focused CLI stderr assertions, negative Git process-code mapping, and stale progress metadata.
 - H-03 should continue to use `git outpost -h`; literal `git outpost --help` is Git's manpage path on Git 2.43.
 - Local execution is Linux; cross-platform rules must be encoded in tests and CI-friendly code, but Windows/macOS behavior cannot be fully proven locally without runners.
 
 ## Next Recommended Action
 
-- Commit `P5-C3-exit-color-platform-hardening` start marker, then assign implementation.
+- Complete P5-C3 review fixes, rerun verification, record the fix commit, and request re-review.
