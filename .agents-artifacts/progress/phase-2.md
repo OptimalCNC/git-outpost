@@ -142,12 +142,7 @@
 
 ## Active Chunk
 
-- `prune`
-- Scope: implement `ops::prune` with structured `PruneReport`; add QA-owned core integration coverage for Pr-01..Pr-09.
-- Test IDs: Pr-01, Pr-02, Pr-03, Pr-04, Pr-05, Pr-06, Pr-07, Pr-08, Pr-09
-- Out of scope: CLI formatting/dispatch/global `-C`, Phase 3+ status/sync behavior, registry file locking/concurrency.
-- Status: approved; phase closeout pending
-- QA worker: `019e3864-f449-7a90-90dc-eb0ac78df901`; write scope `crates/core/tests/prune.rs`.
+- none; Phase 2 closeout passed.
 
 ## Remaining Chunks
 
@@ -267,6 +262,14 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- Phase 2 closeout verification:
+  - `cargo test -p outpost-core`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 1 fixture smoke test, 0 doctests
+  - Review artifact completeness: pass; `lock-move-unlock`, `remove-safety`, and `prune` each have evidence, scope, normal, and independent review artifacts.
+  - Blocking review findings: none.
+  - Protected path exceptions: none.
+  - Workspace status before closeout update: clean.
 
 ## Review Log
 
@@ -291,9 +294,13 @@ Remaining chunk order:
 - `88e1b09 phase-2: record readiness and plan`
 - `700689e phase-2: add lock move unlock`
 - `786473d phase-2: record lock move unlock checkpoint`
+- `06e5f77 phase-2: record lock move unlock reviews`
 - `9d0348c phase-2: add remove safety`
+- `444fddf phase-2: record remove safety checkpoint`
+- `f12c054 phase-2: record remove safety reviews`
 - `8fc9c6b phase-2: add prune`
 - `37b89c6 phase-2: record prune checkpoint`
+- `d923279 phase-2: record prune reviews`
 
 ## Protected-Path Exception Log
 
@@ -307,4 +314,28 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `prune` implementation evidence, then run scope, normal, and independent reviews.
+- Phase 2 closeout passed. Commit closeout and begin Phase 3 readiness.
+
+## Phase Closeout
+
+- Verdict: passed
+- Scope delivered:
+  - `ops::lock`
+  - `ops::unlock`
+  - `ops::move`
+  - `ops::remove`
+  - `ops::prune`
+- Test IDs delivered: LMU-01..LMU-08, R-01..R-11, Pr-01..Pr-09
+- Required verification:
+  - `cargo test -p outpost-core`: pass
+  - `cargo test -p outpost-core --tests`: pass
+  - `cargo test --workspace`: pass
+- Review gates:
+  - `lock-move-unlock`: scope `approved with nits`, normal `approved`, independent `approved with nits`
+  - `remove-safety`: scope `approved`, normal `approved`, independent `approved`
+  - `prune`: scope `approved with nits`, normal `approved`, independent `approved`
+- Required review changes: none outstanding
+- Docs changes: none; no new developer-facing docs required beyond existing product and architecture contracts
+- Protected path exceptions: none
+- Forbidden scope: no Phase 3+ status/sync, Phase 5 CLI/global `-C`/E2E, unrelated docs cleanup, unrelated refactors, or registry locking/concurrency added
+- Workspace at closeout gate start: clean
