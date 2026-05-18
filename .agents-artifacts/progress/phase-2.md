@@ -227,7 +227,8 @@ Remaining chunk order:
   - Integration tests added: `prune_removes_missing_registry_entries`, `prune_keeps_existing_valid_outposts`, `prune_does_not_delete_real_dirs_or_source_branches`, `prune_report_lists_removed_missing_entries`, `prune_keeps_unrelated_dirs_and_wrong_source_outposts_registered`, `prune_dry_run_reports_but_does_not_modify_registry`, `prune_reports_existing_outpost_whose_source_repo_is_missing`, `prune_keeps_locked_stale_entries_and_reports_locked`, `prune_report_removed_entries_is_independent_of_verbose`
   - Docs updated: none; existing product and architecture document prune report fields and classification order
   - Architecture deviations: none for claimed prune behavior
-  - Status: implementation evidence recorded; awaiting review
+  - Implementation commit: `8fc9c6b phase-2: add prune`
+  - Status: implementation committed; awaiting review
 
 ## Verification Log
 
@@ -281,6 +282,7 @@ Remaining chunk order:
 - `700689e phase-2: add lock move unlock`
 - `786473d phase-2: record lock move unlock checkpoint`
 - `9d0348c phase-2: add remove safety`
+- `8fc9c6b phase-2: add prune`
 
 ## Protected-Path Exception Log
 
