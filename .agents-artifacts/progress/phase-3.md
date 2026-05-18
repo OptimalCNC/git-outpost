@@ -173,9 +173,13 @@ Remaining chunk order:
   - Docs updated: none; existing product and architecture document status report shape and `RawMetadata` degraded reporting
   - Architecture deviations: none for claimed `status-report-core` behavior
   - Implementation commit: `252e2f1 phase-3: add status report core`
-  - Review artifacts: pending
-  - Review verdicts: pending
-  - Status: review pending
+  - Checkpoint record commit: `a33b050 phase-3: record status report core checkpoint`
+  - Review artifacts:
+    - Scope Reviewer: `.agents-artifacts/reviews/phase-3/status-report-core/scope-review.md`
+  - Review verdicts: scope `approved with nits`
+  - Required review changes: none
+  - Adopted nits: progress log now records checkpoint record commit `a33b050`
+  - Status: normal and independent review pending
 
 ## Verification Log
 
@@ -205,7 +209,8 @@ Remaining chunk order:
 
 - `b041480 phase-3: record readiness and plan`
 - `252e2f1 phase-3: add status report core`
-- pending `status-report-core` checkpoint-record commit
+- `a33b050 phase-3: record status report core checkpoint`
+- pending `status-report-core` review-artifact commit
 
 ## Protected-Path Exception Log
 
