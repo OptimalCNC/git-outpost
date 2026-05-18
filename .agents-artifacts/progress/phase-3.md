@@ -217,10 +217,12 @@ Remaining chunk order:
   - Checkpoint record commit: `71250bd phase-3: record status relationship health checkpoint`
   - Review artifacts:
     - Scope Reviewer: `.agents-artifacts/reviews/phase-3/status-relationship-health/scope-review.md`
-  - Review verdicts: scope `approved with nits`
+    - Normal Reviewer: `.agents-artifacts/reviews/phase-3/status-relationship-health/normal-review.md`
+    - Independent Reviewer: `.agents-artifacts/reviews/phase-3/status-relationship-health/independent-review.md`
+  - Review verdicts: scope `approved with nits`; normal `approved with nits`; independent `approved`
   - Required review changes: none
-  - Adopted nits: progress log now records checkpoint record commit `71250bd`
-  - Status: normal and independent review pending
+  - Adopted nits: progress log now records checkpoint record commit `71250bd`; next recommended action updated after reviews
+  - Status: approved
 
 ## Verification Log
 
@@ -264,6 +266,9 @@ Remaining chunk order:
 - `status-local-state` Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-3/status-local-state/scope-review.md`; nit was to record checkpoint record commit `9aa4d4d`.
 - `status-local-state` Normal Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-3/status-local-state/normal-review.md`; nit was stale next recommended action text, adopted in progress log.
 - `status-local-state` Independent Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-3/status-local-state/independent-review.md`; nit was stale next recommended action text, adopted in progress log.
+- `status-relationship-health` Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-3/status-relationship-health/scope-review.md`; nit was to record checkpoint record commit `71250bd`.
+- `status-relationship-health` Normal Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-3/status-relationship-health/normal-review.md`; nit was stale next recommended action text, adopted in progress log.
+- `status-relationship-health` Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-3/status-relationship-health/independent-review.md`; no required changes.
 
 ## Docs Log
 
@@ -285,6 +290,7 @@ Remaining chunk order:
 - `b289f74 phase-3: start status relationship health`
 - `fbf2cdd phase-3: add status relationship health`
 - `71250bd phase-3: record status relationship health checkpoint`
+- `babeb86 phase-3: record status relationship health scope review`
 - pending `status-relationship-health` review-artifact commit
 
 ## Protected-Path Exception Log
@@ -299,4 +305,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `status-relationship-health` scope review artifact, then run normal and independent reviews.
+- Commit `status-relationship-health` review artifacts, then run Phase 3 closeout verification.
