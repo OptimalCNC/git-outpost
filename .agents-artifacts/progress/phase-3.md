@@ -126,7 +126,7 @@
 - Scope: add `ops::status` public report types and basic `run`/`run_with` flow using `RawMetadata`; support explicit target path; return `NotAnOutpost` for unmanaged repos; report missing `sourceRepo`/`remoteName` as problems.
 - Test IDs: S-07, S-08, S-09, S-13
 - Out of scope: local state fields beyond safe defaults, ahead/behind, remote mismatch, custom remote behavior, Phase 4 sync commands, Phase 5 CLI/global `-C`/E2E.
-- Status: assigned; implementation pending
+- Status: implementation and QA evidence recorded; review pending
 
 ## Remaining Chunks
 
@@ -162,7 +162,20 @@ Remaining chunk order:
 
 ## Completed Chunks
 
-- none yet
+- `status-report-core` implementation evidence recorded:
+  - Files changed: `crates/core/src/ops/mod.rs`, `crates/core/src/ops/status.rs`, `crates/core/tests/status.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-3.md`, `.agents-artifacts/reviews/phase-3/status-report-core/evidence-pack.md`, `.agents-artifacts/qa/phase-3/status-report-core.md`
+  - Test IDs advanced: S-07, S-08, S-09, S-13
+  - Evidence pack: `.agents-artifacts/reviews/phase-3/status-report-core/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-3/status-report-core.md`
+  - Unit tests added: `ops::status::tests::report_from_raw_records_missing_metadata_problems`
+  - Integration tests added: `s07_run_with_accepts_explicit_outpost_target_path`, `s08_unmanaged_repo_returns_not_an_outpost`, `s09_missing_source_repo_config_is_reported_as_problem`, `s13_missing_source_repo_config_keeps_degraded_report_available`
+  - Docs updated: none; existing product and architecture document status report shape and `RawMetadata` degraded reporting
+  - Architecture deviations: none for claimed `status-report-core` behavior
+  - Implementation commit: pending
+  - Review artifacts: pending
+  - Review verdicts: pending
+  - Status: review pending
 
 ## Verification Log
 
@@ -170,6 +183,15 @@ Remaining chunk order:
   - `cargo test -p outpost-core`: pass; 45 unit tests, 22 add tests, 11 list tests, 9 lock/move/unlock tests, 9 prune tests, 11 remove tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --tests`: pass with the same integration/unit test set excluding doctests
   - `cargo test --workspace`: pass with the same workspace coverage
+- `status-report-core` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo check -p outpost-core`: pass
+  - `cargo test -p outpost-core --lib ops::status`: pass; 1 status unit test
+  - `cargo test -p outpost-core --test status`: pass; 4 status integration tests
+  - `cargo test -p outpost-core`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 4 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 4 status integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 4 status integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -177,11 +199,12 @@ Remaining chunk order:
 
 ## Docs Log
 
-- none yet
+- `status-report-core`: no docs changes; stable status report shape and `RawMetadata` degraded reporting are already covered by product status behavior and architecture sections 5.9.3 and 11.5.
 
 ## Commit Log
 
-- pending initial Phase 3 readiness/planning commit
+- `b041480 phase-3: record readiness and plan`
+- pending `status-report-core` checkpoint commit
 
 ## Protected-Path Exception Log
 
@@ -195,4 +218,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit Phase 3 readiness/planning artifacts, then implement `status-report-core`.
+- Commit `status-report-core` implementation/evidence, record the checkpoint hash, then run the three-review gate.

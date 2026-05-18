@@ -4,4 +4,5 @@ pub mod lock;
 pub mod r#move;
 pub mod prune;
 pub mod remove;
+pub mod status;
 pub mod unlock;
