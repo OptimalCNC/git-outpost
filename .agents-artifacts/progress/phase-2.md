@@ -146,7 +146,7 @@
 - Scope: implement `ops::remove` and minimal unpushed safety support; add QA-owned core integration coverage for R-01..R-11.
 - Test IDs: R-01, R-02, R-03, R-04, R-05, R-06, R-07, R-08, R-09, R-10, R-11
 - Out of scope: CLI contextual path omission, CLI formatting/dispatch/global `-C`, prune behavior, Phase 3+ status/sync behavior, registry file locking/concurrency.
-- Status: implementation complete; review pending
+- Status: approved; next chunk pending
 - QA worker: `019e384b-ddb5-7fd2-96b5-a99e956f0a8c`; write scope `crates/core/tests/remove.rs`.
 
 ## Remaining Chunks
@@ -210,7 +210,13 @@ Remaining chunk order:
   - Docs updated: none; existing product and architecture document remove safety ordering and unpushed support
   - Architecture deviations: none for claimed remove behavior
   - Implementation commit: `9d0348c phase-2: add remove safety`
-  - Status: implementation committed; awaiting review
+  - Review artifacts:
+    - Scope Reviewer: `.agents-artifacts/reviews/phase-2/remove-safety/scope-review.md`
+    - Normal Reviewer: `.agents-artifacts/reviews/phase-2/remove-safety/normal-review.md`
+    - Independent Reviewer: `.agents-artifacts/reviews/phase-2/remove-safety/independent-review.md`
+  - Review verdicts: scope `approved`; normal `approved`; independent `approved`
+  - Required review changes: none
+  - Status: approved
 
 ## Verification Log
 
@@ -240,6 +246,9 @@ Remaining chunk order:
 - `lock-move-unlock` Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-2/lock-move-unlock/scope-review.md`; nit was to record checkpoint commit `786473d`.
 - `lock-move-unlock` Normal Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-2/lock-move-unlock/normal-review.md`; no required changes.
 - `lock-move-unlock` Independent Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-2/lock-move-unlock/independent-review.md`; residual edge-case test note, no required changes.
+- `remove-safety` Scope Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-2/remove-safety/scope-review.md`; no required changes.
+- `remove-safety` Normal Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-2/remove-safety/normal-review.md`; no required changes.
+- `remove-safety` Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-2/remove-safety/independent-review.md`; no required changes.
 
 ## Docs Log
 
