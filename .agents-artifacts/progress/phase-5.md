@@ -353,7 +353,7 @@ Remaining chunk order:
 - `858f61e phase-5: record exit color hardening commit`
 - `c93bb8c phase-5: fix exit color review findings`
 - `d12f0d7 phase-5: record exit color reviews`
-- pending `phase-5: close phase`
+- `95e5770 phase-5: close phase`
 
 ## Protected-Path Exception Log
 
@@ -367,4 +367,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit Phase 5 closeout record, then proceed to Phase 6 readiness gate.
+- Phase 5 is closed. `docs/src/roadmap.md` currently defines phases 0 through 5 only, so there is no Phase 6 readiness gate to run until the roadmap is extended or a new phase invocation is provided.
