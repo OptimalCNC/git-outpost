@@ -176,10 +176,12 @@ Remaining chunk order:
   - Checkpoint record commit: `a33b050 phase-3: record status report core checkpoint`
   - Review artifacts:
     - Scope Reviewer: `.agents-artifacts/reviews/phase-3/status-report-core/scope-review.md`
-  - Review verdicts: scope `approved with nits`
+    - Normal Reviewer: `.agents-artifacts/reviews/phase-3/status-report-core/normal-review.md`
+    - Independent Reviewer: `.agents-artifacts/reviews/phase-3/status-report-core/independent-review.md`
+  - Review verdicts: scope `approved with nits`; normal `approved`; independent `approved`
   - Required review changes: none
   - Adopted nits: progress log now records checkpoint record commit `a33b050`
-  - Status: normal and independent review pending
+  - Status: approved
 
 ## Verification Log
 
@@ -199,7 +201,9 @@ Remaining chunk order:
 
 ## Review Log
 
-- none yet
+- `status-report-core` Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-3/status-report-core/scope-review.md`; nit was to record checkpoint record commit `a33b050`.
+- `status-report-core` Normal Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-3/status-report-core/normal-review.md`; no required changes.
+- `status-report-core` Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-3/status-report-core/independent-review.md`; no required changes.
 
 ## Docs Log
 
@@ -210,6 +214,7 @@ Remaining chunk order:
 - `b041480 phase-3: record readiness and plan`
 - `252e2f1 phase-3: add status report core`
 - `a33b050 phase-3: record status report core checkpoint`
+- `64fb716 phase-3: record status report core scope review`
 - pending `status-report-core` review-artifact commit
 
 ## Protected-Path Exception Log
@@ -224,4 +229,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `status-report-core` implementation/evidence, record the checkpoint hash, then run the three-review gate.
+- Commit `status-report-core` review artifacts, then begin `status-local-state`.
