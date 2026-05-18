@@ -140,7 +140,11 @@
 
 ## Active Chunk
 
-- none; Phase 4 readiness, QA/Test Plan, and Chunk Planning gates passed.
+- `P4-C1-source-pull-foundation`
+- Scope: source-refresh foundation, `ops::source`, `ops::pull`, and `SourceFetch`/`OutpostFetch` reporting.
+- Test IDs: SP-01..SP-05, P-01..P-09
+- Out of scope: `ops::merge`, `ops::rebase`, `ops::push`, Phase 5 CLI/global `-C`/E2E, unrelated docs cleanup, unrelated refactors.
+- Status: implementation starting.
 
 ## Remaining Chunks
 
@@ -193,7 +197,8 @@ Remaining chunk order:
 
 ## Commit Log
 
-- pending Phase 4 readiness and planning commit
+- `83e8778 phase-4: record readiness and plan`
+- pending `P4-C1-source-pull-foundation` start commit
 
 ## Protected-Path Exception Log
 
@@ -207,4 +212,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit Phase 4 readiness/planning artifacts, then start `P4-C1-source-pull-foundation`.
+- Implement `P4-C1-source-pull-foundation` with SP-01..SP-05 and P-01..P-09 coverage.
