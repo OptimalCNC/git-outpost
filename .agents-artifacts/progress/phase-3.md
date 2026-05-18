@@ -172,7 +172,7 @@ Remaining chunk order:
   - Integration tests added: `s07_run_with_accepts_explicit_outpost_target_path`, `s08_unmanaged_repo_returns_not_an_outpost`, `s09_missing_source_repo_config_is_reported_as_problem`, `s13_missing_source_repo_config_keeps_degraded_report_available`
   - Docs updated: none; existing product and architecture document status report shape and `RawMetadata` degraded reporting
   - Architecture deviations: none for claimed `status-report-core` behavior
-  - Implementation commit: pending
+  - Implementation commit: `252e2f1 phase-3: add status report core`
   - Review artifacts: pending
   - Review verdicts: pending
   - Status: review pending
@@ -204,7 +204,8 @@ Remaining chunk order:
 ## Commit Log
 
 - `b041480 phase-3: record readiness and plan`
-- pending `status-report-core` checkpoint commit
+- `252e2f1 phase-3: add status report core`
+- pending `status-report-core` checkpoint-record commit
 
 ## Protected-Path Exception Log
 
