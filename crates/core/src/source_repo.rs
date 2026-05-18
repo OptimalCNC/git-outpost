@@ -151,6 +151,41 @@ impl SourceRepo {
             .run_status(["rev-parse", "--verify", "--quiet", &branch_ref])
     }
 
+    pub fn fast_forward_branch_from_origin(&self, branch: &BranchName) -> OutpostResult<bool> {
+        if !self.branch_exists(branch)? {
+            return Err(OutpostError::BranchNotFound {
+                branch: branch.as_str().to_owned(),
+                repo: self.work_tree.clone(),
+            });
+        }
+
+        let local_ref = format!("refs/heads/{}", branch.as_str());
+        let remote_ref = format!("refs/remotes/origin/{}", branch.as_str());
+        let fetch_refspec = format!("{}:{remote_ref}", branch.as_str());
+        self.git.run_check(["fetch", "origin", &fetch_refspec])?;
+
+        let local_oid = rev_parse(&self.git, &local_ref)?;
+        let remote_oid = rev_parse(&self.git, &remote_ref)?;
+        if local_oid == remote_oid || is_ancestor(&self.git, &remote_oid, &local_oid)? {
+            return Ok(false);
+        }
+        if !is_ancestor(&self.git, &local_oid, &remote_oid)? {
+            return Err(OutpostError::Divergence {
+                branch: branch.as_str().to_owned(),
+            });
+        }
+
+        if let Some(worktree) = self.checked_out_worktree_for(branch)? {
+            let git = invoker_at(&worktree, &self.env);
+            git.run_check(["merge", "--ff-only", &remote_ref])?;
+        } else {
+            self.git
+                .run_check(["update-ref", &local_ref, &remote_oid, &local_oid])?;
+        }
+
+        Ok(true)
+    }
+
     pub fn registry_path(&self) -> PathBuf {
         self.work_tree.join(".outpost").join("registry.json")
     }
@@ -217,6 +252,18 @@ pub(crate) fn read_optional_config(git: &GitInvoker, key: &str) -> OutpostResult
     } else {
         Ok(None)
     }
+}
+
+pub(crate) fn rev_parse(git: &GitInvoker, reference: &str) -> OutpostResult<String> {
+    git.run_capture(["rev-parse", reference])
+}
+
+pub(crate) fn is_ancestor(
+    git: &GitInvoker,
+    ancestor: &str,
+    descendant: &str,
+) -> OutpostResult<bool> {
+    git.run_status(["merge-base", "--is-ancestor", ancestor, descendant])
 }
 
 pub(crate) fn canonicalize_path(path: &Path) -> OutpostResult<PathBuf> {

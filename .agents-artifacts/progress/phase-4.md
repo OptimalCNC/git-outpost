@@ -82,20 +82,20 @@
 
 | ID | Scope | Status | Notes |
 | --- | --- | --- | --- |
-| SP-01 | `source pull main` fast-forwards B's `main` from B's `origin/main` without switching B's checkout | planned | `crates/core/tests/source.rs` |
-| SP-02 | `source pull main` updates B's working tree when `main` is checked out in B | planned | `crates/core/tests/source.rs` |
-| SP-03 | `source pull main` returns `Divergence` when B's `main` and `origin/main` both have unique commits | planned | `crates/core/tests/source.rs` |
-| SP-04 | `source pull missing` returns `BranchNotFound` | planned | `crates/core/tests/source.rs` |
-| SP-05 | `source pull main` records a `SourceFetch` step event | planned | `crates/core/tests/source.rs` |
-| P-01 | `pull` fast-forwards B from A, then C from B | planned | `crates/core/tests/pull.rs` |
-| P-02 | `pull` fast-forwards C from B and leaves A unchanged after B-only commit | planned | `crates/core/tests/pull.rs` |
-| P-03 | `pull` returns `Divergence` for B vs `origin/<branch>` divergence | planned | `crates/core/tests/pull.rs` |
-| P-04 | `pull` returns `Divergence` for C vs B divergence | planned | `crates/core/tests/pull.rs` |
-| P-05 | `pull` with B moved/deleted returns `SourceMissing` | planned | `crates/core/tests/pull.rs` |
-| P-06 | `pull` on detached HEAD returns `NoUpstreamTracking { branch: "HEAD" }` | planned | `crates/core/tests/pull.rs` |
-| P-07 | `pull` works with custom remote name | planned | `crates/core/tests/pull.rs` |
-| P-08 | `pull` records `SourceFetch` and `OutpostFetch` step events | planned | `crates/core/tests/pull.rs` |
-| P-09 | `pull` on attached C branch missing in B returns `BranchNotFound` before outpost fast-forward | planned | `crates/core/tests/pull.rs` |
+| SP-01 | `source pull main` fast-forwards B's `main` from B's `origin/main` without switching B's checkout | completed | `crates/core/tests/source.rs` |
+| SP-02 | `source pull main` updates B's working tree when `main` is checked out in B | completed | `crates/core/tests/source.rs` |
+| SP-03 | `source pull main` returns `Divergence` when B's `main` and `origin/main` both have unique commits | completed | `crates/core/tests/source.rs` |
+| SP-04 | `source pull missing` returns `BranchNotFound` | completed | `crates/core/tests/source.rs` |
+| SP-05 | `source pull main` records a `SourceFetch` step event | completed | `crates/core/tests/source.rs` |
+| P-01 | `pull` fast-forwards B from A, then C from B | completed | `crates/core/tests/pull.rs` |
+| P-02 | `pull` fast-forwards C from B and leaves A unchanged after B-only commit | completed | `crates/core/tests/pull.rs` |
+| P-03 | `pull` returns `Divergence` for B vs `origin/<branch>` divergence | completed | `crates/core/tests/pull.rs` |
+| P-04 | `pull` returns `Divergence` for C vs B divergence | completed | `crates/core/tests/pull.rs` |
+| P-05 | `pull` with B moved/deleted returns `SourceMissing` | completed | `crates/core/tests/pull.rs` |
+| P-06 | `pull` on detached HEAD returns `NoUpstreamTracking { branch: "HEAD" }` | completed | `crates/core/tests/pull.rs` |
+| P-07 | `pull` works with custom remote name | completed | `crates/core/tests/pull.rs` |
+| P-08 | `pull` records `SourceFetch` and `OutpostFetch` step events | completed | `crates/core/tests/pull.rs` |
+| P-09 | `pull` on attached C branch missing in B returns `BranchNotFound` before outpost fast-forward | completed | `crates/core/tests/pull.rs` |
 | MR-01 | `merge local/main` fetches B's `main` and merges `local/main` into C | planned | `crates/core/tests/merge.rs` |
 | MR-02 | `rebase local/main` fetches B's `main` and rebases C onto `local/main` | planned | `crates/core/tests/rebase.rs` |
 | MR-03 | `merge custom/main` and `rebase custom/main` work with custom remote name | planned | `crates/core/tests/merge.rs`, `crates/core/tests/rebase.rs` |
@@ -144,7 +144,7 @@
 - Scope: source-refresh foundation, `ops::source`, `ops::pull`, and `SourceFetch`/`OutpostFetch` reporting.
 - Test IDs: SP-01..SP-05, P-01..P-09
 - Out of scope: `ops::merge`, `ops::rebase`, `ops::push`, Phase 5 CLI/global `-C`/E2E, unrelated docs cleanup, unrelated refactors.
-- Status: implementation starting.
+- Status: implementation and QA evidence recorded; review pending.
 
 ## Remaining Chunks
 
@@ -171,14 +171,23 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `P4-C1-source-pull-foundation`
 - `P4-C2-merge-rebase`
 - `P4-C3-push-publication`
 - `phase-4-verification`
 
 ## Completed Chunks
 
-- none
+- `P4-C1-source-pull-foundation` implementation evidence recorded:
+  - Files changed: `crates/core/src/ops/mod.rs`, `crates/core/src/ops/source.rs`, `crates/core/src/ops/pull.rs`, `crates/core/src/source_repo.rs`, `crates/core/src/safety.rs`, `crates/core/tests/common/fixture.rs`, `crates/core/tests/source.rs`, `crates/core/tests/pull.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-4.md`, `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/evidence-pack.md`, `.agents-artifacts/qa/phase-4/P4-C1-source-pull-foundation.md`
+  - Test IDs advanced: SP-01..SP-05, P-01..P-09
+  - Evidence pack: `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-4/P4-C1-source-pull-foundation.md`
+  - Unit tests added: `safety::tests::check_no_divergence_reports_missing_remote_branch`
+  - Integration tests added: `sp01_source_pull_fast_forwards_unchecked_out_source_branch_without_switching`, `sp02_source_pull_updates_checked_out_source_worktree`, `sp03_source_pull_returns_divergence_when_source_and_origin_diverge`, `sp04_source_pull_missing_branch_returns_branch_not_found`, `sp05_source_pull_records_source_fetch_event`, `p01_pull_fast_forwards_source_from_origin_then_outpost_from_source`, `p02_pull_fast_forwards_outpost_from_source_without_touching_origin`, `p03_pull_returns_divergence_when_source_and_origin_diverge`, `p04_pull_returns_divergence_when_outpost_and_source_diverge`, `p05_pull_with_missing_source_returns_source_missing`, `p06_pull_on_detached_head_returns_no_upstream_tracking_head`, `p07_pull_uses_custom_source_remote_name`, `p08_pull_records_source_fetch_and_outpost_fetch_events`, `p09_pull_missing_matching_source_branch_returns_branch_not_found_before_outpost_ff`
+  - Docs updated: none; existing product and architecture document source refresh, pull sequencing, reporter events, and test scenarios
+  - Architecture deviations: none for claimed `P4-C1-source-pull-foundation` behavior
+  - Status: review pending
 
 ## Verification Log
 
@@ -186,6 +195,19 @@ Remaining chunk order:
   - `cargo test -p outpost-core`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --tests`: pass with the same integration/unit test set excluding doctests
   - `cargo test --workspace`: pass with the same workspace coverage
+- `P4-C1-source-pull-foundation` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo check -p outpost-core`: pass
+  - `cargo test -p outpost-core --lib source_repo`: pass; 6 filtered source/outpost tests
+  - `cargo test -p outpost-core --lib safety`: pass; 15 filtered safety tests
+  - `cargo test -p outpost-core --lib safety::tests::check_no_divergence_reports_missing_remote_branch`: pass
+  - `cargo test -p outpost-core --test source`: pass; 5 source integration tests
+  - `cargo test -p outpost-core --test pull`: pass; 9 pull integration tests
+  - `cargo test -p outpost-core --test status`: pass; 15 status integration tests
+  - `cargo test -p outpost-core`: pass; 47 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 9 pull integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; same test binaries excluding doctests
+  - `cargo test --workspace`: pass; same workspace coverage, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -193,12 +215,13 @@ Remaining chunk order:
 
 ## Docs Log
 
-- none yet
+- `P4-C1-source-pull-foundation`: no docs changes; stable concepts are already covered by product `pull`/`source pull` and architecture sections 5.8, 5.9.0, 5.9.4, 5.9.5, 11.6, and 11.7.
 
 ## Commit Log
 
 - `83e8778 phase-4: record readiness and plan`
-- pending `P4-C1-source-pull-foundation` start commit
+- `a0a7f40 phase-4: start source pull foundation`
+- pending `P4-C1-source-pull-foundation` implementation/evidence commit
 
 ## Protected-Path Exception Log
 
@@ -212,4 +235,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Implement `P4-C1-source-pull-foundation` with SP-01..SP-05 and P-01..P-09 coverage.
+- Commit `P4-C1-source-pull-foundation` implementation/evidence, then run scope, normal, and independent reviews.

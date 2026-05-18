@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use crate::{GitInvoker, Outpost, OutpostError, OutpostResult, SourceRepo};
+use crate::{
+    BranchName, GitInvoker, Outpost, OutpostError, OutpostResult, SourceRepo, UpstreamRef,
+};
 
 const FORCE_HINT: &str = "pass --force";
 
@@ -30,6 +32,22 @@ pub fn check_no_unpushed(outpost: &Outpost, source: &SourceRepo) -> OutpostResul
             hint: FORCE_HINT,
         })
     }
+}
+
+pub fn check_no_divergence(
+    outpost: &Outpost,
+    local_branch: &BranchName,
+    upstream: &UpstreamRef,
+) -> OutpostResult<()> {
+    check_no_divergence_with_fetch(outpost, local_branch, upstream, true)
+}
+
+pub fn check_no_divergence_after_fetch(
+    outpost: &Outpost,
+    local_branch: &BranchName,
+    upstream: &UpstreamRef,
+) -> OutpostResult<()> {
+    check_no_divergence_with_fetch(outpost, local_branch, upstream, false)
 }
 
 pub fn check_path_is_managed_outpost_of(
@@ -101,6 +119,76 @@ fn canonicalize_path(path: &Path) -> OutpostResult<PathBuf> {
         path: path.to_path_buf(),
         source,
     })
+}
+
+fn check_no_divergence_with_fetch(
+    outpost: &Outpost,
+    local_branch: &BranchName,
+    upstream: &UpstreamRef,
+    fetch: bool,
+) -> OutpostResult<()> {
+    let remote_branch =
+        upstream
+            .short_branch()
+            .ok_or_else(|| OutpostError::UpstreamNotABranch {
+                merge_ref: upstream.merge_ref.as_str().to_owned(),
+            })?;
+    if fetch {
+        outpost
+            .git()
+            .run_check(["fetch", upstream.remote.as_str()])?;
+    }
+
+    let remote_tracking_ref = format!(
+        "refs/remotes/{}/{}",
+        upstream.remote.as_str(),
+        remote_branch
+    );
+    if !outpost
+        .git()
+        .run_status(["rev-parse", "--verify", "--quiet", &remote_tracking_ref])?
+    {
+        return Err(OutpostError::BranchNotFound {
+            branch: remote_branch.to_owned(),
+            repo: outpost.work_tree().to_path_buf(),
+        });
+    }
+
+    let local_ref = format!("refs/heads/{}", local_branch.as_str());
+    let range = format!("{local_ref}...{remote_tracking_ref}");
+    let output = outpost
+        .git()
+        .run_capture(["rev-list", "--left-right", "--count", &range])?;
+    let mut parts = output.split_whitespace();
+    let ahead = parts
+        .next()
+        .and_then(|value| value.parse::<u32>().ok())
+        .ok_or_else(|| invalid_rev_list_output(outpost.work_tree(), &output))?;
+    let behind = parts
+        .next()
+        .and_then(|value| value.parse::<u32>().ok())
+        .ok_or_else(|| invalid_rev_list_output(outpost.work_tree(), &output))?;
+    if parts.next().is_some() {
+        return Err(invalid_rev_list_output(outpost.work_tree(), &output));
+    }
+
+    if ahead > 0 && behind > 0 {
+        Err(OutpostError::Divergence {
+            branch: local_branch.as_str().to_owned(),
+        })
+    } else {
+        Ok(())
+    }
+}
+
+fn invalid_rev_list_output(repo: &Path, output: &str) -> OutpostError {
+    OutpostError::IoAt {
+        path: repo.to_path_buf(),
+        source: std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unexpected rev-list output: {output}"),
+        ),
+    }
 }
 
 fn resolve_destination(parent: &Path, dest: &Path) -> OutpostResult<PathBuf> {
@@ -372,6 +460,44 @@ mod tests {
             OutpostError::UnpushedCommits { repo, branch, hint }
                 if repo == outpost.work_tree() && branch == "main" && hint == FORCE_HINT
         ));
+    }
+
+    #[test]
+    fn check_no_divergence_reports_missing_remote_branch() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("source");
+        let outpost = temp.path().join("outpost");
+        init_repo_at(&source);
+        init_repo_at(&outpost);
+        GitInvoker::at(&source)
+            .run_check(["commit", "--allow-empty", "-m", "source"])
+            .expect("source commit");
+        let outpost_git = GitInvoker::at(&outpost);
+        outpost_git
+            .run_check(["pull", &source.to_string_lossy(), "main"])
+            .expect("pull source into outpost");
+        outpost_git
+            .run_check(["remote", "add", "local", &source.to_string_lossy()])
+            .expect("add source remote");
+        Metadata {
+            source_repo: source.clone(),
+            remote_name: RemoteName::parse("local").unwrap(),
+        }
+        .write(&outpost_git)
+        .expect("metadata write");
+        let outpost = Outpost::at(&outpost).expect("outpost");
+        let branch = BranchName::parse("main").unwrap();
+        let upstream = UpstreamRef {
+            remote: RemoteName::parse("local").unwrap(),
+            merge_ref: crate::RefName::parse("refs/heads/missing").unwrap(),
+        };
+
+        let err = check_no_divergence_after_fetch(&outpost, &branch, &upstream)
+            .expect_err("missing remote branch should fail");
+
+        assert!(
+            matches!(err, OutpostError::BranchNotFound { branch, repo } if branch == "missing" && repo == outpost.work_tree())
+        );
     }
 
     fn assert_dirty(result: OutpostResult<()>, repo: &Path) {
