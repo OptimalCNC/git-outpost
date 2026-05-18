@@ -163,15 +163,25 @@ Remaining chunk order:
   - QA note: `.agents-artifacts/qa/phase-5/P5-C1-cli-surface.md`
   - Unit tests added: none
   - CLI integration tests added: `e_01_build_produces_both_binaries`, `e_03_help_lists_commands_and_long_flags`, `e_13_add_detach_is_rejected_by_clap`, `e_15_deferred_and_removed_surfaces_are_rejected_by_clap`, `h_01_git_outpost_help_uses_git_outpost_name`, `h_02_gop_help_uses_gop_name`, `h_03_git_dispatch_help_does_not_use_gop_name`
-  - Docs updated: none
+  - Docs updated: `docs/src/architecture.md` H-03 now specifies `git outpost -h`, because Git intercepts literal `git outpost --help` as a manpage request before external command dispatch.
   - Architecture deviations: none for claimed `P5-C1-cli-surface` behavior after review fix. Git 2.43 intercepts `git outpost --help` as a manpage request, so H-03 uses `git outpost -h` to exercise forwarded external-command help; `docs/src/architecture.md` now records that acceptance detail.
   - Implementation/evidence commit: `00f48c7 phase-5: add cli surface`
-  - Review fixes pending commit:
+  - Review fixes committed in `a885c59 phase-5: fix cli surface review findings`:
     - `clap` dependency constrained to `>=4.5, <4.6`; resolved `clap 4.5.61` is compatible with Rust 1.75.
     - H-03 acceptance docs and artifacts updated to `git outpost -h`.
     - E-03 strengthened with actual subcommand help assertions.
     - E-15 expanded with representative removed/deferred add, list, and push flags.
-  - Status: review fixes in progress
+  - Review artifacts:
+    - Scope Reviewer: `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/scope-review.md`
+    - Normal Reviewer: `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/normal-review.md`
+    - Independent Reviewer: `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/independent-review.md`
+    - Scope Re-reviewer: `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/scope-rereview.md`
+    - Normal Re-reviewer: `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/normal-rereview.md`
+    - Independent Re-reviewer: `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/independent-rereview.md`
+  - Review verdicts after fixes: scope `pass`; normal `pass`; independent `pass`
+  - Required review changes: none open
+  - Adopted nits: progress log now records review-fix commit `a885c59`; future evidence should prefer `git diff --check HEAD^..HEAD` for committed diffs.
+  - Status: approved
 
 ## Verification Log
 
@@ -207,6 +217,10 @@ Remaining chunk order:
   - H-03 acceptance docs and artifacts now use `git outpost -h`, because Git intercepts literal `git outpost --help` before dispatching external commands.
   - E-03 now checks actual subcommand help for command-owned long flags.
   - E-15 now includes representative removed/deferred add, list, and push flags in addition to the original global/list/prune/pull cases.
+- `P5-C1-cli-surface` Scope Re-reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/scope-rereview.md`; nit was stale progress commit-log text.
+- `P5-C1-cli-surface` Normal Re-reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/normal-rereview.md`; nit was stale progress metadata around docs updated and review-fix status.
+- `P5-C1-cli-surface` Independent Re-reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/independent-rereview.md`; nit was future evidence should prefer `git diff --check HEAD^..HEAD`.
+- Blocking review findings: none open for `P5-C1-cli-surface`.
 
 ## Docs Log
 
@@ -217,7 +231,8 @@ Remaining chunk order:
 - `1042a8e phase-5: record readiness and plan`
 - `270cdde phase-5: start cli surface`
 - `00f48c7 phase-5: add cli surface`
-- pending `phase-5: fix cli surface review findings`
+- `a885c59 phase-5: fix cli surface review findings`
+- pending `phase-5: record cli surface reviews`
 
 ## Protected-Path Exception Log
 
@@ -231,4 +246,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `P5-C1-cli-surface` review fixes and run re-review.
+- Commit `P5-C1-cli-surface` review artifacts and adopted nits, then start `P5-C2-dispatch-e2e`.
