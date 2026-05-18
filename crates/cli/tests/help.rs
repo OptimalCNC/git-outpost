@@ -10,6 +10,16 @@ fn count_command_line(help: &str, command: &str) -> usize {
         .count()
 }
 
+fn help_for(args: &[&str]) -> String {
+    let output = common::run(common::gop_command().args(args));
+    assert!(
+        output.status.success(),
+        "help for {args:?} failed:\n{}",
+        common::stderr(&output)
+    );
+    common::stdout(&output)
+}
+
 #[test]
 fn e_03_help_lists_commands_and_long_flags() {
     let output = common::run(common::gop_command().arg("--help"));
@@ -40,6 +50,23 @@ fn e_03_help_lists_commands_and_long_flags() {
         "--dry-run",
     ] {
         assert!(help.contains(flag), "expected {flag} in help:\n{help}");
+    }
+
+    for (args, flags) in [
+        (&["add", "--help"][..], &["--remote-name"][..]),
+        (&["list", "--help"][..], &["--verbose"][..]),
+        (&["lock", "--help"][..], &["--reason"][..]),
+        (&["move", "--help"][..], &["--force"][..]),
+        (&["remove", "--help"][..], &["--force"][..]),
+        (&["prune", "--help"][..], &["--dry-run", "--verbose"][..]),
+    ] {
+        let subcommand_help = help_for(args);
+        for flag in flags {
+            assert!(
+                subcommand_help.contains(flag),
+                "expected {flag} in help for {args:?}:\n{subcommand_help}"
+            );
+        }
     }
 }
 

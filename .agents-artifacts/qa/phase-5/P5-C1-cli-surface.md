@@ -19,6 +19,13 @@
 - `h_02_gop_help_uses_gop_name`
 - `h_03_git_dispatch_help_does_not_use_gop_name`
 
+## Review Fix Coverage
+
+- E-03 now checks actual subcommand help for command-owned long flags in addition to root help.
+- E-15 now covers representative removed/deferred global, add, list, prune, pull, and push surfaces.
+- H-03 uses `git outpost -h` because Git intercepts `git outpost --help` before external command dispatch; `docs/src/architecture.md` now records that acceptance detail.
+- `clap` is constrained to `>=4.5, <4.6`; resolved `clap 4.5.61` is compatible with the project Rust 1.75 MSRV.
+
 ## Verification
 
 - `cargo fmt --check`: pass
@@ -28,6 +35,8 @@
 - `cargo test -p outpost-core --tests`: pass
 - `cargo test --workspace`: pass
 - `git diff --check`: pass
+- Review-fix verification repeated the same commands after MSRV, H-03,
+  E-03, and E-15 fixes; all passed.
 
 ## Deferred To Later Phase 5 Chunks
 

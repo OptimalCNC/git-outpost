@@ -100,7 +100,7 @@
 | E-15 | representative deferred/removed surfaces are rejected by clap | completed | `crates/cli/tests/flags.rs::e_15_deferred_and_removed_surfaces_are_rejected_by_clap` |
 | H-01 | `git-outpost --help` renders `git-outpost` as program name | completed | `crates/cli/tests/help.rs::h_01_git_outpost_help_uses_git_outpost_name` |
 | H-02 | `gop --help` renders `gop` as program name | completed | `crates/cli/tests/help.rs::h_02_gop_help_uses_gop_name` |
-| H-03 | `git outpost --help` renders a non-`gop` program name | completed | `crates/cli/tests/help.rs::h_03_git_dispatch_help_does_not_use_gop_name` |
+| H-03 | `git outpost -h` renders a non-`gop` program name; Git intercepts literal `git outpost --help` before dispatch | completed | `crates/cli/tests/help.rs::h_03_git_dispatch_help_does_not_use_gop_name` |
 
 ## QA/Test Plan Gate
 
@@ -164,9 +164,14 @@ Remaining chunk order:
   - Unit tests added: none
   - CLI integration tests added: `e_01_build_produces_both_binaries`, `e_03_help_lists_commands_and_long_flags`, `e_13_add_detach_is_rejected_by_clap`, `e_15_deferred_and_removed_surfaces_are_rejected_by_clap`, `h_01_git_outpost_help_uses_git_outpost_name`, `h_02_gop_help_uses_gop_name`, `h_03_git_dispatch_help_does_not_use_gop_name`
   - Docs updated: none
-  - Architecture deviations: none for claimed `P5-C1-cli-surface` behavior. Git 2.43 intercepts `git outpost --help` as a manpage request, so H-03 uses `git outpost -h` to exercise forwarded external-command help.
-  - Implementation/evidence commit: pending
-  - Status: review pending
+  - Architecture deviations: none for claimed `P5-C1-cli-surface` behavior after review fix. Git 2.43 intercepts `git outpost --help` as a manpage request, so H-03 uses `git outpost -h` to exercise forwarded external-command help; `docs/src/architecture.md` now records that acceptance detail.
+  - Implementation/evidence commit: `00f48c7 phase-5: add cli surface`
+  - Review fixes pending commit:
+    - `clap` dependency constrained to `>=4.5, <4.6`; resolved `clap 4.5.61` is compatible with Rust 1.75.
+    - H-03 acceptance docs and artifacts updated to `git outpost -h`.
+    - E-03 strengthened with actual subcommand help assertions.
+    - E-15 expanded with representative removed/deferred add, list, and push flags.
+  - Status: review fixes in progress
 
 ## Verification Log
 
@@ -182,20 +187,37 @@ Remaining chunk order:
   - `cargo test -p outpost-core --tests`: pass with the same core test binaries excluding doctests
   - `cargo test --workspace`: pass; 7 CLI integration tests plus existing core coverage, 0 doctests
   - `git diff --check`: pass
+- `P5-C1-cli-surface` review-fix verification:
+  - `cargo fmt --check`: pass
+  - `cargo build -p git-outpost`: pass; builds `git-outpost` and `gop`; Cargo warns that `src/main.rs` is present in both bin targets, matching the Phase 5 architecture
+  - `cargo test -p git-outpost --tests`: pass; 3 `flags` tests and 4 `help` tests with hardened E-03/E-15 coverage
+  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 13 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass with the same core test binaries excluding doctests
+  - `cargo test --workspace`: pass; 7 CLI integration tests plus existing core coverage, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
 - Readiness Auditor: `ready with cautions`; artifact `.agents-artifacts/reviews/phase-5/readiness/readiness-audit.md`; no blocking issues and no required human decisions.
+- `P5-C1-cli-surface` Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/scope-review.md`; nits were stale progress commit-log text and preserving the `git outpost -h` H-03 nuance.
+- `P5-C1-cli-surface` Normal Reviewer: `conditional pass`; artifact `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/normal-review.md`; required H-03 acceptance/spec mismatch resolution.
+- `P5-C1-cli-surface` Independent Reviewer: `changes requested`; artifact `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/independent-review.md`; required MSRV-compatible `clap` dependency, H-03 contract resolution, and E-03 hardening.
+- Adopted `P5-C1-cli-surface` review fixes:
+  - `clap` constrained to `>=4.5, <4.6`, resolving to `clap 4.5.61` whose registry metadata declares `rust-version = "1.74"`.
+  - H-03 acceptance docs and artifacts now use `git outpost -h`, because Git intercepts literal `git outpost --help` before dispatching external commands.
+  - E-03 now checks actual subcommand help for command-owned long flags.
+  - E-15 now includes representative removed/deferred add, list, and push flags in addition to the original global/list/prune/pull cases.
 
 ## Docs Log
 
-- none
+- `P5-C1-cli-surface`: `docs/src/architecture.md` updated H-03 to specify `git outpost -h`, because Git intercepts literal `git outpost --help` as a manpage request before external command dispatch.
 
 ## Commit Log
 
 - `1042a8e phase-5: record readiness and plan`
 - `270cdde phase-5: start cli surface`
-- pending `phase-5: add cli surface`
+- `00f48c7 phase-5: add cli surface`
+- pending `phase-5: fix cli surface review findings`
 
 ## Protected-Path Exception Log
 
@@ -204,8 +226,9 @@ Remaining chunk order:
 ## Open Risks / Questions
 
 - P5-C2 owns real command dispatch, output formatting, `StderrReporter`, global `-C` behavior assertions, and E2E Story behavior.
+- H-03 should continue to use `git outpost -h`; literal `git outpost --help` is Git's manpage path on Git 2.43.
 - Local execution is Linux; cross-platform rules must be encoded in tests and CI-friendly code, but Windows/macOS behavior cannot be fully proven locally without runners.
 
 ## Next Recommended Action
 
-- Commit `P5-C1-cli-surface` implementation and evidence, then run the three-reviewer gate.
+- Commit `P5-C1-cli-surface` review fixes and run re-review.

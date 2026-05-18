@@ -26,7 +26,7 @@
 
 - Added workspace member `crates/cli` and package `git-outpost`.
 - Added two binary targets, `git-outpost` and `gop`, both using `src/main.rs`.
-- Added `clap` workspace dependency and CLI package dependency on `outpost-core`.
+- Added `clap` workspace dependency constrained to the `4.5` line and CLI package dependency on `outpost-core`.
 - Added top-level CLI parser with global `-C <path>` and `--no-color`.
 - Added command tree for `add`, `pull`, `source pull`, `merge`, `rebase`, `push`, `list`, `lock`, `unlock`, `move`, `remove`, `prune`, and `status`.
 - Added CLI boundary validation for branch names, remote names, and source remote refs using existing core newtypes.
@@ -52,9 +52,26 @@
 - `cargo test -p outpost-core --tests`: pass with the same core test binaries excluding doctests.
 - `cargo test --workspace`: pass; 7 CLI integration tests plus existing core coverage, 0 doctests.
 - `git diff --check`: pass
+- Review-fix verification:
+  - `cargo fmt --check`: pass
+  - `cargo build -p git-outpost`: pass
+  - `cargo test -p git-outpost --tests`: pass; 3 `flags` tests and 4 `help` tests with hardened E-03/E-15 coverage
+  - `cargo test -p outpost-core`: pass
+  - `cargo test -p outpost-core --tests`: pass
+  - `cargo test --workspace`: pass; 7 CLI integration tests plus existing core coverage, 0 doctests
+  - `git diff --check`: pass
 
 ## Notes For Reviewers
 
-- `git outpost --help` is intercepted by Git 2.43 as a manpage request before external command dispatch. H-03 therefore uses `git outpost -h`, which Git forwards to `git-outpost`.
+- `git outpost --help` is intercepted by Git 2.43 as a manpage request before external command dispatch. H-03 therefore uses `git outpost -h`, which Git forwards to `git-outpost`; `docs/src/architecture.md` now records this acceptance reality.
 - Root help includes a concise after-help line listing command-specific long flags so E-03 can assert the complete documented surface before command dispatch exists.
+- E-03 also checks subcommand help for actual command-owned long flags so the test cannot pass only because of the root after-help summary.
+- E-15 includes representative removed/deferred global, add, list, prune, pull, and push surfaces.
 - No real command dispatch is implemented in this chunk; successful non-help invocations only parse and validate refs. P5-C2 owns dispatch.
+
+## Review Fixes
+
+- Constrained `clap` to `>=4.5, <4.6`; the resolved `clap 4.5.61` line declares `rust-version = "1.74"` in the crates.io index and is compatible with the project Rust 1.75 MSRV.
+- Updated H-03 source acceptance docs from `git outpost --help` to `git outpost -h`, because Git intercepts the literal `--help` form before dispatching external commands.
+- Strengthened E-03 with subcommand help assertions for real command-owned long flags.
+- Expanded E-15 representative coverage to include removed/deferred add, list, and push flags.

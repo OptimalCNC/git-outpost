@@ -2048,7 +2048,7 @@ in §11.13.
 | E-15 | Representative deferred or removed CLI surfaces are rejected with clap usage errors, including `--json`, `--quiet`, `list --all`, `prune --expire`, and pull strategy flags. |
 | H-01 | `git-outpost --help` renders `git-outpost` as the program name. |
 | H-02 | `gop --help` renders `gop` as the program name. |
-| H-03 | `git outpost --help` renders `git outpost` (or `git-outpost`) as the program name — pin whichever clap produces, but assert it does **not** say `gop`. |
+| H-03 | `git outpost -h` renders `git outpost` (or `git-outpost`) as the program name — pin whichever clap produces, but assert it does **not** say `gop`. Git itself intercepts `git outpost --help` as a manpage request before external command dispatch. |
 
 ### 11.13 Cross-platform notes
 
