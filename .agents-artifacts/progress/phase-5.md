@@ -182,15 +182,18 @@ Remaining chunk order:
   - Adopted nits: progress log now records review-fix commit `a885c59`; future evidence should prefer `git diff --check HEAD^..HEAD` for committed diffs.
   - Status: approved
 - `P5-C2-dispatch-e2e` implementation evidence recorded:
-  - Files changed: `Cargo.lock`, `crates/cli/Cargo.toml`, `crates/cli/src/cli.rs`, `crates/cli/src/main.rs`, `crates/cli/src/exit.rs`, `crates/cli/src/output.rs`, `crates/cli/src/reporter_impls.rs`, `crates/cli/tests/common/mod.rs`, `crates/cli/tests/e2e.rs`, `crates/cli/tests/flags.rs`
+  - Files changed: `Cargo.lock`, `crates/cli/Cargo.toml`, `crates/cli/src/cli.rs`, `crates/cli/src/main.rs`, `crates/cli/src/exit.rs`, `crates/cli/src/output.rs`, `crates/cli/src/reporter_impls.rs`, `crates/cli/tests/common/mod.rs`, `crates/cli/tests/e2e.rs`, `crates/cli/tests/flags.rs`, `crates/core/src/error.rs`, `docs/src/architecture.md`
   - Artifact files changed: `.agents-artifacts/progress/phase-5.md`, `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/evidence-pack.md`, `.agents-artifacts/qa/phase-5/P5-C2-dispatch-e2e.md`
   - Test IDs advanced: E-02, E-04, E-05, E-06, E-10, E-11, E-12, E-14
   - Evidence pack: `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/evidence-pack.md`
   - QA note: `.agents-artifacts/qa/phase-5/P5-C2-dispatch-e2e.md`
-  - CLI integration tests added: `e_02_invocation_forms_produce_same_status_stdout`, `e_04_basic_cli_lifecycle_round_trip_exits_zero`, `e_05_push_makes_outpost_commit_visible_upstream`, `e_06_two_outposts_round_trip_via_source`, `e_10_story_flow_exits_zero`, `e_11_merge_and_rebase_accept_story_source_ref`, `e_12_global_c_changes_effective_cwd`, `e_14_add_target_branch_starting_with_dash_returns_invalid_ref`
-  - Docs updated: none
+  - CLI integration tests added: `e_02_invocation_forms_produce_same_status_stdout`, `e_04_basic_cli_lifecycle_round_trip_exits_zero`, `e_05_push_makes_outpost_commit_visible_upstream`, `e_06_two_outposts_round_trip_via_source`, `e_10_story_flow_exits_zero`, `e_11_merge_and_rebase_accept_story_source_ref`, `dispatch_matrix_contextual_source_and_outpost_commands`, `dispatch_matrix_rejects_wrong_contexts`, `e_12_global_c_changes_effective_cwd`, `e_14_add_target_branch_starting_with_dash_returns_invalid_ref`
+  - Docs updated: `docs/src/architecture.md` now includes `OutpostError::WrongContext` and `OutpostError::MissingOutpostPath` in the error model and exit-code mapping.
   - Architecture deviations: none for claimed `P5-C2-dispatch-e2e` behavior. CLI fixture uses sibling paths such as `../C` from source repo to preserve the core invariant that outposts are separate checkouts outside the source work tree.
   - Implementation/evidence commit: `6f68b95 phase-5: add dispatch e2e`
+  - Review fixes pending commit:
+    - Replaced CLI-only `CliError` context failures with first-class `OutpostError` variants to preserve the architecture's single error/exit-code model.
+    - Added matrix-edge CLI tests for list-from-outpost, lock/unlock explicit and default path dispatch, move/prune dispatch, representative wrong-context failures, and `add` under global `-C`.
   - Status: review pending
 
 ## Verification Log
@@ -218,10 +221,10 @@ Remaining chunk order:
 - `P5-C2-dispatch-e2e` local verification:
   - `cargo fmt --check`: pass
   - `cargo build -p git-outpost`: pass; builds `git-outpost` and `gop`; Cargo warns that `src/main.rs` is present in both bin targets, matching the Phase 5 architecture
-  - `cargo test -p git-outpost --tests`: pass; 6 E2E tests, 5 flags tests, 4 help tests
+  - `cargo test -p git-outpost --tests`: pass; 8 E2E tests, 5 flags tests, 4 help tests
   - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 13 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --tests`: pass with the same core test binaries excluding doctests
-  - `cargo test --workspace`: pass; 15 CLI integration tests plus existing core coverage, 0 doctests
+  - `cargo test --workspace`: pass; 17 CLI integration tests plus existing core coverage, 0 doctests
   - `git diff --check`: pass
 
 ## Review Log
@@ -239,11 +242,18 @@ Remaining chunk order:
 - `P5-C1-cli-surface` Normal Re-reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/normal-rereview.md`; nit was stale progress metadata around docs updated and review-fix status.
 - `P5-C1-cli-surface` Independent Re-reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/independent-rereview.md`; nit was future evidence should prefer `git diff --check HEAD^..HEAD`.
 - Blocking review findings: none open for `P5-C1-cli-surface`.
+- `P5-C2-dispatch-e2e` Scope Reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/scope-review.md`; no required changes or nits.
+- `P5-C2-dispatch-e2e` Normal Reviewer: `pass with nits`; artifact `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/normal-review.md`; nits were add-with-`-C`, negative matrix tests, and possible status health wording alignment.
+- `P5-C2-dispatch-e2e` Independent Reviewer: `changes requested`; artifact `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/independent-review.md`; required replacing CLI-only dispatch errors or documenting them, and adding/narrowing matrix-edge coverage.
+- Adopted `P5-C2-dispatch-e2e` review fixes:
+  - `OutpostError::WrongContext` and `OutpostError::MissingOutpostPath` now own CLI dispatch context failures and map to exit code 2.
+  - Added matrix-edge coverage for list from outpost, lock/unlock from source and outpost contexts, move/prune from source, representative wrong-context failures, and `add` with global `-C`.
+  - Evidence/progress updated to reflect docs and coverage changes.
 
 ## Docs Log
 
 - `P5-C1-cli-surface`: `docs/src/architecture.md` updated H-03 to specify `git outpost -h`, because Git intercepts literal `git outpost --help` as a manpage request before external command dispatch.
-- `P5-C2-dispatch-e2e`: no docs changed. Evidence records that E2E paths use sibling outposts such as `../C` to honor the existing separate-checkout invariant.
+- `P5-C2-dispatch-e2e`: `docs/src/architecture.md` updated with dispatch-context `OutpostError` variants and exit-code mapping. Evidence records that E2E paths use sibling outposts such as `../C` to honor the existing separate-checkout invariant.
 
 ## Commit Log
 
@@ -254,7 +264,7 @@ Remaining chunk order:
 - `cc22594 phase-5: record cli surface reviews`
 - `0b4ea9c phase-5: start dispatch e2e`
 - `6f68b95 phase-5: add dispatch e2e`
-- pending `phase-5: record dispatch e2e reviews`
+- pending `phase-5: fix dispatch e2e review findings`
 
 ## Protected-Path Exception Log
 
@@ -268,4 +278,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `P5-C2-dispatch-e2e` implementation/evidence, then run three-reviewer gate for the chunk.
+- Commit `P5-C2-dispatch-e2e` review fixes, then run P5-C2 re-review.

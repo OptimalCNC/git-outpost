@@ -178,6 +178,12 @@ pub enum OutpostError {
     #[error("source repository not found at {0}")]
     SourceMissing(PathBuf),
 
+    #[error("{command} must be run from {expected}; effective cwd is {cwd}")]
+    WrongContext { command: &'static str, expected: &'static str, cwd: PathBuf },
+
+    #[error("{command} requires <outpost> when run from source repository {cwd}")]
+    MissingOutpostPath { command: &'static str, cwd: PathBuf },
+
     #[error("destination already exists: {0}")]
     DestinationExists(PathBuf),
 
@@ -1689,7 +1695,8 @@ impl OutpostError {
     pub fn exit_code(&self) -> u8 {
         use OutpostError::*;
         match self {
-            NotARepo(_) | NotAnOutpost(_) | SourceMissing(_) => 2,
+            NotARepo(_) | NotAnOutpost(_) | SourceMissing(_)
+                | WrongContext { .. } | MissingOutpostPath { .. } => 2,
             DestinationExists(_) | DestinationInsideRepo(_)
                 | DirtyTree { .. } | UnpushedCommits { .. }
                 | OutpostLocked { .. } => 3,

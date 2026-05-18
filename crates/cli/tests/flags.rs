@@ -47,6 +47,20 @@ fn e_12_global_c_changes_effective_cwd() {
         !outpost.exists(),
         "relative path argument should be resolved against -C source"
     );
+
+    let add = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.root)
+            .arg("-C")
+            .arg(&fixture.source)
+            .args(["add", "../D", "main"]),
+    );
+    common::assert_success(&add, "add relative to -C source");
+    assert!(
+        fixture.outpost("D").exists(),
+        "add destination should be resolved against -C source"
+    );
 }
 
 #[test]

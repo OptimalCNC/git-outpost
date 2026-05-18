@@ -10,6 +10,7 @@
 - E-11: `merge local/main` and `rebase local/main` accept the Story source-ref form.
 - E-12: global `-C` changes status cwd and roots relative path args at the effective cwd.
 - E-14: leading-dash target branch is rejected as `InvalidRefName` before Git subprocess execution.
+- Additional matrix coverage: list from outpost matches list from source; lock/unlock work from source with explicit relative paths and from outpost with omitted path; move/prune dispatch from source succeeds; representative wrong-context commands fail with `OutpostError` exit code 2.
 
 ## Fixture Notes
 

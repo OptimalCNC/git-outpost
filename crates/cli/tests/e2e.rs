@@ -51,6 +51,94 @@ fn e_04_basic_cli_lifecycle_round_trip_exits_zero() {
 }
 
 #[test]
+fn dispatch_matrix_contextual_source_and_outpost_commands() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+
+    let source_list = common::run(fixture.gop().current_dir(&fixture.source).arg("list"));
+    common::assert_success(&source_list, "source list");
+    let outpost_list = common::run(fixture.gop().current_dir(&outpost).arg("list"));
+    common::assert_success(&outpost_list, "outpost list");
+    assert_eq!(common::stdout(&source_list), common::stdout(&outpost_list));
+
+    let lock_from_outpost = common::run(
+        fixture
+            .gop()
+            .current_dir(&outpost)
+            .args(["lock", "--reason", "keep"]),
+    );
+    common::assert_success(&lock_from_outpost, "lock current outpost");
+    let unlock_from_outpost = common::run(fixture.gop().current_dir(&outpost).arg("unlock"));
+    common::assert_success(&unlock_from_outpost, "unlock current outpost");
+
+    let lock_from_source = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["lock", "--reason", "source", "../C"]),
+    );
+    common::assert_success(&lock_from_source, "lock relative outpost from source");
+    let unlock_from_source = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["unlock", "../C"]),
+    );
+    common::assert_success(&unlock_from_source, "unlock relative outpost from source");
+
+    let move_out = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["move", "../C", "../D"]),
+    );
+    common::assert_success(&move_out, "move relative outpost from source");
+    assert!(!outpost.exists(), "old outpost path should be moved");
+    assert!(
+        fixture.outpost("D").exists(),
+        "new outpost path should exist"
+    );
+
+    let prune = common::run(fixture.gop().current_dir(&fixture.source).arg("prune"));
+    common::assert_success(&prune, "source prune");
+}
+
+#[test]
+fn dispatch_matrix_rejects_wrong_contexts() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+
+    let add_from_outpost = common::run(
+        fixture
+            .gop()
+            .current_dir(&outpost)
+            .args(["add", "../D", "main"]),
+    );
+    common::assert_failure_code(&add_from_outpost, 2, "add from outpost");
+    let stderr = common::stderr(&add_from_outpost);
+    assert!(
+        stderr.contains("add must be run from a source repository"),
+        "wrong-context stderr should explain source-only command:\n{stderr}"
+    );
+
+    let pull_from_source = common::run(fixture.gop().current_dir(&fixture.source).arg("pull"));
+    common::assert_failure_code(&pull_from_source, 2, "pull from source");
+    let stderr = common::stderr(&pull_from_source);
+    assert!(
+        stderr.contains("pull must be run from a managed outpost"),
+        "wrong-context stderr should explain outpost-only command:\n{stderr}"
+    );
+
+    let lock_without_path = common::run(fixture.gop().current_dir(&fixture.source).arg("lock"));
+    common::assert_failure_code(&lock_without_path, 2, "lock without path from source");
+    let stderr = common::stderr(&lock_without_path);
+    assert!(
+        stderr.contains("lock requires <outpost>"),
+        "missing-path stderr should explain source lock usage:\n{stderr}"
+    );
+}
+
+#[test]
 fn e_05_push_makes_outpost_commit_visible_upstream() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");

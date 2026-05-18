@@ -125,6 +125,20 @@ impl CliFixture {
         stdout(&output).trim().to_owned()
     }
 
+    pub fn local_config(&self, repo: &Path, key: &str) -> Option<String> {
+        let output = run(self.git(repo).args(["config", "--local", "--get", key]));
+        match output.status.code() {
+            Some(0) => Some(stdout(&output).trim().to_owned()),
+            Some(1) => None,
+            _ => panic!(
+                "git config failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+                output.status.code(),
+                stdout(&output),
+                stderr(&output)
+            ),
+        }
+    }
+
     fn run_git_ok<const N: usize, F>(&self, cwd: &Path, args: [&str; N], configure: F)
     where
         F: FnOnce(&mut Command),

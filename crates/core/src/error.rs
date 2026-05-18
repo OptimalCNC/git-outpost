@@ -15,6 +15,16 @@ pub enum OutpostError {
     #[error("source repository not found at {}", .0.display())]
     SourceMissing(PathBuf),
 
+    #[error("{command} must be run from {expected}; effective cwd is {}", .cwd.display())]
+    WrongContext {
+        command: &'static str,
+        expected: &'static str,
+        cwd: PathBuf,
+    },
+
+    #[error("{command} requires <outpost> when run from source repository {}", .cwd.display())]
+    MissingOutpostPath { command: &'static str, cwd: PathBuf },
+
     #[error("destination already exists: {}", .0.display())]
     DestinationExists(PathBuf),
 
@@ -93,7 +103,11 @@ impl OutpostError {
     pub fn exit_code(&self) -> u8 {
         use OutpostError::*;
         match self {
-            NotARepo(_) | NotAnOutpost(_) | SourceMissing(_) => 2,
+            NotARepo(_)
+            | NotAnOutpost(_)
+            | SourceMissing(_)
+            | WrongContext { .. }
+            | MissingOutpostPath { .. } => 2,
             DestinationExists(_)
             | DestinationInsideRepo(_)
             | DirtyTree { .. }
@@ -139,6 +153,21 @@ mod tests {
             (
                 OutpostError::SourceMissing(path("/source")),
                 "source repository not found at /source",
+            ),
+            (
+                OutpostError::WrongContext {
+                    command: "pull",
+                    expected: "a managed outpost",
+                    cwd: path("/source"),
+                },
+                "pull must be run from a managed outpost; effective cwd is /source",
+            ),
+            (
+                OutpostError::MissingOutpostPath {
+                    command: "lock",
+                    cwd: path("/source"),
+                },
+                "lock requires <outpost> when run from source repository /source",
             ),
             (
                 OutpostError::DestinationExists(path("/dest")),
@@ -271,6 +300,21 @@ mod tests {
             (OutpostError::NotARepo(path("/repo")), 2),
             (OutpostError::NotAnOutpost(path("/outpost")), 2),
             (OutpostError::SourceMissing(path("/source")), 2),
+            (
+                OutpostError::WrongContext {
+                    command: "pull",
+                    expected: "a managed outpost",
+                    cwd: path("/source"),
+                },
+                2,
+            ),
+            (
+                OutpostError::MissingOutpostPath {
+                    command: "lock",
+                    cwd: path("/source"),
+                },
+                2,
+            ),
             (OutpostError::DestinationExists(path("/dest")), 3),
             (OutpostError::DestinationInsideRepo(path("/dest")), 3),
             (

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use cli::{Cli, Command, SourceCommand};
-use exit::{CliError, CliResult};
+use exit::CliResult;
 use outpost_core::{ops, Outpost, OutpostError, SourceRepo};
 use reporter_impls::StderrReporter;
 
@@ -136,11 +136,9 @@ fn dispatch(cli: Cli) -> CliResult<()> {
 }
 
 fn effective_cwd(cd: Option<PathBuf>) -> CliResult<PathBuf> {
-    let current = std::env::current_dir().map_err(|source| {
-        CliError::from(OutpostError::IoAt {
-            path: PathBuf::from("."),
-            source,
-        })
+    let current = std::env::current_dir().map_err(|source| OutpostError::IoAt {
+        path: PathBuf::from("."),
+        source,
     })?;
     let cwd = match cd {
         Some(path) if path.is_absolute() => path,
@@ -168,14 +166,14 @@ fn classify(cwd: &Path) -> CliResult<Context> {
     match Outpost::at(source.work_tree()) {
         Ok(outpost) => Ok(Context::Outpost(outpost)),
         Err(OutpostError::NotAnOutpost(_)) => Ok(Context::Source(source)),
-        Err(err) => Err(err.into()),
+        Err(err) => Err(err),
     }
 }
 
 fn require_source(command: &'static str, cwd: &Path) -> CliResult<SourceRepo> {
     match classify(cwd)? {
         Context::Source(source) => Ok(source),
-        Context::Outpost(_) => Err(CliError::WrongContext {
+        Context::Outpost(_) => Err(OutpostError::WrongContext {
             command,
             expected: "a source repository",
             cwd: cwd.to_path_buf(),
@@ -186,7 +184,7 @@ fn require_source(command: &'static str, cwd: &Path) -> CliResult<SourceRepo> {
 fn require_outpost(command: &'static str, cwd: &Path) -> CliResult<Outpost> {
     match classify(cwd)? {
         Context::Outpost(outpost) => Ok(outpost),
-        Context::Source(_) => Err(CliError::WrongContext {
+        Context::Source(_) => Err(OutpostError::WrongContext {
             command,
             expected: "a managed outpost",
             cwd: cwd.to_path_buf(),
@@ -209,7 +207,7 @@ fn contextual_outpost_path(
     match classify(cwd)? {
         Context::Source(source) => match path {
             Some(path) => Ok((source, resolve_path_arg(cwd, path))),
-            None => Err(CliError::MissingOutpostPath {
+            None => Err(OutpostError::MissingOutpostPath {
                 command,
                 cwd: cwd.to_path_buf(),
             }),
