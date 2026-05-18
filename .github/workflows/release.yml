@@ -4,13 +4,6 @@ on:
   push:
     tags:
       - "v*.*.*"
-  workflow_dispatch:
-    inputs:
-      publish:
-        description: "Publish crates to crates.io"
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -61,7 +54,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish == true)
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -69,45 +61,19 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Check published versions
-        id: published
-        shell: bash
-        run: |
-          core_version="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "outpost-core") | .version')"
-          cli_version="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "git-outpost") | .version')"
-
-          echo "core_version=${core_version}" >> "${GITHUB_OUTPUT}"
-          echo "cli_version=${cli_version}" >> "${GITHUB_OUTPUT}"
-
-          if curl -fsS "https://crates.io/api/v1/crates/outpost-core/${core_version}" > /dev/null; then
-            echo "core=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "core=false" >> "${GITHUB_OUTPUT}"
-          fi
-
-          if curl -fsS "https://crates.io/api/v1/crates/git-outpost/${cli_version}" > /dev/null; then
-            echo "cli=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "cli=false" >> "${GITHUB_OUTPUT}"
-          fi
-
       - name: Authenticate to crates.io
-        if: steps.published.outputs.core != 'true' || steps.published.outputs.cli != 'true'
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
 
       - name: Publish core crate
-        if: steps.published.outputs.core != 'true'
         run: cargo publish --locked -p outpost-core
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
       - name: Wait for core crate index update
-        if: steps.published.outputs.core != 'true' && steps.published.outputs.cli != 'true'
         run: sleep 30
 
       - name: Publish CLI crate
-        if: steps.published.outputs.cli != 'true'
         run: cargo publish --locked -p git-outpost
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
