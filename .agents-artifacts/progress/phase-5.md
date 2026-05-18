@@ -191,7 +191,7 @@ Remaining chunk order:
   - Docs updated: `docs/src/architecture.md` now includes `OutpostError::WrongContext` and `OutpostError::MissingOutpostPath` in the error model and exit-code mapping.
   - Architecture deviations: none for claimed `P5-C2-dispatch-e2e` behavior. CLI fixture uses sibling paths such as `../C` from source repo to preserve the core invariant that outposts are separate checkouts outside the source work tree.
   - Implementation/evidence commit: `6f68b95 phase-5: add dispatch e2e`
-  - Review fixes pending commit:
+  - Review fixes committed in `56eadac phase-5: fix dispatch e2e review findings`:
     - Replaced CLI-only `CliError` context failures with first-class `OutpostError` variants to preserve the architecture's single error/exit-code model.
     - Added matrix-edge CLI tests for list-from-outpost, lock/unlock explicit and default path dispatch, move/prune dispatch, representative wrong-context failures, and `add` under global `-C`.
   - Status: review pending
@@ -264,7 +264,8 @@ Remaining chunk order:
 - `cc22594 phase-5: record cli surface reviews`
 - `0b4ea9c phase-5: start dispatch e2e`
 - `6f68b95 phase-5: add dispatch e2e`
-- pending `phase-5: fix dispatch e2e review findings`
+- `56eadac phase-5: fix dispatch e2e review findings`
+- pending `phase-5: record dispatch e2e reviews`
 
 ## Protected-Path Exception Log
 
@@ -278,4 +279,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `P5-C2-dispatch-e2e` review fixes, then run P5-C2 re-review.
+- Run P5-C2 re-review for adopted review fixes.
