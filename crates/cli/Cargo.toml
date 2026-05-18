@@ -1,8 +1,12 @@
 [package]
 name = "git-outpost"
 version = "0.1.0"
+description = "Create self-contained Git outposts from a local repository for editor and devcontainer workflows."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "../../README.md"
 
 [[bin]]
 name = "git-outpost"
@@ -14,7 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
-outpost-core = { path = "../core" }
+outpost-core = { path = "../core", version = "0.1.0" }
 
 [dev-dependencies]
 tempfile.workspace = true
