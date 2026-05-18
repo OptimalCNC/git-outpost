@@ -368,7 +368,7 @@ Remaining chunk order:
 - `03ee3f9 phase-4: add push publication`
 - `594890f phase-4: fix push review findings`
 - `00ad2f2 phase-4: record push reviews`
-- pending `phase-4: close phase`
+- `a1bdd72 phase-4: close phase`
 
 ## Protected-Path Exception Log
 
