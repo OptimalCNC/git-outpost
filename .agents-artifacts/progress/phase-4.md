@@ -140,11 +140,11 @@
 
 ## Active Chunk
 
-- `P4-C1-source-pull-foundation`
-- Scope: source-refresh foundation, `ops::source`, `ops::pull`, and `SourceFetch`/`OutpostFetch` reporting.
-- Test IDs: SP-01..SP-05, P-01..P-09
-- Out of scope: `ops::merge`, `ops::rebase`, `ops::push`, Phase 5 CLI/global `-C`/E2E, unrelated docs cleanup, unrelated refactors.
-- Status: approved.
+- `P4-C2-merge-rebase`
+- Scope: `ops::merge`, `ops::rebase`, configured source-remote validation, detached-head preconditions, and `OutpostFetch` reporting.
+- Test IDs: MR-01..MR-06
+- Out of scope: `ops::push`, Phase 5 CLI/global `-C`/E2E, refreshing B from `origin` inside merge/rebase, unrelated docs cleanup, unrelated refactors.
+- Status: implementation starting.
 
 ## Remaining Chunks
 
@@ -171,7 +171,6 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `P4-C2-merge-rebase`
 - `P4-C3-push-publication`
 - `phase-4-verification`
 
@@ -248,7 +247,8 @@ Remaining chunk order:
 - `a0a7f40 phase-4: start source pull foundation`
 - `9d491be phase-4: add source pull foundation`
 - `96969ea phase-4: fix source pull review findings`
-- pending `P4-C1-source-pull-foundation` review-artifact commit
+- `1669ea2 phase-4: record source pull reviews`
+- pending `P4-C2-merge-rebase` start commit
 
 ## Protected-Path Exception Log
 
@@ -262,4 +262,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `P4-C1-source-pull-foundation` re-review artifacts, then start `P4-C2-merge-rebase`.
+- Implement `P4-C2-merge-rebase` with MR-01..MR-06 coverage.
