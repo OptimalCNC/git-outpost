@@ -83,9 +83,9 @@
 
 | ID | Scope | Status | Notes |
 | --- | --- | --- | --- |
-| E-01 | both `git-outpost` and `gop` debug binaries are built | planned | `crates/cli/tests/e2e.rs::build_creates_both_debug_binaries` |
+| E-01 | both `git-outpost` and `gop` debug binaries are built | completed | `crates/cli/tests/flags.rs::e_01_build_produces_both_binaries` |
 | E-02 | `git outpost status`, `git-outpost status`, and `gop status` produce identical stdout for same C | planned | `crates/cli/tests/e2e.rs::all_invocation_forms_produce_same_status_stdout` |
-| E-03 | `gop --help` lists every subcommand exactly once and includes every long flag from the CLI surface | planned | `crates/cli/tests/help.rs::gop_help_lists_commands_and_long_flags_once` |
+| E-03 | `gop --help` lists every subcommand exactly once and includes every long flag from the CLI surface | completed | `crates/cli/tests/help.rs::e_03_help_lists_commands_and_long_flags` |
 | E-04 | add/status/push/list/remove round trip through CLI exits 0 | planned | `crates/cli/tests/e2e.rs::basic_cli_lifecycle_round_trip_exits_zero` |
 | E-05 | `gop push` makes C commit visible in A | planned | `crates/cli/tests/e2e.rs::push_makes_outpost_commit_visible_upstream` |
 | E-06 | two outposts round trip via source | planned | `crates/cli/tests/e2e.rs::two_outposts_sync_through_source` |
@@ -95,12 +95,12 @@
 | E-10 | full Story flow exits 0 | planned | `crates/cli/tests/e2e.rs::story_flow_exits_zero` |
 | E-11 | `merge local/main` and `rebase local/main` accept Story source-ref form | planned | `crates/cli/tests/e2e.rs::merge_and_rebase_accept_story_source_ref` |
 | E-12 | global `-C <other-dir>` changes effective cwd | planned | `crates/cli/tests/flags.rs::global_c_changes_effective_cwd` |
-| E-13 | removed `add --detach` returns clap usage error | planned | `crates/cli/tests/flags.rs::add_detach_is_rejected_by_clap` |
+| E-13 | removed `add --detach` returns clap usage error | completed | `crates/cli/tests/flags.rs::e_13_add_detach_is_rejected_by_clap` |
 | E-14 | `gop add C -- -evil` returns `InvalidRefName`, not `GitFailed` | planned | `crates/cli/tests/flags.rs::add_target_branch_starting_with_dash_returns_invalid_ref` |
-| E-15 | representative deferred/removed surfaces are rejected by clap | planned | `crates/cli/tests/flags.rs::deferred_and_removed_surfaces_are_rejected_by_clap` |
-| H-01 | `git-outpost --help` renders `git-outpost` as program name | planned | `crates/cli/tests/help.rs::git_outpost_help_uses_git_outpost_program_name` |
-| H-02 | `gop --help` renders `gop` as program name | planned | `crates/cli/tests/help.rs::gop_help_uses_gop_program_name` |
-| H-03 | `git outpost --help` renders a non-`gop` program name | planned | `crates/cli/tests/help.rs::git_dispatch_help_does_not_render_gop_program_name` |
+| E-15 | representative deferred/removed surfaces are rejected by clap | completed | `crates/cli/tests/flags.rs::e_15_deferred_and_removed_surfaces_are_rejected_by_clap` |
+| H-01 | `git-outpost --help` renders `git-outpost` as program name | completed | `crates/cli/tests/help.rs::h_01_git_outpost_help_uses_git_outpost_name` |
+| H-02 | `gop --help` renders `gop` as program name | completed | `crates/cli/tests/help.rs::h_02_gop_help_uses_gop_name` |
+| H-03 | `git outpost --help` renders a non-`gop` program name | completed | `crates/cli/tests/help.rs::h_03_git_dispatch_help_does_not_use_gop_name` |
 
 ## QA/Test Plan Gate
 
@@ -125,7 +125,7 @@
 - Scope: add `git-outpost` CLI crate, workspace membership, both binaries, clap command tree, help rendering, deferred/removed flag rejection, and initial CLI test harness.
 - Test IDs: E-01, E-03, E-13, E-15, H-01, H-02, H-03
 - Out of scope: core command semantic changes, real command dispatch/E2E beyond parse/help, output/color/exit-code hardening beyond clap usage exits, global registry behavior, unrelated docs cleanup, unrelated refactors.
-- Status: assigned to Developer worker `019e3971-76ba-73a1-b3ff-be352ffdd7bd`.
+- Status: implementation and QA evidence recorded; review pending.
 
 ## Remaining Chunks
 
@@ -155,7 +155,18 @@ Remaining chunk order:
 
 ## Completed Chunks
 
-- none
+- `P5-C1-cli-surface` implementation evidence recorded:
+  - Files changed: `Cargo.toml`, `Cargo.lock`, `crates/cli/Cargo.toml`, `crates/cli/src/main.rs`, `crates/cli/src/cli.rs`, `crates/cli/tests/common/mod.rs`, `crates/cli/tests/flags.rs`, `crates/cli/tests/help.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-5.md`, `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/evidence-pack.md`, `.agents-artifacts/qa/phase-5/P5-C1-cli-surface.md`
+  - Test IDs advanced: E-01, E-03, E-13, E-15, H-01, H-02, H-03
+  - Evidence pack: `.agents-artifacts/reviews/phase-5/P5-C1-cli-surface/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-5/P5-C1-cli-surface.md`
+  - Unit tests added: none
+  - CLI integration tests added: `e_01_build_produces_both_binaries`, `e_03_help_lists_commands_and_long_flags`, `e_13_add_detach_is_rejected_by_clap`, `e_15_deferred_and_removed_surfaces_are_rejected_by_clap`, `h_01_git_outpost_help_uses_git_outpost_name`, `h_02_gop_help_uses_gop_name`, `h_03_git_dispatch_help_does_not_use_gop_name`
+  - Docs updated: none
+  - Architecture deviations: none for claimed `P5-C1-cli-surface` behavior. Git 2.43 intercepts `git outpost --help` as a manpage request, so H-03 uses `git outpost -h` to exercise forwarded external-command help.
+  - Implementation/evidence commit: pending
+  - Status: review pending
 
 ## Verification Log
 
@@ -163,6 +174,14 @@ Remaining chunk order:
   - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 13 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --tests`: pass with the same test binaries excluding doctests
   - `cargo test --workspace`: pass with the same workspace coverage
+- `P5-C1-cli-surface` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo build -p git-outpost`: pass; builds `git-outpost` and `gop`; Cargo warns that `src/main.rs` is present in both bin targets, matching the Phase 5 architecture
+  - `cargo test -p git-outpost --tests`: pass; 3 `flags` tests and 4 `help` tests
+  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 13 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass with the same core test binaries excluding doctests
+  - `cargo test --workspace`: pass; 7 CLI integration tests plus existing core coverage, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -175,7 +194,8 @@ Remaining chunk order:
 ## Commit Log
 
 - `1042a8e phase-5: record readiness and plan`
-- pending `phase-5: start cli surface`
+- `270cdde phase-5: start cli surface`
+- pending `phase-5: add cli surface`
 
 ## Protected-Path Exception Log
 
@@ -183,9 +203,9 @@ Remaining chunk order:
 
 ## Open Risks / Questions
 
-- Adding CLI dependencies will update `Cargo.lock`.
+- P5-C2 owns real command dispatch, output formatting, `StderrReporter`, global `-C` behavior assertions, and E2E Story behavior.
 - Local execution is Linux; cross-platform rules must be encoded in tests and CI-friendly code, but Windows/macOS behavior cannot be fully proven locally without runners.
 
 ## Next Recommended Action
 
-- Complete `P5-C1-cli-surface` implementation and evidence pack.
+- Commit `P5-C1-cli-surface` implementation and evidence, then run the three-reviewer gate.
