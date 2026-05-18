@@ -101,15 +101,15 @@
 | R-09 | wrong-source registered outpost returns `RegistryEntryNotManaged` | implemented passing | `remove_wrong_source_outpost_returns_not_managed` |
 | R-10 | locked C refused; force deletes and deregisters | implemented passing | `remove_refuses_locked_outpost_unless_forced` |
 | R-11 | locked missing path returns `OutpostLocked`; force deregisters without rmtree | implemented passing | `remove_locked_missing_path_requires_force_then_deregisters` |
-| Pr-01 | `prune` removes registry entries whose paths no longer exist | planned | `crates/core/tests/prune.rs` |
-| Pr-02 | `prune` keeps existing valid outposts | planned | `crates/core/tests/prune.rs` |
-| Pr-03 | `prune` does not delete real directories or source branches | planned | `crates/core/tests/prune.rs` |
-| Pr-04 | `prune` reports removed entries in `PruneReport` | planned | `crates/core/tests/prune.rs` |
-| Pr-05 | `prune` keeps unrelated existing dirs and wrong-source outposts registered | planned | `crates/core/tests/prune.rs` |
-| Pr-06 | `prune --dry-run` makes no registry changes | planned | `crates/core/tests/prune.rs` |
-| Pr-07 | missing `outpost.sourceRepo` target reported in `orphaned_source_missing` | planned | `crates/core/tests/prune.rs` |
-| Pr-08 | `prune` leaves locked stale entries registered and reports them | planned | `crates/core/tests/prune.rs` |
-| Pr-09 | `ops::prune::run` includes each pruned entry in `PruneReport.removed_entries` | planned | `crates/core/tests/prune.rs`; CLI `-v` formatting out of scope |
+| Pr-01 | `prune` removes registry entries whose paths no longer exist | implemented passing | `prune_removes_missing_registry_entries` |
+| Pr-02 | `prune` keeps existing valid outposts | implemented passing | `prune_keeps_existing_valid_outposts` |
+| Pr-03 | `prune` does not delete real directories or source branches | implemented passing | `prune_does_not_delete_real_dirs_or_source_branches` |
+| Pr-04 | `prune` reports removed entries in `PruneReport` | implemented passing | `prune_report_lists_removed_missing_entries` |
+| Pr-05 | `prune` keeps unrelated existing dirs and wrong-source outposts registered | implemented passing | `prune_keeps_unrelated_dirs_and_wrong_source_outposts_registered` |
+| Pr-06 | `prune --dry-run` makes no registry changes | implemented passing | `prune_dry_run_reports_but_does_not_modify_registry` |
+| Pr-07 | missing `outpost.sourceRepo` target reported in `orphaned_source_missing` | implemented passing | `prune_reports_existing_outpost_whose_source_repo_is_missing` |
+| Pr-08 | `prune` leaves locked stale entries registered and reports them | implemented passing | `prune_keeps_locked_stale_entries_and_reports_locked` |
+| Pr-09 | `ops::prune::run` includes each pruned entry in `PruneReport.removed_entries` | implemented passing | `prune_report_removed_entries_is_independent_of_verbose`; CLI `-v` formatting out of scope |
 
 ## QA/Test Plan Gate
 
@@ -142,12 +142,12 @@
 
 ## Active Chunk
 
-- `remove-safety`
-- Scope: implement `ops::remove` and minimal unpushed safety support; add QA-owned core integration coverage for R-01..R-11.
-- Test IDs: R-01, R-02, R-03, R-04, R-05, R-06, R-07, R-08, R-09, R-10, R-11
-- Out of scope: CLI contextual path omission, CLI formatting/dispatch/global `-C`, prune behavior, Phase 3+ status/sync behavior, registry file locking/concurrency.
-- Status: approved; next chunk pending
-- QA worker: `019e384b-ddb5-7fd2-96b5-a99e956f0a8c`; write scope `crates/core/tests/remove.rs`.
+- `prune`
+- Scope: implement `ops::prune` with structured `PruneReport`; add QA-owned core integration coverage for Pr-01..Pr-09.
+- Test IDs: Pr-01, Pr-02, Pr-03, Pr-04, Pr-05, Pr-06, Pr-07, Pr-08, Pr-09
+- Out of scope: CLI formatting/dispatch/global `-C`, Phase 3+ status/sync behavior, registry file locking/concurrency.
+- Status: implementation complete; review pending
+- QA worker: `019e3864-f449-7a90-90dc-eb0ac78df901`; write scope `crates/core/tests/prune.rs`.
 
 ## Remaining Chunks
 
@@ -175,7 +175,7 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `prune`
+- none
 
 ## Completed Chunks
 
@@ -217,6 +217,17 @@ Remaining chunk order:
   - Review verdicts: scope `approved`; normal `approved`; independent `approved`
   - Required review changes: none
   - Status: approved
+- `prune` implementation evidence recorded:
+  - Files changed: `crates/core/src/ops/mod.rs`, `crates/core/src/ops/prune.rs`, `crates/core/tests/prune.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-2.md`, `.agents-artifacts/reviews/phase-2/prune/evidence-pack.md`, `.agents-artifacts/qa/phase-2/prune.md`
+  - Test IDs advanced: Pr-01..Pr-09
+  - Evidence pack: `.agents-artifacts/reviews/phase-2/prune/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-2/prune.md`
+  - Unit tests added: none; behavior covered by core integration tests
+  - Integration tests added: `prune_removes_missing_registry_entries`, `prune_keeps_existing_valid_outposts`, `prune_does_not_delete_real_dirs_or_source_branches`, `prune_report_lists_removed_missing_entries`, `prune_keeps_unrelated_dirs_and_wrong_source_outposts_registered`, `prune_dry_run_reports_but_does_not_modify_registry`, `prune_reports_existing_outpost_whose_source_repo_is_missing`, `prune_keeps_locked_stale_entries_and_reports_locked`, `prune_report_removed_entries_is_independent_of_verbose`
+  - Docs updated: none; existing product and architecture document prune report fields and classification order
+  - Architecture deviations: none for claimed prune behavior
+  - Status: implementation evidence recorded; awaiting review
 
 ## Verification Log
 
@@ -240,6 +251,14 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 11 remove integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --features test-helpers`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 11 remove integration tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- `prune` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo test -p outpost-core --test prune`: pass; 9 prune integration tests
+  - `cargo test -p outpost-core`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --features test-helpers`: pass; 45 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -254,6 +273,7 @@ Remaining chunk order:
 
 - `lock-move-unlock`: no docs changes; stable lock/move/unlock contracts already covered by product behavior and architecture sections 5.9.9..5.9.11.
 - `remove-safety`: no docs changes; stable remove contracts and unpushed safety helpers already covered by product behavior and architecture sections 5.5, 5.8, 5.9.12, and 11.10.
+- `prune`: no docs changes; stable prune behavior, report fields, and classification order already covered by product behavior and architecture sections 5.9.13 and 11.11.
 
 ## Commit Log
 
@@ -274,4 +294,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `remove-safety` implementation evidence, then run scope, normal, and independent reviews.
+- Commit `prune` implementation evidence, then run scope, normal, and independent reviews.
