@@ -126,7 +126,7 @@
 - Scope: populate read-only ahead/behind and relationship health for outpost vs source, source vs upstream, local remote mismatch, and custom remote names.
 - Test IDs: S-05, S-06, S-11, S-12
 - Out of scope: Phase 4 sync/source/pull/merge/rebase/push command behavior, Phase 5 CLI/global `-C`/E2E, fetching or mutating refs, registry health checks beyond fields needed for S-05/S-06/S-11/S-12.
-- Status: assigned; implementation pending
+- Status: implementation and QA evidence recorded; review pending
 
 ## Remaining Chunks
 
@@ -202,6 +202,21 @@ Remaining chunk order:
   - Required review changes: none
   - Adopted nits: progress log now records checkpoint record commit `9aa4d4d`; next recommended action updated after reviews
   - Status: approved
+- `status-relationship-health` implementation evidence recorded:
+  - Files changed: `crates/core/src/ops/status.rs`, `crates/core/tests/status.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-3.md`, `.agents-artifacts/reviews/phase-3/status-relationship-health/evidence-pack.md`, `.agents-artifacts/qa/phase-3/status-relationship-health.md`
+  - Test IDs advanced: S-05, S-06, S-11, S-12
+  - Additional architecture status health variants completed: `NotInRegistry`, `PushWouldFail`
+  - Evidence pack: `.agents-artifacts/reviews/phase-3/status-relationship-health/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-3/status-relationship-health.md`
+  - Unit tests added/updated: none
+  - Integration tests added: `s05_run_with_reports_outpost_ahead_behind_source_from_existing_refs`, `s06_run_with_reports_source_ahead_behind_upstream_from_existing_refs`, `s11_run_with_flags_local_remote_mismatch`, `s12_run_with_uses_metadata_remote_name_for_custom_remote`, `run_with_flags_not_in_registry_when_outpost_entry_is_missing`, `run_with_flags_push_would_fail_when_source_refuses_checked_out_branch_update`
+  - Docs updated: none; existing product and architecture document relationship fields, health problems, and read-only status behavior
+  - Architecture deviations: none for claimed `status-relationship-health` behavior
+  - Implementation commit: pending
+  - Review artifacts: pending
+  - Review verdicts: pending
+  - Status: review pending
 
 ## Verification Log
 
@@ -227,6 +242,15 @@ Remaining chunk order:
   - `cargo test -p outpost-core --tests`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 9 status integration tests, 1 fixture smoke test
   - `cargo test --workspace`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 9 status integration tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- `status-relationship-health` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo check -p outpost-core`: pass
+  - `cargo test -p outpost-core --lib ops::status`: pass; 1 status unit test
+  - `cargo test -p outpost-core --test status`: pass; 15 status integration tests
+  - `cargo test -p outpost-core`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 15 status integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -241,6 +265,7 @@ Remaining chunk order:
 
 - `status-report-core`: no docs changes; stable status report shape and `RawMetadata` degraded reporting are already covered by product status behavior and architecture sections 5.9.3 and 11.5.
 - `status-local-state`: no docs changes; stable local-state fields and source-missing reporting are already covered by product status behavior and architecture sections 5.9.3 and 11.5.
+- `status-relationship-health`: no docs changes; stable relationship fields, health problems, and read-only status behavior are already covered by product status behavior and architecture sections 5.9.3 and 11.5.
 
 ## Commit Log
 
@@ -267,4 +292,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Implement `status-relationship-health`.
+- Commit `status-relationship-health` implementation/evidence, record the checkpoint hash, then run the three-review gate.
