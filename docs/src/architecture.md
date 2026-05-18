@@ -1129,8 +1129,9 @@ pub struct MergeReport {
 3. Emit
    `reporter.step(OutpostFetch, "fetching source <B> branch <branch> into outpost <C>")`.
 4. Run `git fetch <remote_name> <branch>:refs/remotes/<remote_name>/<branch>` in C.
-5. Run `git merge <remote_name>/<branch>` in C and let Git handle
-   conflicts and merge commits.
+5. Run `git merge refs/remotes/<remote_name>/<branch>` in C and let Git
+   handle conflicts and merge commits. The full remote-tracking ref avoids
+   ambiguity with a local branch named `<remote_name>/<branch>`.
 
 #### 5.9.7 `ops/rebase.rs`
 
@@ -1157,8 +1158,9 @@ pub struct RebaseReport {
 3. Emit
    `reporter.step(OutpostFetch, "fetching source <B> branch <branch> into outpost <C>")`.
 4. Run `git fetch <remote_name> <branch>:refs/remotes/<remote_name>/<branch>` in C.
-5. Run `git rebase <remote_name>/<branch>` in C and let Git handle
-   conflicts.
+5. Run `git rebase refs/remotes/<remote_name>/<branch>` in C and let Git
+   handle conflicts. The full remote-tracking ref avoids ambiguity with a
+   local branch named `<remote_name>/<branch>`.
 
 #### 5.9.8 `ops/push.rs`
 

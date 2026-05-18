@@ -19,6 +19,7 @@
 - `.agents-artifacts/progress/phase-4.md`
 - `.agents-artifacts/qa/phase-4/P4-C2-merge-rebase.md`
 - `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/evidence-pack.md`
+- `docs/src/architecture.md`
 - `crates/core/src/ops/mod.rs`
 - `crates/core/src/ops/merge.rs`
 - `crates/core/src/ops/rebase.rs`
@@ -67,8 +68,7 @@
 
 ## Docs Added / Updated
 
-- none
-- Rationale: product and architecture already document merge/rebase source-ref behavior, reporter event expectations, custom remote behavior, and test scenarios.
+- `docs/src/architecture.md`: updated the internal `ops::merge` and `ops::rebase` command descriptions to use full `refs/remotes/<remote>/<branch>` operands, matching the adopted ambiguity fix.
 
 ## Verification
 

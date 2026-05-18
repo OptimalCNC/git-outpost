@@ -144,7 +144,7 @@
 - Scope: `ops::merge`, `ops::rebase`, configured source-remote validation, detached-head preconditions, and `OutpostFetch` reporting.
 - Test IDs: MR-01..MR-06
 - Out of scope: `ops::push`, Phase 5 CLI/global `-C`/E2E, refreshing B from `origin` inside merge/rebase, unrelated docs cleanup, unrelated refactors.
-- Status: review fix implemented after independent review; re-review pending.
+- Status: approved after re-review; review artifacts pending commit.
 
 ## Remaining Chunks
 
@@ -208,16 +208,23 @@ Remaining chunk order:
   - QA note: `.agents-artifacts/qa/phase-4/P4-C2-merge-rebase.md`
   - Unit tests added: none
   - Integration tests added: `mr01_merge_fetches_source_branch_and_merges_remote_tracking_ref`, `mr02_rebase_fetches_source_branch_and_rebases_current_branch`, `mr03_merge_uses_custom_source_remote_name`, `mr03_rebase_uses_custom_source_remote_name`, `mr04_merge_rejects_wrong_remote_before_fetching`, `mr04_rebase_rejects_wrong_remote_before_fetching`, `mr05_merge_records_outpost_fetch_event`, `mr05_rebase_records_outpost_fetch_event`, `mr06_merge_on_detached_head_returns_attached_branch_error_before_fetching`, `mr06_rebase_on_detached_head_returns_attached_branch_error_before_fetching`, `merge_uses_full_remote_tracking_ref_when_local_branch_name_collides`, `rebase_uses_full_remote_tracking_ref_when_local_branch_name_collides`
-  - Docs updated: none; existing product and architecture document merge/rebase source-ref behavior, reporter events, custom remote behavior, and test scenarios
+  - Docs updated: `docs/src/architecture.md` now documents full `refs/remotes/<remote>/<branch>` final merge/rebase operands to avoid local-branch ambiguity
   - Architecture deviations: none for claimed `P4-C2-merge-rebase` behavior
   - Implementation/evidence commit: `4a68f15 phase-4: add merge rebase`
+  - Review-fix commit: `6d5ee16 phase-4: fix merge rebase review findings`
   - Review artifacts:
     - Scope Reviewer: `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/scope-review.md`
     - Normal Reviewer: `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/normal-review.md`
     - Independent Reviewer: `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/independent-review.md`
+    - Scope Re-reviewer: `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/scope-rereview.md`
+    - Normal Re-reviewer: `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/normal-rereview.md`
+    - Independent Re-reviewer: `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/independent-rereview.md`
   - Review verdicts before fixes: scope `approved for scope`; normal `pass`; independent `changes requested`
   - Adopted review fix: final merge/rebase operations now use the full fetched remote-tracking ref `refs/remotes/<remote>/<branch>` instead of the ambiguous short `<remote>/<branch>`.
-  - Status: review fix implemented; re-review pending
+  - Review verdicts after fixes: scope `approved with nits`; normal `pass`; independent `approved`
+  - Adopted nits: progress log records review-fix commit `6d5ee16`; architecture command prose now matches the full-ref implementation.
+  - Required review changes: none open
+  - Status: approved
 
 ## Verification Log
 
@@ -271,11 +278,18 @@ Remaining chunk order:
   - `ops::merge` and `ops::rebase` fetch into and then operate on `refs/remotes/<remote>/<branch>`.
   - Added merge/rebase regression tests with a colliding local branch named `local/main`.
   - Focused merge/rebase and full required verification passed after the fix.
+- `P4-C2-merge-rebase` Scope Re-reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/scope-rereview.md`; nit was stale progress commit-log text.
+- `P4-C2-merge-rebase` Normal Re-reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/normal-rereview.md`; no required changes or nits.
+- `P4-C2-merge-rebase` Independent Re-reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/independent-rereview.md`; nit was stale architecture prose for the final Git operand.
+- Adopted `P4-C2-merge-rebase` re-review nits:
+  - Progress log records review-fix commit `6d5ee16`.
+  - `docs/src/architecture.md` now documents full `refs/remotes/<remote>/<branch>` final operands for merge/rebase.
+- Blocking review findings: none open for `P4-C2-merge-rebase`.
 
 ## Docs Log
 
 - `P4-C1-source-pull-foundation`: no docs changes; stable concepts are already covered by product `pull`/`source pull` and architecture sections 5.8, 5.9.0, 5.9.4, 5.9.5, 11.6, and 11.7.
-- `P4-C2-merge-rebase`: no docs changes; stable concepts are already covered by product `merge`/`rebase` and architecture sections 5.9.0, 5.9.6, 5.9.7, and 11.8.
+- `P4-C2-merge-rebase`: `docs/src/architecture.md` updated sections 5.9.6 and 5.9.7 to document full `refs/remotes/<remote>/<branch>` operands for final merge/rebase commands; this matches the adopted safety invariant and review fix.
 
 ## Commit Log
 
@@ -286,7 +300,8 @@ Remaining chunk order:
 - `1669ea2 phase-4: record source pull reviews`
 - `6b4d8f5 phase-4: start merge rebase`
 - `4a68f15 phase-4: add merge rebase`
-- pending `P4-C2-merge-rebase` review-fix commit
+- `6d5ee16 phase-4: fix merge rebase review findings`
+- pending `P4-C2-merge-rebase` review-artifact commit
 
 ## Protected-Path Exception Log
 
@@ -300,4 +315,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `P4-C2-merge-rebase` review fix and evidence updates, then run scope, normal, and independent re-reviews.
+- Commit `P4-C2-merge-rebase` re-review artifacts and adopted nits, then start `P4-C3-push-publication`.
