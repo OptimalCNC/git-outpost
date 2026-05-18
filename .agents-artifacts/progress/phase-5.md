@@ -121,7 +121,11 @@
 
 ## Active Chunk
 
-- none; readiness, QA, and chunk planning gates have passed.
+- `P5-C1-cli-surface`
+- Scope: add `git-outpost` CLI crate, workspace membership, both binaries, clap command tree, help rendering, deferred/removed flag rejection, and initial CLI test harness.
+- Test IDs: E-01, E-03, E-13, E-15, H-01, H-02, H-03
+- Out of scope: core command semantic changes, real command dispatch/E2E beyond parse/help, output/color/exit-code hardening beyond clap usage exits, global registry behavior, unrelated docs cleanup, unrelated refactors.
+- Status: assigned to Developer worker `019e3971-76ba-73a1-b3ff-be352ffdd7bd`.
 
 ## Remaining Chunks
 
@@ -146,7 +150,6 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `P5-C1-cli-surface`
 - `P5-C2-dispatch-e2e`
 - `P5-C3-exit-color-platform-hardening`
 
@@ -171,7 +174,8 @@ Remaining chunk order:
 
 ## Commit Log
 
-- pending `phase-5: record readiness and plan`
+- `1042a8e phase-5: record readiness and plan`
+- pending `phase-5: start cli surface`
 
 ## Protected-Path Exception Log
 
@@ -184,4 +188,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Dispatch QA/Test Developer for the Phase 5 test plan, then dispatch Planner for chunking.
+- Complete `P5-C1-cli-surface` implementation and evidence pack.
