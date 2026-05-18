@@ -282,6 +282,14 @@ Remaining chunk order:
   - `cargo test -p outpost-core exit_code_maps_each_variant`: pass
   - `cargo test -p git-outpost --test flags e_08`: pass; 2 selected E-08 tests
   - `git diff --check`: pass
+- Phase 5 closeout verification:
+  - `cargo fmt --check`: pass
+  - `cargo build -p git-outpost`: pass; builds `git-outpost` and `gop`; Cargo warns that `src/main.rs` is present in both bin targets, matching the Phase 5 architecture
+  - `cargo test -p git-outpost --tests`: pass; 9 E2E tests, 8 flags tests, 4 help tests
+  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 13 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass with the same core test binaries excluding doctests
+  - `cargo test --workspace`: pass; 21 CLI integration tests plus existing core coverage, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -326,6 +334,7 @@ Remaining chunk order:
 
 - `P5-C1-cli-surface`: `docs/src/architecture.md` updated H-03 to specify `git outpost -h`, because Git intercepts literal `git outpost --help` as a manpage request before external command dispatch.
 - `P5-C2-dispatch-e2e`: `docs/src/architecture.md` updated with dispatch-context `OutpostError` variants and exit-code mapping. Evidence records that E2E paths use sibling outposts such as `../C` to honor the existing separate-checkout invariant.
+- `P5-C3-exit-color-platform-hardening`: `docs/src/architecture.md` updated the `GitFailed` exit-code snippet to clamp into `1..=125`, matching the review-fixed implementation and tests.
 
 ## Commit Log
 
@@ -343,7 +352,8 @@ Remaining chunk order:
 - `47d10fd phase-5: harden exit color platform behavior`
 - `858f61e phase-5: record exit color hardening commit`
 - `c93bb8c phase-5: fix exit color review findings`
-- pending `phase-5: record exit color reviews`
+- `d12f0d7 phase-5: record exit color reviews`
+- pending `phase-5: close phase`
 
 ## Protected-Path Exception Log
 
@@ -351,10 +361,10 @@ Remaining chunk order:
 
 ## Open Risks / Questions
 
-- Phase 5 closeout is pending after committing the P5-C3 review record.
 - H-03 should continue to use `git outpost -h`; literal `git outpost --help` is Git's manpage path on Git 2.43.
 - Local execution is Linux; cross-platform rules must be encoded in tests and CI-friendly code, but Windows/macOS behavior cannot be fully proven locally without runners.
+- Existing unrelated local changes remain outside Phase 5 commits: `crates/cli/Cargo.toml`, `.github/`, and `README.md`.
 
 ## Next Recommended Action
 
-- Commit P5-C3 review records, then run Phase 5 closeout verification and closeout gate.
+- Commit Phase 5 closeout record, then proceed to Phase 6 readiness gate.
