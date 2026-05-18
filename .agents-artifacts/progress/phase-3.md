@@ -213,7 +213,7 @@ Remaining chunk order:
   - Integration tests added: `s05_run_with_reports_outpost_ahead_behind_source_from_existing_refs`, `s06_run_with_reports_source_ahead_behind_upstream_from_existing_refs`, `s11_run_with_flags_local_remote_mismatch`, `s12_run_with_uses_metadata_remote_name_for_custom_remote`, `run_with_flags_not_in_registry_when_outpost_entry_is_missing`, `run_with_flags_push_would_fail_when_source_refuses_checked_out_branch_update`
   - Docs updated: none; existing product and architecture document relationship fields, health problems, and read-only status behavior
   - Architecture deviations: none for claimed `status-relationship-health` behavior
-  - Implementation commit: pending
+  - Implementation commit: `fbf2cdd phase-3: add status relationship health`
   - Review artifacts: pending
   - Review verdicts: pending
   - Status: review pending
@@ -278,7 +278,9 @@ Remaining chunk order:
 - `9aa4d4d phase-3: record status local state checkpoint`
 - `e9a12eb phase-3: record status local state scope review`
 - `7daa316 phase-3: record status local state reviews`
-- pending `status-relationship-health` checkpoint commit
+- `b289f74 phase-3: start status relationship health`
+- `fbf2cdd phase-3: add status relationship health`
+- pending `status-relationship-health` checkpoint-record commit
 
 ## Protected-Path Exception Log
 
