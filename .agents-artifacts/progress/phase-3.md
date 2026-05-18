@@ -122,11 +122,11 @@
 
 ## Active Chunk
 
-- `status-report-core`
-- Scope: add `ops::status` public report types and basic `run`/`run_with` flow using `RawMetadata`; support explicit target path; return `NotAnOutpost` for unmanaged repos; report missing `sourceRepo`/`remoteName` as problems.
-- Test IDs: S-07, S-08, S-09, S-13
-- Out of scope: local state fields beyond safe defaults, ahead/behind, remote mismatch, custom remote behavior, Phase 4 sync commands, Phase 5 CLI/global `-C`/E2E.
-- Status: implementation and QA evidence recorded; review pending
+- `status-local-state`
+- Scope: populate status report fields for source path, remote name, current/detached branch, dirty working tree, and missing source path.
+- Test IDs: S-01, S-02, S-03, S-04, S-10
+- Out of scope: ahead/behind, source upstream health, local remote mismatch, registry health, push-would-fail checks, custom remote tracking behavior beyond preserving `remote_name`, Phase 4 sync commands, Phase 5 CLI/global `-C`/E2E.
+- Status: assigned; implementation pending
 
 ## Remaining Chunks
 
@@ -215,7 +215,8 @@ Remaining chunk order:
 - `252e2f1 phase-3: add status report core`
 - `a33b050 phase-3: record status report core checkpoint`
 - `64fb716 phase-3: record status report core scope review`
-- pending `status-report-core` review-artifact commit
+- `2e0f8a9 phase-3: record status report core reviews`
+- pending `status-local-state` checkpoint commit
 
 ## Protected-Path Exception Log
 
@@ -229,4 +230,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `status-report-core` review artifacts, then begin `status-local-state`.
+- Implement `status-local-state`.
