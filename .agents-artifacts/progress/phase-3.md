@@ -192,7 +192,7 @@ Remaining chunk order:
   - Integration tests added: `s01_run_with_from_inside_outpost_reports_canonical_source_path`, `s02_run_with_reports_local_remote_name`, `s03_run_with_reports_current_branch_and_detached_head`, `s04_run_with_reports_dirty_state_for_untracked_files`, `s10_run_with_reports_missing_source_problem`
   - Docs updated: none; existing product and architecture document status local-state fields and source-missing reporting
   - Architecture deviations: none for claimed `status-local-state` behavior
-  - Implementation commit: pending
+  - Implementation commit: `cb5993b phase-3: add status local state`
   - Review artifacts: pending
   - Review verdicts: pending
   - Status: review pending
@@ -240,7 +240,8 @@ Remaining chunk order:
 - `a33b050 phase-3: record status report core checkpoint`
 - `64fb716 phase-3: record status report core scope review`
 - `2e0f8a9 phase-3: record status report core reviews`
-- pending `status-local-state` checkpoint commit
+- `cb5993b phase-3: add status local state`
+- pending `status-local-state` checkpoint-record commit
 
 ## Protected-Path Exception Log
 
