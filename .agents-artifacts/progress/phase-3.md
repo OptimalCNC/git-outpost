@@ -126,7 +126,7 @@
 - Scope: populate status report fields for source path, remote name, current/detached branch, dirty working tree, and missing source path.
 - Test IDs: S-01, S-02, S-03, S-04, S-10
 - Out of scope: ahead/behind, source upstream health, local remote mismatch, registry health, push-would-fail checks, custom remote tracking behavior beyond preserving `remote_name`, Phase 4 sync commands, Phase 5 CLI/global `-C`/E2E.
-- Status: assigned; implementation pending
+- Status: implementation and QA evidence recorded; review pending
 
 ## Remaining Chunks
 
@@ -182,6 +182,20 @@ Remaining chunk order:
   - Required review changes: none
   - Adopted nits: progress log now records checkpoint record commit `a33b050`
   - Status: approved
+- `status-local-state` implementation evidence recorded:
+  - Files changed: `crates/core/src/ops/status.rs`, `crates/core/tests/status.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-3.md`, `.agents-artifacts/reviews/phase-3/status-local-state/evidence-pack.md`, `.agents-artifacts/qa/phase-3/status-local-state.md`
+  - Test IDs advanced: S-01, S-02, S-03, S-04, S-10
+  - Evidence pack: `.agents-artifacts/reviews/phase-3/status-local-state/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-3/status-local-state.md`
+  - Unit tests updated: `ops::status::tests::report_from_raw_records_missing_metadata_problems`
+  - Integration tests added: `s01_run_with_from_inside_outpost_reports_canonical_source_path`, `s02_run_with_reports_local_remote_name`, `s03_run_with_reports_current_branch_and_detached_head`, `s04_run_with_reports_dirty_state_for_untracked_files`, `s10_run_with_reports_missing_source_problem`
+  - Docs updated: none; existing product and architecture document status local-state fields and source-missing reporting
+  - Architecture deviations: none for claimed `status-local-state` behavior
+  - Implementation commit: pending
+  - Review artifacts: pending
+  - Review verdicts: pending
+  - Status: review pending
 
 ## Verification Log
 
@@ -198,6 +212,15 @@ Remaining chunk order:
   - `cargo test -p outpost-core --tests`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 4 status integration tests, 1 fixture smoke test
   - `cargo test --workspace`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 4 status integration tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- `status-local-state` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo check -p outpost-core`: pass
+  - `cargo test -p outpost-core --lib ops::status`: pass; 1 status unit test
+  - `cargo test -p outpost-core --test status`: pass; 9 status integration tests
+  - `cargo test -p outpost-core`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 9 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 9 status integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 9 status integration tests, 1 fixture smoke test, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -208,6 +231,7 @@ Remaining chunk order:
 ## Docs Log
 
 - `status-report-core`: no docs changes; stable status report shape and `RawMetadata` degraded reporting are already covered by product status behavior and architecture sections 5.9.3 and 11.5.
+- `status-local-state`: no docs changes; stable local-state fields and source-missing reporting are already covered by product status behavior and architecture sections 5.9.3 and 11.5.
 
 ## Commit Log
 
@@ -230,4 +254,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Implement `status-local-state`.
+- Commit `status-local-state` implementation/evidence, record the checkpoint hash, then run the three-review gate.

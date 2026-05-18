@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::metadata::RawMetadata;
 use crate::outpost::AheadBehind;
-use crate::source_repo::{canonicalize_path, invoker_at};
+use crate::source_repo::{canonicalize_path, invoker_at, is_dirty};
 use crate::{BranchName, OutpostError, OutpostResult, RemoteName};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,7 +54,7 @@ pub fn run_with(
         return Err(OutpostError::NotAnOutpost(outpost_path));
     }
 
-    Ok(report_from_raw(outpost_path, raw))
+    report_from_raw(outpost_path, raw, &git)
 }
 
 fn discover_work_tree(
@@ -68,28 +68,39 @@ fn discover_work_tree(
     canonicalize_path(Path::new(&work_tree))
 }
 
-fn report_from_raw(outpost_path: PathBuf, raw: RawMetadata) -> StatusReport {
+fn report_from_raw(
+    outpost_path: PathBuf,
+    raw: RawMetadata,
+    git: &crate::GitInvoker,
+) -> OutpostResult<StatusReport> {
     let mut problems = Vec::new();
-    if raw.source_repo.is_none() {
-        problems.push(ConfigProblem::MissingSourceRepoConfig);
-    }
+    let source_path = match raw.source_repo {
+        Some(path) => Some(canonicalize_existing_or_missing(&path)?),
+        None => {
+            problems.push(ConfigProblem::MissingSourceRepoConfig);
+            None
+        }
+    };
     if raw.remote_name.is_none() {
         problems.push(ConfigProblem::MissingRemoteNameConfig);
     }
 
-    let source_present = raw.source_repo.as_ref().is_some_and(|path| path.exists());
+    let source_present = source_path.as_ref().is_some_and(|path| path.exists());
+    if let Some(path) = source_path.as_ref().filter(|_| !source_present) {
+        problems.push(ConfigProblem::SourceMissing(path.clone()));
+    }
 
-    StatusReport {
+    Ok(StatusReport {
         outpost_path,
-        source_path: raw.source_repo,
+        source_path,
         source_present,
         remote_name: raw.remote_name,
-        current_branch: None,
-        outpost_dirty: false,
+        current_branch: current_branch_or_detached(git)?,
+        outpost_dirty: is_dirty(git)?,
         source_ahead_behind_upstream: None,
         outpost_ahead_behind_source: None,
         problems,
-    }
+    })
 }
 
 fn map_discovery_error(err: OutpostError, path: &Path) -> OutpostError {
@@ -99,20 +110,53 @@ fn map_discovery_error(err: OutpostError, path: &Path) -> OutpostError {
     }
 }
 
+fn canonicalize_existing_or_missing(path: &Path) -> OutpostResult<PathBuf> {
+    if path.exists() {
+        canonicalize_path(path)
+    } else {
+        Ok(canonicalize_missing(path))
+    }
+}
+
+fn canonicalize_missing(path: &Path) -> PathBuf {
+    let Some(parent) = path.parent() else {
+        return path.to_path_buf();
+    };
+    match std::fs::canonicalize(parent) {
+        Ok(parent) => parent.join(path.file_name().unwrap_or_default()),
+        Err(_) => path.to_path_buf(),
+    }
+}
+
+fn current_branch_or_detached(git: &crate::GitInvoker) -> OutpostResult<Option<BranchName>> {
+    match git.run_capture(["symbolic-ref", "--quiet", "--short", "HEAD"]) {
+        Ok(branch) => BranchName::parse(branch).map(Some),
+        Err(OutpostError::GitFailed { code: 1, .. }) => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn report_from_raw_records_missing_metadata_problems() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        crate::GitInvoker::at(temp.path())
+            .run_check(["init", "--initial-branch=main"])
+            .expect("init repo");
+
         let report = report_from_raw(
-            PathBuf::from("/outpost"),
+            temp.path().to_path_buf(),
             RawMetadata {
                 managed: Some(true),
                 source_repo: None,
                 remote_name: None,
             },
-        );
+            &crate::GitInvoker::at(temp.path()),
+        )
+        .expect("report");
 
         assert_eq!(report.source_path, None);
         assert!(!report.source_present);

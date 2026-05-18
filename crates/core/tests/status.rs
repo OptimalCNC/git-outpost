@@ -9,6 +9,90 @@ use outpost_core::ops::status::{run_with, ConfigProblem};
 use outpost_core::OutpostError;
 
 #[test]
+fn s01_run_with_from_inside_outpost_reports_canonical_source_path() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+    let nested = outpost.join("nested");
+    fs::create_dir(&nested).expect("create nested dir");
+
+    let report = run_with(&nested, &fixture.git_env).expect("status report");
+
+    assert_eq!(report.source_path, Some(canonical(&fixture.source)));
+}
+
+#[test]
+fn s02_run_with_reports_local_remote_name() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+
+    let report = run_with(&outpost, &fixture.git_env).expect("status report");
+
+    assert_eq!(
+        report.remote_name.as_ref().map(|remote| remote.as_str()),
+        Some("local")
+    );
+}
+
+#[test]
+fn s03_run_with_reports_current_branch_and_detached_head() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+
+    let branch_report = run_with(&outpost, &fixture.git_env).expect("branch status report");
+
+    assert_eq!(
+        branch_report
+            .current_branch
+            .as_ref()
+            .map(|branch| branch.as_str()),
+        Some("main")
+    );
+
+    fixture
+        .invoker(&outpost)
+        .run_check(["checkout", "--detach"])
+        .expect("detach HEAD");
+
+    let detached_report = run_with(&outpost, &fixture.git_env).expect("detached status report");
+
+    assert_eq!(detached_report.current_branch, None);
+}
+
+#[test]
+fn s04_run_with_reports_dirty_state_for_untracked_files() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+
+    let clean_report = run_with(&outpost, &fixture.git_env).expect("clean status report");
+
+    assert!(!clean_report.outpost_dirty);
+
+    fs::write(outpost.join("untracked.txt"), "new").expect("write untracked file");
+
+    let dirty_report = run_with(&outpost, &fixture.git_env).expect("dirty status report");
+
+    assert!(dirty_report.outpost_dirty);
+}
+
+#[test]
+fn s10_run_with_reports_missing_source_problem() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+    let moved_source = fixture.root.join("B.moved");
+    fs::rename(&fixture.source, &moved_source).expect("move source repo");
+
+    let report = run_with(&outpost, &fixture.git_env).expect("degraded status report");
+
+    assert_eq!(report.source_path, Some(canonical_missing(&fixture.source)));
+    assert!(!report.source_present);
+    assert!(report
+        .problems
+        .contains(&ConfigProblem::SourceMissing(canonical_missing(
+            &fixture.source
+        ))));
+}
+
+#[test]
 fn s07_run_with_accepts_explicit_outpost_target_path() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add C");
@@ -83,4 +167,9 @@ fn expect_error<T>(result: outpost_core::OutpostResult<T>, message: &str) -> Out
 
 fn canonical(path: &Path) -> PathBuf {
     fs::canonicalize(path).expect("canonical path")
+}
+
+fn canonical_missing(path: &Path) -> PathBuf {
+    let parent = path.parent().expect("path parent");
+    canonical(parent).join(path.file_name().expect("file name"))
 }
