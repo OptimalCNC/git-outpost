@@ -122,11 +122,11 @@
 
 ## Active Chunk
 
-- `status-local-state`
-- Scope: populate status report fields for source path, remote name, current/detached branch, dirty working tree, and missing source path.
-- Test IDs: S-01, S-02, S-03, S-04, S-10
-- Out of scope: ahead/behind, source upstream health, local remote mismatch, registry health, push-would-fail checks, custom remote tracking behavior beyond preserving `remote_name`, Phase 4 sync commands, Phase 5 CLI/global `-C`/E2E.
-- Status: implementation and QA evidence recorded; review pending
+- `status-relationship-health`
+- Scope: populate read-only ahead/behind and relationship health for outpost vs source, source vs upstream, local remote mismatch, and custom remote names.
+- Test IDs: S-05, S-06, S-11, S-12
+- Out of scope: Phase 4 sync/source/pull/merge/rebase/push command behavior, Phase 5 CLI/global `-C`/E2E, fetching or mutating refs, registry health checks beyond fields needed for S-05/S-06/S-11/S-12.
+- Status: assigned; implementation pending
 
 ## Remaining Chunks
 
@@ -252,7 +252,8 @@ Remaining chunk order:
 - `cb5993b phase-3: add status local state`
 - `9aa4d4d phase-3: record status local state checkpoint`
 - `e9a12eb phase-3: record status local state scope review`
-- pending `status-local-state` review-artifact commit
+- `7daa316 phase-3: record status local state reviews`
+- pending `status-relationship-health` checkpoint commit
 
 ## Protected-Path Exception Log
 
@@ -266,4 +267,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `status-local-state` review artifacts, then begin `status-relationship-health`.
+- Implement `status-relationship-health`.
