@@ -84,19 +84,19 @@
 
 | ID | Scope | Status | Notes |
 | --- | --- | --- | --- |
-| S-01 | `status` from inside C reports source path = canonicalized B | planned | `crates/core/tests/status.rs` |
-| S-02 | `status` from inside C reports remote name = `local` | planned | `crates/core/tests/status.rs` |
-| S-03 | `status` reports current branch correctly; `None` on detached HEAD | planned | `crates/core/tests/status.rs` |
-| S-04 | `status` reports dirty tree including untracked files | planned | `crates/core/tests/status.rs` |
-| S-05 | `status` reports commits ahead/behind source | planned | `crates/core/tests/status.rs` |
-| S-06 | `status` reports B's ahead/behind versus A's `origin` | planned | `crates/core/tests/status.rs` |
-| S-07 | `ops::status::run(<C path>)` works when process cwd is outside C | planned | `crates/core/tests/status.rs` |
-| S-08 | `status` from a non-managed repo returns `NotAnOutpost` | planned | `crates/core/tests/status.rs` |
-| S-09 | `status` flags missing `outpost.sourceRepo` in `problems` rather than crashing | planned | `crates/core/tests/status.rs` |
-| S-10 | `status` reports `source_present=false` when B is moved/deleted | planned | `crates/core/tests/status.rs` |
-| S-11 | `status` flags `LocalRemoteMismatch` when `outpost.sourceRepo` and remote URL disagree | planned | `crates/core/tests/status.rs` |
-| S-12 | `status` works with custom remote name; no hardcoded `local` | planned | `crates/core/tests/status.rs` |
-| S-13 | missing `outpost.sourceRepo` config reports `MissingSourceRepoConfig` using `RawMetadata` | planned | `crates/core/tests/status.rs` |
+| S-01 | `status` from inside C reports source path = canonicalized B | completed | `crates/core/tests/status.rs` |
+| S-02 | `status` from inside C reports remote name = `local` | completed | `crates/core/tests/status.rs` |
+| S-03 | `status` reports current branch correctly; `None` on detached HEAD | completed | `crates/core/tests/status.rs` |
+| S-04 | `status` reports dirty tree including untracked files | completed | `crates/core/tests/status.rs` |
+| S-05 | `status` reports commits ahead/behind source | completed | `crates/core/tests/status.rs` |
+| S-06 | `status` reports B's ahead/behind versus A's `origin` | completed | `crates/core/tests/status.rs` |
+| S-07 | `ops::status::run(<C path>)` works when process cwd is outside C | completed | `crates/core/tests/status.rs` |
+| S-08 | `status` from a non-managed repo returns `NotAnOutpost` | completed | `crates/core/tests/status.rs` |
+| S-09 | `status` flags missing `outpost.sourceRepo` in `problems` rather than crashing | completed | `crates/core/tests/status.rs` |
+| S-10 | `status` reports `source_present=false` when B is moved/deleted | completed | `crates/core/tests/status.rs` |
+| S-11 | `status` flags `LocalRemoteMismatch` when `outpost.sourceRepo` and remote URL disagree | completed | `crates/core/tests/status.rs` |
+| S-12 | `status` works with custom remote name; no hardcoded `local` | completed | `crates/core/tests/status.rs` |
+| S-13 | missing `outpost.sourceRepo` config reports `MissingSourceRepoConfig` using `RawMetadata` | completed | `crates/core/tests/status.rs` |
 
 ## QA/Test Plan Gate
 
@@ -122,13 +122,11 @@
 
 ## Active Chunk
 
-- `status-relationship-health`
-- Scope: populate read-only ahead/behind and relationship health for outpost vs source, source vs upstream, local remote mismatch, and custom remote names.
-- Test IDs: S-05, S-06, S-11, S-12
-- Out of scope: Phase 4 sync/source/pull/merge/rebase/push command behavior, Phase 5 CLI/global `-C`/E2E, fetching or mutating refs, registry health checks beyond fields needed for S-05/S-06/S-11/S-12.
-- Status: implementation and QA evidence recorded; review pending
+- none; Phase 3 closeout verification passed and all implementation chunks are approved.
 
 ## Remaining Chunks
+
+All planned Phase 3 chunks are complete.
 
 Chunk Planning Gate:
 
@@ -156,9 +154,7 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `status-local-state`
-- `status-relationship-health`
-- `phase-3-verification`
+- none
 
 ## Completed Chunks
 
@@ -222,6 +218,7 @@ Remaining chunk order:
   - Review verdicts: scope `approved with nits`; normal `approved with nits`; independent `approved`
   - Required review changes: none
   - Adopted nits: progress log now records checkpoint record commit `71250bd`; next recommended action updated after reviews
+  - Review-artifact record commit: `af544a3 phase-3: record status relationship health reviews`
   - Status: approved
 
 ## Verification Log
@@ -257,6 +254,10 @@ Remaining chunk order:
   - `cargo test -p outpost-core --tests`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 15 status integration tests, 1 fixture smoke test
   - `cargo test --workspace`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
   - `git diff --check`: pass
+- Phase 3 closeout verification:
+  - `cargo test -p outpost-core`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 15 status integration tests, 1 fixture smoke test
+  - `cargo test --workspace`: pass; 46 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 11 remove integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
 
 ## Review Log
 
@@ -269,6 +270,13 @@ Remaining chunk order:
 - `status-relationship-health` Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-3/status-relationship-health/scope-review.md`; nit was to record checkpoint record commit `71250bd`.
 - `status-relationship-health` Normal Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-3/status-relationship-health/normal-review.md`; nit was stale next recommended action text, adopted in progress log.
 - `status-relationship-health` Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-3/status-relationship-health/independent-review.md`; no required changes.
+
+## Review Artifact Completeness
+
+- `status-report-core`: complete; evidence pack, QA note, scope review, normal review, and independent review are recorded.
+- `status-local-state`: complete; evidence pack, QA note, scope review, normal review, and independent review are recorded.
+- `status-relationship-health`: complete; evidence pack, QA note, scope review, normal review, and independent review are recorded.
+- Blocking review findings: none open.
 
 ## Docs Log
 
@@ -291,11 +299,22 @@ Remaining chunk order:
 - `fbf2cdd phase-3: add status relationship health`
 - `71250bd phase-3: record status relationship health checkpoint`
 - `babeb86 phase-3: record status relationship health scope review`
-- pending `status-relationship-health` review-artifact commit
+- `af544a3 phase-3: record status relationship health reviews`
+- pending Phase 3 closeout commit
 
 ## Protected-Path Exception Log
 
 - none
+
+## Phase Closeout
+
+- Verdict: passed
+- Scope delivered: `ops::status` using `RawMetadata` for degraded status reporting
+- Test IDs delivered: S-01..S-13
+- Additional status health variants delivered: `NotInRegistry`, `PushWouldFail`
+- Required verification: passed
+- Review gate: passed for all chunks; no blocking findings open
+- Forbidden scope exceptions: none
 
 ## Open Risks / Questions
 
@@ -305,4 +324,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `status-relationship-health` review artifacts, then run Phase 3 closeout verification.
+- Commit Phase 3 closeout, then begin Phase 4 readiness.
