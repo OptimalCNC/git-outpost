@@ -144,7 +144,7 @@
 - Scope: source-refresh foundation, `ops::source`, `ops::pull`, and `SourceFetch`/`OutpostFetch` reporting.
 - Test IDs: SP-01..SP-05, P-01..P-09
 - Out of scope: `ops::merge`, `ops::rebase`, `ops::push`, Phase 5 CLI/global `-C`/E2E, unrelated docs cleanup, unrelated refactors.
-- Status: implementation and QA evidence recorded; review pending.
+- Status: approved.
 
 ## Remaining Chunks
 
@@ -189,7 +189,18 @@ Remaining chunk order:
   - Architecture deviations: none for claimed `P4-C1-source-pull-foundation` behavior
   - Implementation/evidence commit: `9d491be phase-4: add source pull foundation`
   - Review fix: `check_no_divergence` now verifies the exact upstream branch with `ls-remote` before trusting local remote-tracking refs, covering stale tracking refs after upstream deletion
-  - Status: review fixes implemented; re-review pending
+  - Review-fix commit: `96969ea phase-4: fix source pull review findings`
+  - Review artifacts:
+    - Scope Reviewer: `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/scope-review.md`
+    - Normal Reviewer: `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/normal-review.md`
+    - Independent Reviewer: `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/independent-review.md`
+    - Scope Re-reviewer: `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/scope-rereview.md`
+    - Normal Re-reviewer: `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/normal-rereview.md`
+    - Independent Re-reviewer: `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/independent-rereview.md`
+  - Review verdicts after fixes: scope `approved with nits`; normal `approved with nits`; independent `approved with nits`
+  - Required review changes: none open
+  - Adopted nits: progress log now records implementation/evidence commit `9d491be` and review-fix commit `96969ea`; helper return type now matches architecture API shape
+  - Status: approved
 
 ## Verification Log
 
@@ -222,6 +233,10 @@ Remaining chunk order:
   - Added stale remote-tracking ref regression test after deleting the upstream branch.
   - `SourceRepo::fast_forward_branch_from_origin` now matches architecture API shape by returning `OutpostResult<()>`; `ops::source` and `ops::pull` compute `updated` from branch OIDs.
   - Progress log records implementation/evidence commit `9d491be`.
+- `P4-C1-source-pull-foundation` Scope Re-reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/scope-rereview.md`; nit was stale progress commit-log text.
+- `P4-C1-source-pull-foundation` Normal Re-reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/normal-rereview.md`; nit was stale progress commit-log text.
+- `P4-C1-source-pull-foundation` Independent Re-reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/independent-rereview.md`; nit was stale progress commit-log text.
+- Blocking review findings: none open for `P4-C1-source-pull-foundation`.
 
 ## Docs Log
 
@@ -232,7 +247,8 @@ Remaining chunk order:
 - `83e8778 phase-4: record readiness and plan`
 - `a0a7f40 phase-4: start source pull foundation`
 - `9d491be phase-4: add source pull foundation`
-- pending `P4-C1-source-pull-foundation` review-fix commit
+- `96969ea phase-4: fix source pull review findings`
+- pending `P4-C1-source-pull-foundation` review-artifact commit
 
 ## Protected-Path Exception Log
 
@@ -246,4 +262,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `P4-C1-source-pull-foundation` review fixes, then rerun the required reviews.
+- Commit `P4-C1-source-pull-foundation` re-review artifacts, then start `P4-C2-merge-rebase`.
