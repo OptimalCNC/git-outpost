@@ -1211,9 +1211,12 @@ Step-by-step:
    gets this from `gop add -b`; if a user made a branch only in C,
    `gop push` returns `AmbiguousBranchCreation { branch }` rather than
    creating a source branch silently.
-4. Build `UpstreamRef { remote: outpost.metadata().remote_name,
-   merge_ref: refs/heads/<branch> }` and run
-   `safety::check_no_divergence` to refuse divergent C↔B histories.
+4. Fetch B's matching branch into C's source-remote tracking ref and refuse
+   non-fast-forward C→B publication as `Divergence`. This rejects both
+   true divergence and a pure C-behind-B branch before any push side effect.
+   If `origin/<branch>` already exists, preflight it as an ancestor of C
+   `HEAD` and return `Divergence` before mutating B when B→A would be
+   non-fast-forward.
 5. `reporter.step(OutpostPush, "pushing outpost <C> branch <X> -> source <B>")`.
 6. Push from C → B. **No `--` before refspecs** — `--` in `git push`
    introduces refspecs to disambiguate from a remote name, but with a

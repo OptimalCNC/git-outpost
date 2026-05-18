@@ -239,13 +239,20 @@ Remaining chunk order:
     - Scope Reviewer: `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/scope-review.md`
     - Normal Reviewer: `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/normal-review.md`
     - Independent Reviewer: `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/independent-review.md`
+    - Scope Re-reviewer: `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/scope-rereview.md`
+    - Normal Re-reviewer: `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/normal-rereview.md`
+    - Independent Re-reviewer: `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/independent-rereview.md`
   - Review verdicts before fixes: scope `approved`; normal `pass`; independent `changes required`
   - Adopted review fixes:
     - Added push-specific C->B fast-forward preflight so C-behind-B and both-sides-diverged histories return `Divergence` before `OutpostPush`.
     - Added existing-origin preflight so origin-ahead/divergent histories return `Divergence` before mutating B.
     - Fixed absent-origin source-to-origin commit counting to count commits not already reachable from origin refs.
     - Added focused regressions for all three independent-review findings.
-  - Status: review fixes implemented; re-review pending
+  - Review-fix commit: `594890f phase-4: fix push review findings`
+  - Review verdicts after fixes: scope `approved with nits`; normal `pass`; independent `accepted`
+  - Adopted nits: progress log records review-fix commit `594890f`; architecture command prose now documents the push-specific fast-forward preflights.
+  - Required review changes: none open
+  - Status: approved
 
 ## Verification Log
 
@@ -314,12 +321,27 @@ Remaining chunk order:
   - Progress log records review-fix commit `6d5ee16`.
   - `docs/src/architecture.md` now documents full `refs/remotes/<remote>/<branch>` final operands for merge/rebase.
 - Blocking review findings: none open for `P4-C2-merge-rebase`.
+- `P4-C3-push-publication` Scope Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/scope-review.md`; no required changes or nits.
+- `P4-C3-push-publication` Normal Reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/normal-review.md`; no required changes.
+- `P4-C3-push-publication` Independent Reviewer: `changes required`; artifact `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/independent-review.md`; required C-behind-B typed preflight, origin-ahead no-mutation preflight, absent-origin commit count fix, and regressions.
+- Adopted `P4-C3-push-publication` review fixes:
+  - Added push-specific C->B fast-forward preflight before push events.
+  - Added existing-origin fast-forward preflight before mutating B.
+  - Count absent-origin first publication with `rev-list --count <after> --not --remotes=origin`.
+  - Added focused regressions for all three findings.
+- `P4-C3-push-publication` Scope Re-reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/scope-rereview.md`; nit was stale progress commit-log text.
+- `P4-C3-push-publication` Normal Re-reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/normal-rereview.md`; no required changes or nits.
+- `P4-C3-push-publication` Independent Re-reviewer: `accepted`; artifact `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/independent-rereview.md`; nit was stale architecture prose for the push-specific preflight.
+- Adopted `P4-C3-push-publication` re-review nits:
+  - Progress log records review-fix commit `594890f`.
+  - `docs/src/architecture.md` now documents push-specific C->B and B->A fast-forward preflights.
+- Blocking review findings: none open for `P4-C3-push-publication`.
 
 ## Docs Log
 
 - `P4-C1-source-pull-foundation`: no docs changes; stable concepts are already covered by product `pull`/`source pull` and architecture sections 5.8, 5.9.0, 5.9.4, 5.9.5, 11.6, and 11.7.
 - `P4-C2-merge-rebase`: `docs/src/architecture.md` updated sections 5.9.6 and 5.9.7 to document full `refs/remotes/<remote>/<branch>` operands for final merge/rebase commands; this matches the adopted safety invariant and review fix.
-- `P4-C3-push-publication`: no docs changes; stable concepts are already covered by product `push` and architecture sections 5.9.0, 5.9.8, and 11.9.
+- `P4-C3-push-publication`: `docs/src/architecture.md` updated section 5.9.8 to document push-specific C->B and B->A fast-forward preflights; this matches the adopted review fix and safety invariant.
 
 ## Commit Log
 
@@ -334,7 +356,8 @@ Remaining chunk order:
 - `69bc123 phase-4: record merge rebase reviews`
 - `5e42d0b phase-4: start push publication`
 - `03ee3f9 phase-4: add push publication`
-- pending `P4-C3-push-publication` review-fix commit
+- `594890f phase-4: fix push review findings`
+- pending `P4-C3-push-publication` review-artifact commit
 
 ## Protected-Path Exception Log
 
@@ -348,4 +371,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `P4-C3-push-publication` review fixes and evidence updates, then run scope, normal, and independent re-reviews.
+- Commit `P4-C3-push-publication` re-review artifacts and adopted nits, then run Phase 4 closeout verification.
