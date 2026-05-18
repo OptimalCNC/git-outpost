@@ -196,10 +196,12 @@ Remaining chunk order:
   - Checkpoint record commit: `9aa4d4d phase-3: record status local state checkpoint`
   - Review artifacts:
     - Scope Reviewer: `.agents-artifacts/reviews/phase-3/status-local-state/scope-review.md`
-  - Review verdicts: scope `approved with nits`
+    - Normal Reviewer: `.agents-artifacts/reviews/phase-3/status-local-state/normal-review.md`
+    - Independent Reviewer: `.agents-artifacts/reviews/phase-3/status-local-state/independent-review.md`
+  - Review verdicts: scope `approved with nits`; normal `approved with nits`; independent `approved with nits`
   - Required review changes: none
-  - Adopted nits: progress log now records checkpoint record commit `9aa4d4d`
-  - Status: normal and independent review pending
+  - Adopted nits: progress log now records checkpoint record commit `9aa4d4d`; next recommended action updated after reviews
+  - Status: approved
 
 ## Verification Log
 
@@ -231,6 +233,9 @@ Remaining chunk order:
 - `status-report-core` Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-3/status-report-core/scope-review.md`; nit was to record checkpoint record commit `a33b050`.
 - `status-report-core` Normal Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-3/status-report-core/normal-review.md`; no required changes.
 - `status-report-core` Independent Reviewer: `approved`; artifact `.agents-artifacts/reviews/phase-3/status-report-core/independent-review.md`; no required changes.
+- `status-local-state` Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-3/status-local-state/scope-review.md`; nit was to record checkpoint record commit `9aa4d4d`.
+- `status-local-state` Normal Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-3/status-local-state/normal-review.md`; nit was stale next recommended action text, adopted in progress log.
+- `status-local-state` Independent Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-3/status-local-state/independent-review.md`; nit was stale next recommended action text, adopted in progress log.
 
 ## Docs Log
 
@@ -246,6 +251,7 @@ Remaining chunk order:
 - `2e0f8a9 phase-3: record status report core reviews`
 - `cb5993b phase-3: add status local state`
 - `9aa4d4d phase-3: record status local state checkpoint`
+- `e9a12eb phase-3: record status local state scope review`
 - pending `status-local-state` review-artifact commit
 
 ## Protected-Path Exception Log
@@ -260,4 +266,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `status-local-state` implementation/evidence, record the checkpoint hash, then run the three-review gate.
+- Commit `status-local-state` review artifacts, then begin `status-relationship-health`.
