@@ -183,11 +183,13 @@ Remaining chunk order:
   - Test IDs advanced: SP-01..SP-05, P-01..P-09
   - Evidence pack: `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/evidence-pack.md`
   - QA note: `.agents-artifacts/qa/phase-4/P4-C1-source-pull-foundation.md`
-  - Unit tests added: `safety::tests::check_no_divergence_reports_missing_remote_branch`
+  - Unit tests added: `safety::tests::check_no_divergence_reports_missing_remote_branch`, `safety::tests::check_no_divergence_rejects_deleted_upstream_branch_despite_stale_tracking_ref`
   - Integration tests added: `sp01_source_pull_fast_forwards_unchecked_out_source_branch_without_switching`, `sp02_source_pull_updates_checked_out_source_worktree`, `sp03_source_pull_returns_divergence_when_source_and_origin_diverge`, `sp04_source_pull_missing_branch_returns_branch_not_found`, `sp05_source_pull_records_source_fetch_event`, `p01_pull_fast_forwards_source_from_origin_then_outpost_from_source`, `p02_pull_fast_forwards_outpost_from_source_without_touching_origin`, `p03_pull_returns_divergence_when_source_and_origin_diverge`, `p04_pull_returns_divergence_when_outpost_and_source_diverge`, `p05_pull_with_missing_source_returns_source_missing`, `p06_pull_on_detached_head_returns_no_upstream_tracking_head`, `p07_pull_uses_custom_source_remote_name`, `p08_pull_records_source_fetch_and_outpost_fetch_events`, `p09_pull_missing_matching_source_branch_returns_branch_not_found_before_outpost_ff`
   - Docs updated: none; existing product and architecture document source refresh, pull sequencing, reporter events, and test scenarios
   - Architecture deviations: none for claimed `P4-C1-source-pull-foundation` behavior
-  - Status: review pending
+  - Implementation/evidence commit: `9d491be phase-4: add source pull foundation`
+  - Review fix: `check_no_divergence` now verifies the exact upstream branch with `ls-remote` before trusting local remote-tracking refs, covering stale tracking refs after upstream deletion
+  - Status: review fixes implemented; re-review pending
 
 ## Verification Log
 
@@ -199,19 +201,27 @@ Remaining chunk order:
   - `cargo fmt --check`: pass
   - `cargo check -p outpost-core`: pass
   - `cargo test -p outpost-core --lib source_repo`: pass; 6 filtered source/outpost tests
-  - `cargo test -p outpost-core --lib safety`: pass; 15 filtered safety tests
+  - `cargo test -p outpost-core --lib safety`: pass; 16 filtered safety tests
   - `cargo test -p outpost-core --lib safety::tests::check_no_divergence_reports_missing_remote_branch`: pass
+  - `cargo test -p outpost-core --lib safety::tests::check_no_divergence_rejects_deleted_upstream_branch_despite_stale_tracking_ref`: pass
   - `cargo test -p outpost-core --test source`: pass; 5 source integration tests
   - `cargo test -p outpost-core --test pull`: pass; 9 pull integration tests
   - `cargo test -p outpost-core --test status`: pass; 15 status integration tests
-  - `cargo test -p outpost-core`: pass; 47 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 9 pull integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 9 pull integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --tests`: pass; same test binaries excluding doctests
   - `cargo test --workspace`: pass; same workspace coverage, 0 doctests
   - `git diff --check`: pass
 
 ## Review Log
 
-- none yet
+- `P4-C1-source-pull-foundation` Scope Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/scope-review.md`; nit was stale progress commit-log text.
+- `P4-C1-source-pull-foundation` Normal Reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/normal-review.md`; nits were architecture/helper return type mismatch and stale progress commit-log text.
+- `P4-C1-source-pull-foundation` Independent Reviewer: `changes requested`; artifact `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/independent-review.md`; required stale remote-tracking ref fix in `check_no_divergence` plus regression test.
+- Adopted review fixes:
+  - `check_no_divergence` verifies the exact upstream branch with `git ls-remote <remote> <merge_ref>` before using remote-tracking refs.
+  - Added stale remote-tracking ref regression test after deleting the upstream branch.
+  - `SourceRepo::fast_forward_branch_from_origin` now matches architecture API shape by returning `OutpostResult<()>`; `ops::source` and `ops::pull` compute `updated` from branch OIDs.
+  - Progress log records implementation/evidence commit `9d491be`.
 
 ## Docs Log
 
@@ -221,7 +231,8 @@ Remaining chunk order:
 
 - `83e8778 phase-4: record readiness and plan`
 - `a0a7f40 phase-4: start source pull foundation`
-- pending `P4-C1-source-pull-foundation` implementation/evidence commit
+- `9d491be phase-4: add source pull foundation`
+- pending `P4-C1-source-pull-foundation` review-fix commit
 
 ## Protected-Path Exception Log
 
@@ -235,4 +246,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `P4-C1-source-pull-foundation` implementation/evidence, then run scope, normal, and independent reviews.
+- Commit `P4-C1-source-pull-foundation` review fixes, then rerun the required reviews.

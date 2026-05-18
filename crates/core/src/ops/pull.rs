@@ -36,7 +36,14 @@ pub fn run(
             branch.as_str()
         ),
     );
-    let source_updated = source.fast_forward_branch_from_origin(&branch)?;
+    let source_branch_ref = format!("refs/heads/{}", branch.as_str());
+    let source_before = source
+        .git()
+        .run_capture(["rev-parse", &source_branch_ref])?;
+    source.fast_forward_branch_from_origin(&branch)?;
+    let source_after = source
+        .git()
+        .run_capture(["rev-parse", &source_branch_ref])?;
 
     let upstream = UpstreamRef {
         remote: outpost.metadata().remote_name.clone(),
@@ -64,7 +71,7 @@ pub fn run(
     let after = outpost.git().run_capture(["rev-parse", "HEAD"])?;
 
     Ok(PullReport {
-        source_updated,
+        source_updated: source_before != source_after,
         outpost_updated: before != after,
     })
 }

@@ -37,16 +37,16 @@
 
 - `ops/source.rs`
   - Adds `SourceCommand`, `SourcePullOptions`, `SourcePullReport`, and `pull`.
-  - Resolves B from outpost metadata, requires the source branch to exist, emits `SourceFetch`, and delegates source fast-forward to `SourceRepo::fast_forward_branch_from_origin`.
+  - Resolves B from outpost metadata, requires the source branch to exist, emits `SourceFetch`, delegates source fast-forward to `SourceRepo::fast_forward_branch_from_origin`, and reports `updated` by comparing source branch OIDs before and after the refresh.
 - `ops/pull.rs`
   - Adds `PullOptions`, `PullReport`, and `run`.
-  - Requires attached C branch, maps detached `HEAD` to `NoUpstreamTracking { branch: "HEAD" }`, resolves B, requires matching B branch, emits `SourceFetch`, refreshes B from `origin`, checks C/B divergence via metadata remote and `UpstreamRef`, emits `OutpostFetch`, and runs `git pull --ff-only <remote> <branch>` in C.
+  - Requires attached C branch, maps detached `HEAD` to `NoUpstreamTracking { branch: "HEAD" }`, resolves B, requires matching B branch, emits `SourceFetch`, refreshes B from `origin`, reports source update by comparing source branch OIDs, checks C/B divergence via metadata remote and `UpstreamRef`, emits `OutpostFetch`, and runs `git pull --ff-only <remote> <branch>` in C.
 - `source_repo.rs`
   - Adds `fast_forward_branch_from_origin`.
   - Fetches `origin <branch>:refs/remotes/origin/<branch>`, classifies equal/source-ahead/source-behind/divergent histories, updates checked-out source worktrees with `git merge --ff-only`, and updates unchecked-out branch refs with `git update-ref`.
 - `safety.rs`
   - Adds `check_no_divergence` and `check_no_divergence_after_fetch`.
-  - Fetches the configured source remote for fresh C/B remote-tracking refs, returns typed `BranchNotFound` for missing remote branch, and returns typed `Divergence` when C and B both have unique commits.
+  - Verifies the exact upstream branch with `git ls-remote`, fetches the configured source remote for fresh C/B remote-tracking refs, returns typed `BranchNotFound` for missing remote branch even when a stale remote-tracking ref exists, and returns typed `Divergence` when C and B both have unique commits.
 - `tests/common/fixture.rs`
   - Adds narrow helpers for custom-remote outposts, branch-specific outposts, file-backed commits, ref reads, source branch deletion, source branch push, current branch reads, and captured reporter events.
 - `tests/source.rs`
@@ -58,6 +58,7 @@
 
 - Unit tests added:
   - `safety::tests::check_no_divergence_reports_missing_remote_branch`
+  - `safety::tests::check_no_divergence_rejects_deleted_upstream_branch_despite_stale_tracking_ref`
 
 ## Integration Tests Added / Updated
 
@@ -86,12 +87,13 @@
 - `cargo fmt --check`: pass
 - `cargo check -p outpost-core`: pass
 - `cargo test -p outpost-core --lib source_repo`: pass; 6 filtered source/outpost tests
-- `cargo test -p outpost-core --lib safety`: pass; 15 filtered safety tests
+- `cargo test -p outpost-core --lib safety`: pass; 16 filtered safety tests
 - `cargo test -p outpost-core --lib safety::tests::check_no_divergence_reports_missing_remote_branch`: pass
+- `cargo test -p outpost-core --lib safety::tests::check_no_divergence_rejects_deleted_upstream_branch_despite_stale_tracking_ref`: pass
 - `cargo test -p outpost-core --test source`: pass; 5 source integration tests
 - `cargo test -p outpost-core --test pull`: pass; 9 pull integration tests
 - `cargo test -p outpost-core --test status`: pass; 15 status integration tests
-- `cargo test -p outpost-core`: pass; 47 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 9 pull integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+- `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 9 prune integration tests, 9 pull integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
 - `cargo test -p outpost-core --tests`: pass; same test binaries excluding doctests
 - `cargo test --workspace`: pass; same workspace coverage, 0 doctests
 - `git diff --check`: pass
@@ -110,6 +112,6 @@
 
 ## Residual Risks / Handoff Notes
 
-- `check_no_divergence_after_fetch` exists for later Phase 4 operations that may have just fetched a remote-tracking ref; `ops::pull` currently uses the documented fresh-fetch path.
+- `check_no_divergence_after_fetch` exists for later Phase 4 operations that may have just fetched a remote-tracking ref. It still verifies the exact upstream branch with `ls-remote` before trusting local refs.
 - Reporter tests assert `StepKind` ordering and intentionally do not depend on exact human-facing message text.
 - `ops::merge`, `ops::rebase`, `ops::push`, CLI/global `-C`, and E2E behavior remain out of scope.

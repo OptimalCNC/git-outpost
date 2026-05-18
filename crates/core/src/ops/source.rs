@@ -35,10 +35,13 @@ pub fn pull(
             opts.branch.as_str()
         ),
     );
-    let updated = source.fast_forward_branch_from_origin(&opts.branch)?;
+    let branch_ref = format!("refs/heads/{}", opts.branch.as_str());
+    let before = source.git().run_capture(["rev-parse", &branch_ref])?;
+    source.fast_forward_branch_from_origin(&opts.branch)?;
+    let after = source.git().run_capture(["rev-parse", &branch_ref])?;
 
     Ok(SourcePullReport {
         branch: opts.branch,
-        updated,
+        updated: before != after,
     })
 }

@@ -151,7 +151,7 @@ impl SourceRepo {
             .run_status(["rev-parse", "--verify", "--quiet", &branch_ref])
     }
 
-    pub fn fast_forward_branch_from_origin(&self, branch: &BranchName) -> OutpostResult<bool> {
+    pub fn fast_forward_branch_from_origin(&self, branch: &BranchName) -> OutpostResult<()> {
         if !self.branch_exists(branch)? {
             return Err(OutpostError::BranchNotFound {
                 branch: branch.as_str().to_owned(),
@@ -167,7 +167,7 @@ impl SourceRepo {
         let local_oid = rev_parse(&self.git, &local_ref)?;
         let remote_oid = rev_parse(&self.git, &remote_ref)?;
         if local_oid == remote_oid || is_ancestor(&self.git, &remote_oid, &local_oid)? {
-            return Ok(false);
+            return Ok(());
         }
         if !is_ancestor(&self.git, &local_oid, &remote_oid)? {
             return Err(OutpostError::Divergence {
@@ -183,7 +183,7 @@ impl SourceRepo {
                 .run_check(["update-ref", &local_ref, &remote_oid, &local_oid])?;
         }
 
-        Ok(true)
+        Ok(())
     }
 
     pub fn registry_path(&self) -> PathBuf {

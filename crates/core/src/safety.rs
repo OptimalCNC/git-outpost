@@ -133,6 +133,12 @@ fn check_no_divergence_with_fetch(
             .ok_or_else(|| OutpostError::UpstreamNotABranch {
                 merge_ref: upstream.merge_ref.as_str().to_owned(),
             })?;
+    if !upstream_branch_exists(outpost, upstream)? {
+        return Err(OutpostError::BranchNotFound {
+            branch: remote_branch.to_owned(),
+            repo: outpost.work_tree().to_path_buf(),
+        });
+    }
     if fetch {
         outpost
             .git()
@@ -179,6 +185,17 @@ fn check_no_divergence_with_fetch(
     } else {
         Ok(())
     }
+}
+
+fn upstream_branch_exists(outpost: &Outpost, upstream: &UpstreamRef) -> OutpostResult<bool> {
+    Ok(!outpost
+        .git()
+        .run_capture([
+            "ls-remote",
+            upstream.remote.as_str(),
+            upstream.merge_ref.as_str(),
+        ])?
+        .is_empty())
 }
 
 fn invalid_rev_list_output(repo: &Path, output: &str) -> OutpostError {
@@ -497,6 +514,67 @@ mod tests {
 
         assert!(
             matches!(err, OutpostError::BranchNotFound { branch, repo } if branch == "missing" && repo == outpost.work_tree())
+        );
+    }
+
+    #[test]
+    fn check_no_divergence_rejects_deleted_upstream_branch_despite_stale_tracking_ref() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("source");
+        let outpost = temp.path().join("outpost");
+        init_repo_at(&source);
+        init_repo_at(&outpost);
+        let source_git = GitInvoker::at(&source);
+        source_git
+            .run_check(["commit", "--allow-empty", "-m", "source"])
+            .expect("source commit");
+        source_git
+            .run_check(["branch", "feature"])
+            .expect("feature branch");
+        let outpost_git = GitInvoker::at(&outpost);
+        outpost_git
+            .run_check(["remote", "add", "local", &source.to_string_lossy()])
+            .expect("add source remote");
+        outpost_git
+            .run_check(["fetch", "local", "feature:refs/remotes/local/feature"])
+            .expect("fetch feature branch");
+        outpost_git
+            .run_check([
+                "switch",
+                "--create",
+                "feature",
+                "refs/remotes/local/feature",
+            ])
+            .expect("switch feature");
+        Metadata {
+            source_repo: source.clone(),
+            remote_name: RemoteName::parse("local").unwrap(),
+        }
+        .write(&outpost_git)
+        .expect("metadata write");
+        source_git
+            .run_check(["branch", "-D", "feature"])
+            .expect("delete source feature");
+        assert!(outpost_git
+            .run_status([
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "refs/remotes/local/feature"
+            ])
+            .expect("stale remote-tracking ref check"));
+        let outpost = Outpost::at(&outpost).expect("outpost");
+        let branch = BranchName::parse("feature").unwrap();
+        let upstream = UpstreamRef {
+            remote: RemoteName::parse("local").unwrap(),
+            merge_ref: crate::RefName::parse("refs/heads/feature").unwrap(),
+        };
+
+        let err = check_no_divergence(&outpost, &branch, &upstream)
+            .expect_err("deleted branch should not pass because of stale tracking ref");
+
+        assert!(
+            matches!(err, OutpostError::BranchNotFound { branch, repo } if branch == "feature" && repo == outpost.work_tree())
         );
     }
 
