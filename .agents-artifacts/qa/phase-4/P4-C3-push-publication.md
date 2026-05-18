@@ -2,7 +2,7 @@
 
 ## Summary
 
-Added core integration coverage for Phase 4 push publication behavior in `crates/core/tests/push.rs`. The tests exercise real A/B/C fixture repositories and call `outpost_core::ops::push::run` directly with `PushOptions` and `CapturingReporter`.
+Added core integration coverage for Phase 4 push publication behavior in `crates/core/tests/push.rs`. The tests exercise real A/B/C fixture repositories and call `outpost_core::ops::push::run` directly with `PushOptions` and `CapturingReporter`. Independent-review regressions now also cover push-specific non-fast-forward preflights and absent-origin first-publication commit counts.
 
 ## Test IDs Addressed
 
@@ -31,6 +31,9 @@ Added core integration coverage for Phase 4 push publication behavior in `crates
 | Pu-08 | `pu08_push_into_dirty_checked_out_source_branch_surfaces_update_instead_git_failed` | Dirties a tracked file on B's checked-out branch with `updateInstead`, asserts `GitFailed` preserves stderr, and confirms A is not pushed. |
 | Pu-09 | `pu09_push_with_deny_current_branch_refuse_returns_push_into_checked_out_branch` | Sets B `receive.denyCurrentBranch=refuse` and asserts `PushIntoCheckedOutBranch` before any push event or B ref movement. |
 | Pu-10 | `pu10_push_on_detached_head_returns_no_upstream_tracking_head_before_push` | Detaches C `HEAD` and asserts `NoUpstreamTracking { branch: "HEAD" }` before any push event or B/A ref movement. |
+| regression | `push_when_outpost_is_behind_source_returns_divergence_before_push` | Advances B after C is created and asserts typed `Divergence` before push events or origin movement. |
+| regression | `push_when_origin_is_ahead_returns_divergence_before_source_mutation` | Advances A/origin independently and asserts typed `Divergence` before B is mutated. |
+| regression | `push_first_publication_to_absent_origin_branch_counts_only_new_commits` | Publishes a source-existing branch absent from origin and asserts the source-to-origin report counts only the new C commit. |
 
 ## Files Changed
 
@@ -55,7 +58,7 @@ None by QA. QA did not edit `crates/core/src/ops/push.rs` or `crates/core/src/op
 cargo test -p outpost-core --test push
 ```
 
-Result: passed, 10 tests passed.
+Result: passed, 13 tests passed.
 
 ## Verification Not Run
 
@@ -70,4 +73,5 @@ None.
 
 - Pu-08 intentionally dirties a tracked file in B. An unrelated untracked file does not trigger Git's `receive.denyCurrentBranch=updateInstead` dirty-worktree rejection in this fixture.
 - The tests assert exact pushed commit counts for successful one-commit publication paths because `PushReport` exposes those counts.
+- Regression tests assert no reporter events before predictable C->B and B->A non-fast-forward failures.
 - Reporter assertions check `StepKind` ordering only, not user-facing message text.

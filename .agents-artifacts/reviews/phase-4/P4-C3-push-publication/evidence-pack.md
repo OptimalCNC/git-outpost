@@ -36,11 +36,12 @@
   - Resolves the source repo from outpost metadata and returns `SourceMissing` before emitting push events if B is unavailable.
   - Reads B's local `receive.denyCurrentBranch`; if it is not `updateInstead` and B has the target branch checked out, returns `PushIntoCheckedOutBranch` before pushing.
   - Refuses outpost-only branches with `AmbiguousBranchCreation` instead of creating a source branch.
-  - Uses `safety::check_no_divergence` against the configured outpost remote before pushing C to B.
+  - Preflights C->B as a push-specific fast-forward check and returns `Divergence` when C is behind B or both sides have unique commits before emitting push events.
+  - Preflights existing `origin/<branch>` and returns `Divergence` before mutating B when the eventual B->A push would be non-fast-forward.
   - Emits `OutpostPush`, runs `git push <metadata.remote_name> <branch>:<branch>`, emits `SourcePush`, then runs `git push origin <branch>:<branch>` from B.
-  - Computes `StepResult::Pushed { commits }` for each hop, using `ls-remote origin refs/heads/<branch>` for the origin-side before/after OIDs so the report does not depend on stale local remote-tracking refs.
+  - Computes `StepResult::Pushed { commits }` for each hop, using `ls-remote origin refs/heads/<branch>` for the origin-side before/after OIDs and counting absent-origin first publication against existing origin refs.
 - `tests/push.rs`
-  - Adds core integration coverage for Pu-01..Pu-10 using real A/B/C fixture repositories and `CapturingReporter`.
+  - Adds core integration coverage for Pu-01..Pu-10 plus independent-review regressions using real A/B/C fixture repositories and `CapturingReporter`.
 - QA artifact
   - Records QA coverage, verification, and handoff notes for P4-C3.
 
@@ -60,6 +61,9 @@
 - `pu08_push_into_dirty_checked_out_source_branch_surfaces_update_instead_git_failed` covers Pu-08.
 - `pu09_push_with_deny_current_branch_refuse_returns_push_into_checked_out_branch` covers Pu-09.
 - `pu10_push_on_detached_head_returns_no_upstream_tracking_head_before_push` covers Pu-10.
+- `push_when_outpost_is_behind_source_returns_divergence_before_push` covers the review regression where a pure C-behind-B case previously fell through to `GitFailed` after `OutpostPush`.
+- `push_when_origin_is_ahead_returns_divergence_before_source_mutation` covers the review regression where origin non-fast-forward could mutate B before failing the second hop.
+- `push_first_publication_to_absent_origin_branch_counts_only_new_commits` covers the review regression where absent-origin first publication overreported the full reachable history.
 
 ## Docs Added / Updated
 
@@ -70,8 +74,8 @@
 
 - `cargo fmt --check`: pass
 - `cargo check -p outpost-core`: pass
-- `cargo test -p outpost-core --test push`: pass; 10 push integration tests
-- `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 10 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+- `cargo test -p outpost-core --test push`: pass; 13 push integration tests
+- `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 13 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
 - `cargo test -p outpost-core --tests`: pass; same test binaries excluding doctests
 - `cargo test --workspace`: pass; same workspace coverage, 0 doctests
 - `git diff --check`: pass
@@ -91,6 +95,7 @@
 ## Residual Risks / Handoff Notes
 
 - `ops::push` intentionally does not create source branches; outpost-only branches return `AmbiguousBranchCreation`.
+- Push preflights use reads/fetches before reporter events to reject predictable non-fast-forward paths as typed `Divergence` before mutating B.
 - Dirty outpost worktrees do not block push; dirty checked-out source worktrees are left to Git's `updateInstead` failure path and surface as `GitFailed`.
 - C->B uses the outpost metadata remote name; B->A always uses `origin`.
 - CLI/global `-C`, whole-binary E2E behavior, and user-facing command formatting remain Phase 5.

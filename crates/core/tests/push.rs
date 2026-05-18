@@ -141,6 +141,82 @@ fn pu04_push_when_source_diverged_from_outpost_returns_divergence() {
 }
 
 #[test]
+fn push_when_outpost_is_behind_source_returns_divergence_before_push() {
+    let fixture = AbcFixture::new();
+    let outpost_path = fixture.add_outpost("C").expect("add C");
+    let source_oid = fixture
+        .commit_file_in_source("source side", "source.txt", "from source\n")
+        .expect("source commit");
+    let origin_before = fixture
+        .rev_parse(&fixture.upstream, "refs/heads/main")
+        .expect("origin before");
+    let outpost = outpost(&fixture, &outpost_path);
+    let mut reporter = CapturingReporter::default();
+
+    let err = expect_error(
+        run(&outpost, PushOptions, &mut reporter),
+        "push should reject outpost behind source before pushing",
+    );
+
+    assert!(matches!(err, OutpostError::Divergence { branch } if branch == "main"));
+    assert!(reporter.steps.is_empty());
+    assert_eq!(
+        fixture
+            .rev_parse(&fixture.source, "refs/heads/main")
+            .expect("source after"),
+        source_oid
+    );
+    assert_eq!(
+        fixture
+            .rev_parse(&fixture.upstream, "refs/heads/main")
+            .expect("origin after"),
+        origin_before
+    );
+}
+
+#[test]
+fn push_when_origin_is_ahead_returns_divergence_before_source_mutation() {
+    let fixture = AbcFixture::new();
+    let outpost_path = fixture.add_outpost("C").expect("add C");
+    fixture
+        .commit_file_in_outpost(
+            &outpost_path,
+            "outpost side",
+            "outpost.txt",
+            "from outpost\n",
+        )
+        .expect("outpost commit");
+    let source_before = fixture
+        .rev_parse(&fixture.source, "refs/heads/main")
+        .expect("source before");
+    let origin_oid = fixture
+        .commit_file_in_upstream("main", "origin side", "origin.txt", "from origin\n")
+        .expect("origin commit");
+    let outpost = outpost(&fixture, &outpost_path);
+    let mut reporter = CapturingReporter::default();
+
+    let err = expect_error(
+        run(&outpost, PushOptions, &mut reporter),
+        "push should reject origin divergence before mutating source",
+    );
+
+    assert!(matches!(err, OutpostError::Divergence { branch } if branch == "main"));
+    assert!(reporter.steps.is_empty());
+    assert_eq!(
+        fixture
+            .rev_parse(&fixture.source, "refs/heads/main")
+            .expect("source after"),
+        source_before
+    );
+    assert_eq!(
+        fixture
+            .rev_parse(&fixture.upstream, "refs/heads/main")
+            .expect("origin after"),
+        origin_oid
+    );
+}
+
+#[test]
 fn pu05_push_dirty_outpost_succeeds() {
     let fixture = AbcFixture::new();
     let outpost_path = fixture.add_outpost("C").expect("add C");
@@ -170,6 +246,45 @@ fn pu05_push_dirty_outpost_succeeds() {
         fixture
             .rev_parse(&fixture.upstream, "refs/heads/main")
             .expect("origin main"),
+        outpost_oid
+    );
+}
+
+#[test]
+fn push_first_publication_to_absent_origin_branch_counts_only_new_commits() {
+    let fixture = AbcFixture::new();
+    let feature = fixture
+        .create_source_branch("feature/first-publication")
+        .expect("create source branch");
+    let outpost_path = fixture
+        .add_outpost_on_branch("C", Some(feature.clone()))
+        .expect("add feature outpost");
+    let outpost_oid = fixture
+        .commit_file_in_outpost(&outpost_path, "feature side", "feature.txt", "feature\n")
+        .expect("outpost commit");
+    assert!(
+        fixture
+            .rev_parse(&fixture.upstream, "refs/heads/feature/first-publication")
+            .is_err(),
+        "origin feature branch should start absent"
+    );
+    let outpost = outpost(&fixture, &outpost_path);
+    let mut reporter = CapturingReporter::default();
+
+    let report = run(&outpost, PushOptions, &mut reporter).expect("push");
+
+    assert_pushed_commits(&report.outpost_to_source, 1);
+    assert_pushed_commits(&report.source_to_origin, 1);
+    assert_eq!(
+        fixture
+            .rev_parse(&fixture.source, "refs/heads/feature/first-publication")
+            .expect("source feature"),
+        outpost_oid
+    );
+    assert_eq!(
+        fixture
+            .rev_parse(&fixture.upstream, "refs/heads/feature/first-publication")
+            .expect("origin feature"),
         outpost_oid
     );
 }

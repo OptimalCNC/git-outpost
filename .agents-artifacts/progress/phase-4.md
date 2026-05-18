@@ -231,10 +231,21 @@ Remaining chunk order:
   - Evidence pack: `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/evidence-pack.md`
   - QA note: `.agents-artifacts/qa/phase-4/P4-C3-push-publication.md`
   - Unit tests added: none
-  - Integration tests added: `pu01_push_sends_outpost_branch_to_source_then_origin`, `pu02_push_records_outpost_push_and_source_push_events`, `pu03_push_from_outpost_only_branch_returns_ambiguous_branch_creation`, `pu04_push_when_source_diverged_from_outpost_returns_divergence`, `pu05_push_dirty_outpost_succeeds`, `pu06_push_with_missing_source_returns_source_missing`, `pu07_push_uses_custom_remote_for_outpost_to_source_and_origin_for_source_to_upstream`, `pu08_push_into_dirty_checked_out_source_branch_surfaces_update_instead_git_failed`, `pu09_push_with_deny_current_branch_refuse_returns_push_into_checked_out_branch`, `pu10_push_on_detached_head_returns_no_upstream_tracking_head_before_push`
+  - Integration tests added: `pu01_push_sends_outpost_branch_to_source_then_origin`, `pu02_push_records_outpost_push_and_source_push_events`, `pu03_push_from_outpost_only_branch_returns_ambiguous_branch_creation`, `pu04_push_when_source_diverged_from_outpost_returns_divergence`, `pu05_push_dirty_outpost_succeeds`, `pu06_push_with_missing_source_returns_source_missing`, `pu07_push_uses_custom_remote_for_outpost_to_source_and_origin_for_source_to_upstream`, `pu08_push_into_dirty_checked_out_source_branch_surfaces_update_instead_git_failed`, `pu09_push_with_deny_current_branch_refuse_returns_push_into_checked_out_branch`, `pu10_push_on_detached_head_returns_no_upstream_tracking_head_before_push`, `push_when_outpost_is_behind_source_returns_divergence_before_push`, `push_when_origin_is_ahead_returns_divergence_before_source_mutation`, `push_first_publication_to_absent_origin_branch_counts_only_new_commits`
   - Docs updated: none; existing product and architecture document push sequencing, branch-creation refusal, checked-out source policy, reporter events, and test scenarios
   - Architecture deviations: none for claimed `P4-C3-push-publication` behavior
-  - Status: review pending
+  - Implementation/evidence commit: `03ee3f9 phase-4: add push publication`
+  - Review artifacts:
+    - Scope Reviewer: `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/scope-review.md`
+    - Normal Reviewer: `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/normal-review.md`
+    - Independent Reviewer: `.agents-artifacts/reviews/phase-4/P4-C3-push-publication/independent-review.md`
+  - Review verdicts before fixes: scope `approved`; normal `pass`; independent `changes required`
+  - Adopted review fixes:
+    - Added push-specific C->B fast-forward preflight so C-behind-B and both-sides-diverged histories return `Divergence` before `OutpostPush`.
+    - Added existing-origin preflight so origin-ahead/divergent histories return `Divergence` before mutating B.
+    - Fixed absent-origin source-to-origin commit counting to count commits not already reachable from origin refs.
+    - Added focused regressions for all three independent-review findings.
+  - Status: review fixes implemented; re-review pending
 
 ## Verification Log
 
@@ -269,8 +280,8 @@ Remaining chunk order:
 - `P4-C3-push-publication` local verification:
   - `cargo fmt --check`: pass
   - `cargo check -p outpost-core`: pass
-  - `cargo test -p outpost-core --test push`: pass; 10 push integration tests
-  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 10 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --test push`: pass; 13 push integration tests
+  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 13 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --tests`: pass; same test binaries excluding doctests
   - `cargo test --workspace`: pass; same workspace coverage, 0 doctests
   - `git diff --check`: pass
@@ -322,7 +333,8 @@ Remaining chunk order:
 - `6d5ee16 phase-4: fix merge rebase review findings`
 - `69bc123 phase-4: record merge rebase reviews`
 - `5e42d0b phase-4: start push publication`
-- pending `P4-C3-push-publication` implementation/evidence commit
+- `03ee3f9 phase-4: add push publication`
+- pending `P4-C3-push-publication` review-fix commit
 
 ## Protected-Path Exception Log
 
@@ -336,4 +348,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `P4-C3-push-publication` implementation/evidence, then run scope, normal, and independent reviews.
+- Commit `P4-C3-push-publication` review fixes and evidence updates, then run scope, normal, and independent re-reviews.
