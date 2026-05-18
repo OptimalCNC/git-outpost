@@ -193,9 +193,13 @@ Remaining chunk order:
   - Docs updated: none; existing product and architecture document status local-state fields and source-missing reporting
   - Architecture deviations: none for claimed `status-local-state` behavior
   - Implementation commit: `cb5993b phase-3: add status local state`
-  - Review artifacts: pending
-  - Review verdicts: pending
-  - Status: review pending
+  - Checkpoint record commit: `9aa4d4d phase-3: record status local state checkpoint`
+  - Review artifacts:
+    - Scope Reviewer: `.agents-artifacts/reviews/phase-3/status-local-state/scope-review.md`
+  - Review verdicts: scope `approved with nits`
+  - Required review changes: none
+  - Adopted nits: progress log now records checkpoint record commit `9aa4d4d`
+  - Status: normal and independent review pending
 
 ## Verification Log
 
@@ -241,7 +245,8 @@ Remaining chunk order:
 - `64fb716 phase-3: record status report core scope review`
 - `2e0f8a9 phase-3: record status report core reviews`
 - `cb5993b phase-3: add status local state`
-- pending `status-local-state` checkpoint-record commit
+- `9aa4d4d phase-3: record status local state checkpoint`
+- pending `status-local-state` review-artifact commit
 
 ## Protected-Path Exception Log
 
