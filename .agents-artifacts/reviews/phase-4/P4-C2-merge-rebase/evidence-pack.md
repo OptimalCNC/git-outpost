@@ -37,14 +37,14 @@
   - Adds `MergeOptions`, `MergeReport`, and `run`.
   - Requires an attached outpost branch before fetching.
   - Validates `SourceRemoteRef.remote` against outpost metadata remote before fetching.
-  - Emits `OutpostFetch`, fetches `<branch>:refs/remotes/<remote>/<branch>` from the configured source remote, then runs `git merge <remote>/<branch>`.
+  - Emits `OutpostFetch`, fetches `<branch>:refs/remotes/<remote>/<branch>` from the configured source remote, then runs `git merge refs/remotes/<remote>/<branch>`.
 - `ops/rebase.rs`
   - Adds `RebaseOptions`, `RebaseReport`, and `run`.
-  - Mirrors merge preconditions and fetch behavior, then runs `git rebase <remote>/<branch>`.
+  - Mirrors merge preconditions and fetch behavior, then runs `git rebase refs/remotes/<remote>/<branch>`.
 - `tests/merge.rs`
-  - Adds merge-side coverage for MR-01, MR-03, MR-04, MR-05, and MR-06.
+  - Adds merge-side coverage for MR-01, MR-03, MR-04, MR-05, MR-06, and a local-branch collision regression.
 - `tests/rebase.rs`
-  - Adds rebase-side coverage for MR-02, MR-03, MR-04, MR-05, and MR-06.
+  - Adds rebase-side coverage for MR-02, MR-03, MR-04, MR-05, MR-06, and a local-branch collision regression.
 
 ## Tests Added / Updated
 
@@ -62,6 +62,8 @@
 - `mr05_rebase_records_outpost_fetch_event` covers rebase-side MR-05.
 - `mr06_merge_on_detached_head_returns_attached_branch_error_before_fetching` covers merge-side MR-06.
 - `mr06_rebase_on_detached_head_returns_attached_branch_error_before_fetching` covers rebase-side MR-06.
+- `merge_uses_full_remote_tracking_ref_when_local_branch_name_collides` covers the review regression where `local/main` could otherwise resolve to `refs/heads/local/main`.
+- `rebase_uses_full_remote_tracking_ref_when_local_branch_name_collides` covers the same regression for rebase.
 
 ## Docs Added / Updated
 
@@ -72,11 +74,11 @@
 
 - `cargo fmt --check`: pass
 - `cargo check -p outpost-core`: pass
-- `cargo test -p outpost-core --test merge`: pass; 5 merge integration tests
-- `cargo test -p outpost-core --test rebase`: pass; 5 rebase integration tests
+- `cargo test -p outpost-core --test merge`: pass; 6 merge integration tests
+- `cargo test -p outpost-core --test rebase`: pass; 6 rebase integration tests
 - `cargo test -p outpost-core --test source`: pass; 5 source integration tests
 - `cargo test -p outpost-core --test pull`: pass; 9 pull integration tests
-- `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 5 merge integration tests, 9 prune integration tests, 9 pull integration tests, 5 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+- `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
 - `cargo test -p outpost-core --tests`: pass; same test binaries excluding doctests
 - `cargo test --workspace`: pass; same workspace coverage, 0 doctests
 
@@ -95,5 +97,6 @@
 ## Residual Risks / Handoff Notes
 
 - Merge and rebase intentionally do not refresh B from `origin`; users should run `source pull` first when needed.
+- Final merge/rebase operands intentionally use full `refs/remotes/<remote>/<branch>` names to avoid ambiguity with local branches named like `<remote>/<branch>`.
 - Wrong-remote and detached-head tests assert no reporter event and no remote-tracking ref update before failure.
 - `ops::push`, CLI/global `-C`, and E2E behavior remain out of scope.

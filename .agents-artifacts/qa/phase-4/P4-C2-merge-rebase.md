@@ -2,7 +2,7 @@
 
 ## Summary
 
-QA completed core integration coverage for Phase 4 merge and rebase behavior. The tests call `outpost_core::ops::merge::run` and `outpost_core::ops::rebase::run` directly against real A/B/C fixture repositories and capture `OutpostFetch` events through `CapturingReporter`.
+QA completed core integration coverage for Phase 4 merge and rebase behavior. The tests call `outpost_core::ops::merge::run` and `outpost_core::ops::rebase::run` directly against real A/B/C fixture repositories and capture `OutpostFetch` events through `CapturingReporter`. Review regression coverage also proves the final merge/rebase target is the full remote-tracking ref when a local branch named like `<remote>/<branch>` exists.
 
 ## Test IDs Addressed
 
@@ -22,6 +22,8 @@ QA completed core integration coverage for Phase 4 merge and rebase behavior. Th
 | MR-05 | `crates/core/tests/rebase.rs` | `mr05_rebase_records_outpost_fetch_event` | Rebase emits `OutpostFetch` | implemented passing |
 | MR-06 | `crates/core/tests/merge.rs` | `mr06_merge_on_detached_head_returns_attached_branch_error_before_fetching` | Merge on detached C returns `NoUpstreamTracking { branch: "HEAD" }` before fetch | implemented passing |
 | MR-06 | `crates/core/tests/rebase.rs` | `mr06_rebase_on_detached_head_returns_attached_branch_error_before_fetching` | Rebase on detached C returns `NoUpstreamTracking { branch: "HEAD" }` before fetch | implemented passing |
+| regression | `crates/core/tests/merge.rs` | `merge_uses_full_remote_tracking_ref_when_local_branch_name_collides` | Merge uses `refs/remotes/<remote>/<branch>` instead of an ambiguous short ref | implemented passing |
+| regression | `crates/core/tests/rebase.rs` | `rebase_uses_full_remote_tracking_ref_when_local_branch_name_collides` | Rebase uses `refs/remotes/<remote>/<branch>` instead of an ambiguous short ref | implemented passing |
 
 ## Files Changed
 
@@ -42,8 +44,8 @@ QA completed core integration coverage for Phase 4 merge and rebase behavior. Th
 
 ## Verification Run
 
-- `cargo test -p outpost-core --test merge`: pass; 5 merge integration tests
-- `cargo test -p outpost-core --test rebase`: pass; 5 rebase integration tests
+- `cargo test -p outpost-core --test merge`: pass; 6 merge integration tests
+- `cargo test -p outpost-core --test rebase`: pass; 6 rebase integration tests
 - Coordinator also ran full chunk verification; see evidence pack.
 
 ## Verification Not Run
@@ -57,5 +59,6 @@ QA completed core integration coverage for Phase 4 merge and rebase behavior. Th
 ## Risks / Handoff Notes
 
 - Merge/rebase tests use non-conflicting file-backed commits.
+- Collision regressions intentionally create `refs/heads/local/main` in C to catch ambiguous short-ref resolution.
 - Reporter assertions check `StepKind`, not exact message text.
 - Push tests remain P4-C3.

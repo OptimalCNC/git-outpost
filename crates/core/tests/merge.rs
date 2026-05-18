@@ -184,6 +184,50 @@ fn mr05_merge_records_outpost_fetch_event() {
 }
 
 #[test]
+fn merge_uses_full_remote_tracking_ref_when_local_branch_name_collides() {
+    let fixture = AbcFixture::new();
+    let outpost_path = fixture.add_outpost("C").expect("add C");
+    fixture
+        .invoker(&outpost_path)
+        .run_check(["branch", "local/main"])
+        .expect("create colliding local branch");
+    fixture
+        .invoker(&outpost_path)
+        .run_check(["switch", "-c", "feature/colliding-merge"])
+        .expect("create outpost feature branch");
+    fixture
+        .commit_file_in_outpost(
+            &outpost_path,
+            "outpost side",
+            "colliding-outpost.txt",
+            "from outpost\n",
+        )
+        .expect("outpost commit");
+    let source_oid = fixture
+        .commit_file_in_source("source side", "colliding-source.txt", "from source\n")
+        .expect("source commit");
+    let outpost = outpost(&fixture, &outpost_path);
+    let mut reporter = CapturingReporter::default();
+
+    run(
+        &outpost,
+        MergeOptions {
+            source_ref: source_ref("local/main"),
+        },
+        &mut reporter,
+    )
+    .expect("merge");
+
+    assert_eq!(
+        fixture
+            .rev_parse(&outpost_path, "refs/remotes/local/main")
+            .expect("local/main"),
+        source_oid
+    );
+    assert_ancestor(&fixture, &outpost_path, &source_oid, "HEAD");
+}
+
+#[test]
 fn mr06_merge_on_detached_head_returns_attached_branch_error_before_fetching() {
     let fixture = AbcFixture::new();
     let outpost_path = fixture.add_outpost("C").expect("add C");

@@ -30,13 +30,8 @@ pub fn run(
             outpost.work_tree().display()
         ),
     );
-    fetch_source_ref(outpost, &opts.source_ref)?;
-    let remote_branch = format!(
-        "{}/{}",
-        opts.source_ref.remote.as_str(),
-        opts.source_ref.branch.as_str()
-    );
-    outpost.git().run_check(["rebase", &remote_branch])?;
+    let remote_tracking_ref = fetch_source_ref(outpost, &opts.source_ref)?;
+    outpost.git().run_check(["rebase", &remote_tracking_ref])?;
 
     Ok(RebaseReport {
         source_ref: opts.source_ref,
@@ -57,7 +52,7 @@ fn validate_source_remote(outpost: &Outpost, source_ref: &SourceRemoteRef) -> Ou
     }
 }
 
-fn fetch_source_ref(outpost: &Outpost, source_ref: &SourceRemoteRef) -> OutpostResult<()> {
+fn fetch_source_ref(outpost: &Outpost, source_ref: &SourceRemoteRef) -> OutpostResult<String> {
     let remote_tracking_ref = format!(
         "refs/remotes/{}/{}",
         source_ref.remote.as_str(),
@@ -66,5 +61,6 @@ fn fetch_source_ref(outpost: &Outpost, source_ref: &SourceRemoteRef) -> OutpostR
     let fetch_refspec = format!("{}:{remote_tracking_ref}", source_ref.branch.as_str());
     outpost
         .git()
-        .run_check(["fetch", source_ref.remote.as_str(), &fetch_refspec])
+        .run_check(["fetch", source_ref.remote.as_str(), &fetch_refspec])?;
+    Ok(remote_tracking_ref)
 }

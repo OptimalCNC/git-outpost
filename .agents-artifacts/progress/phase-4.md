@@ -144,7 +144,7 @@
 - Scope: `ops::merge`, `ops::rebase`, configured source-remote validation, detached-head preconditions, and `OutpostFetch` reporting.
 - Test IDs: MR-01..MR-06
 - Out of scope: `ops::push`, Phase 5 CLI/global `-C`/E2E, refreshing B from `origin` inside merge/rebase, unrelated docs cleanup, unrelated refactors.
-- Status: implementation and QA evidence recorded; review pending.
+- Status: review fix implemented after independent review; re-review pending.
 
 ## Remaining Chunks
 
@@ -207,10 +207,17 @@ Remaining chunk order:
   - Evidence pack: `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/evidence-pack.md`
   - QA note: `.agents-artifacts/qa/phase-4/P4-C2-merge-rebase.md`
   - Unit tests added: none
-  - Integration tests added: `mr01_merge_fetches_source_branch_and_merges_remote_tracking_ref`, `mr02_rebase_fetches_source_branch_and_rebases_current_branch`, `mr03_merge_uses_custom_source_remote_name`, `mr03_rebase_uses_custom_source_remote_name`, `mr04_merge_rejects_wrong_remote_before_fetching`, `mr04_rebase_rejects_wrong_remote_before_fetching`, `mr05_merge_records_outpost_fetch_event`, `mr05_rebase_records_outpost_fetch_event`, `mr06_merge_on_detached_head_returns_attached_branch_error_before_fetching`, `mr06_rebase_on_detached_head_returns_attached_branch_error_before_fetching`
+  - Integration tests added: `mr01_merge_fetches_source_branch_and_merges_remote_tracking_ref`, `mr02_rebase_fetches_source_branch_and_rebases_current_branch`, `mr03_merge_uses_custom_source_remote_name`, `mr03_rebase_uses_custom_source_remote_name`, `mr04_merge_rejects_wrong_remote_before_fetching`, `mr04_rebase_rejects_wrong_remote_before_fetching`, `mr05_merge_records_outpost_fetch_event`, `mr05_rebase_records_outpost_fetch_event`, `mr06_merge_on_detached_head_returns_attached_branch_error_before_fetching`, `mr06_rebase_on_detached_head_returns_attached_branch_error_before_fetching`, `merge_uses_full_remote_tracking_ref_when_local_branch_name_collides`, `rebase_uses_full_remote_tracking_ref_when_local_branch_name_collides`
   - Docs updated: none; existing product and architecture document merge/rebase source-ref behavior, reporter events, custom remote behavior, and test scenarios
   - Architecture deviations: none for claimed `P4-C2-merge-rebase` behavior
-  - Status: review pending
+  - Implementation/evidence commit: `4a68f15 phase-4: add merge rebase`
+  - Review artifacts:
+    - Scope Reviewer: `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/scope-review.md`
+    - Normal Reviewer: `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/normal-review.md`
+    - Independent Reviewer: `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/independent-review.md`
+  - Review verdicts before fixes: scope `approved for scope`; normal `pass`; independent `changes requested`
+  - Adopted review fix: final merge/rebase operations now use the full fetched remote-tracking ref `refs/remotes/<remote>/<branch>` instead of the ambiguous short `<remote>/<branch>`.
+  - Status: review fix implemented; re-review pending
 
 ## Verification Log
 
@@ -235,11 +242,11 @@ Remaining chunk order:
 - `P4-C2-merge-rebase` local verification:
   - `cargo fmt --check`: pass
   - `cargo check -p outpost-core`: pass
-  - `cargo test -p outpost-core --test merge`: pass; 5 merge integration tests
-  - `cargo test -p outpost-core --test rebase`: pass; 5 rebase integration tests
+  - `cargo test -p outpost-core --test merge`: pass; 6 merge integration tests
+  - `cargo test -p outpost-core --test rebase`: pass; 6 rebase integration tests
   - `cargo test -p outpost-core --test source`: pass; 5 source integration tests
   - `cargo test -p outpost-core --test pull`: pass; 9 pull integration tests
-  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 5 merge integration tests, 9 prune integration tests, 9 pull integration tests, 5 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --tests`: pass; same test binaries excluding doctests
   - `cargo test --workspace`: pass; same workspace coverage, 0 doctests
 
@@ -257,6 +264,13 @@ Remaining chunk order:
 - `P4-C1-source-pull-foundation` Normal Re-reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/normal-rereview.md`; nit was stale progress commit-log text.
 - `P4-C1-source-pull-foundation` Independent Re-reviewer: `approved with nits`; artifact `.agents-artifacts/reviews/phase-4/P4-C1-source-pull-foundation/independent-rereview.md`; nit was stale progress commit-log text.
 - Blocking review findings: none open for `P4-C1-source-pull-foundation`.
+- `P4-C2-merge-rebase` Scope Reviewer: `approved for scope`; artifact `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/scope-review.md`; nit was stale progress commit-log text.
+- `P4-C2-merge-rebase` Normal Reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/normal-review.md`; nit was duplicated helper functions, accepted for chunk size.
+- `P4-C2-merge-rebase` Independent Reviewer: `changes requested`; artifact `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/independent-review.md`; required full remote-tracking final operands and merge/rebase collision regression tests.
+- Adopted `P4-C2-merge-rebase` review fixes:
+  - `ops::merge` and `ops::rebase` fetch into and then operate on `refs/remotes/<remote>/<branch>`.
+  - Added merge/rebase regression tests with a colliding local branch named `local/main`.
+  - Focused merge/rebase and full required verification passed after the fix.
 
 ## Docs Log
 
@@ -271,7 +285,8 @@ Remaining chunk order:
 - `96969ea phase-4: fix source pull review findings`
 - `1669ea2 phase-4: record source pull reviews`
 - `6b4d8f5 phase-4: start merge rebase`
-- pending `P4-C2-merge-rebase` implementation/evidence commit
+- `4a68f15 phase-4: add merge rebase`
+- pending `P4-C2-merge-rebase` review-fix commit
 
 ## Protected-Path Exception Log
 
@@ -285,4 +300,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `P4-C2-merge-rebase` implementation/evidence, then run scope, normal, and independent reviews.
+- Commit `P4-C2-merge-rebase` review fix and evidence updates, then run scope, normal, and independent re-reviews.
