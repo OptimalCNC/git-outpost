@@ -96,12 +96,12 @@
 | P-07 | `pull` works with custom remote name | completed | `crates/core/tests/pull.rs` |
 | P-08 | `pull` records `SourceFetch` and `OutpostFetch` step events | completed | `crates/core/tests/pull.rs` |
 | P-09 | `pull` on attached C branch missing in B returns `BranchNotFound` before outpost fast-forward | completed | `crates/core/tests/pull.rs` |
-| MR-01 | `merge local/main` fetches B's `main` and merges `local/main` into C | planned | `crates/core/tests/merge.rs` |
-| MR-02 | `rebase local/main` fetches B's `main` and rebases C onto `local/main` | planned | `crates/core/tests/rebase.rs` |
-| MR-03 | `merge custom/main` and `rebase custom/main` work with custom remote name | planned | `crates/core/tests/merge.rs`, `crates/core/tests/rebase.rs` |
-| MR-04 | `merge origin/main` / `rebase origin/main` from `local` outpost returns `InvalidRefName` before fetching | planned | `crates/core/tests/merge.rs`, `crates/core/tests/rebase.rs` |
-| MR-05 | `merge local/main` and `rebase local/main` record `OutpostFetch` step events | planned | `crates/core/tests/merge.rs`, `crates/core/tests/rebase.rs` |
-| MR-06 | `merge local/main` and `rebase local/main` on detached HEAD return attached-branch error before fetching | planned | `crates/core/tests/merge.rs`, `crates/core/tests/rebase.rs` |
+| MR-01 | `merge local/main` fetches B's `main` and merges `local/main` into C | completed | `crates/core/tests/merge.rs` |
+| MR-02 | `rebase local/main` fetches B's `main` and rebases C onto `local/main` | completed | `crates/core/tests/rebase.rs` |
+| MR-03 | `merge custom/main` and `rebase custom/main` work with custom remote name | completed | `crates/core/tests/merge.rs`, `crates/core/tests/rebase.rs` |
+| MR-04 | `merge origin/main` / `rebase origin/main` from `local` outpost returns `InvalidRefName` before fetching | completed | `crates/core/tests/merge.rs`, `crates/core/tests/rebase.rs` |
+| MR-05 | `merge local/main` and `rebase local/main` record `OutpostFetch` step events | completed | `crates/core/tests/merge.rs`, `crates/core/tests/rebase.rs` |
+| MR-06 | `merge local/main` and `rebase local/main` on detached HEAD return attached-branch error before fetching | completed | `crates/core/tests/merge.rs`, `crates/core/tests/rebase.rs` |
 | Pu-01 | `push` sends C current branch to B and then B to `origin/<branch>` | planned | `crates/core/tests/push.rs` |
 | Pu-02 | `push` records `OutpostPush` and `SourcePush` step events | planned | `crates/core/tests/push.rs` |
 | Pu-03 | `push` from branch only in C returns `AmbiguousBranchCreation` | planned | `crates/core/tests/push.rs` |
@@ -144,7 +144,7 @@
 - Scope: `ops::merge`, `ops::rebase`, configured source-remote validation, detached-head preconditions, and `OutpostFetch` reporting.
 - Test IDs: MR-01..MR-06
 - Out of scope: `ops::push`, Phase 5 CLI/global `-C`/E2E, refreshing B from `origin` inside merge/rebase, unrelated docs cleanup, unrelated refactors.
-- Status: implementation starting.
+- Status: implementation and QA evidence recorded; review pending.
 
 ## Remaining Chunks
 
@@ -200,6 +200,17 @@ Remaining chunk order:
   - Required review changes: none open
   - Adopted nits: progress log now records implementation/evidence commit `9d491be` and review-fix commit `96969ea`; helper return type now matches architecture API shape
   - Status: approved
+- `P4-C2-merge-rebase` implementation evidence recorded:
+  - Files changed: `crates/core/src/ops/mod.rs`, `crates/core/src/ops/merge.rs`, `crates/core/src/ops/rebase.rs`, `crates/core/tests/merge.rs`, `crates/core/tests/rebase.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-4.md`, `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/evidence-pack.md`, `.agents-artifacts/qa/phase-4/P4-C2-merge-rebase.md`
+  - Test IDs advanced: MR-01..MR-06
+  - Evidence pack: `.agents-artifacts/reviews/phase-4/P4-C2-merge-rebase/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-4/P4-C2-merge-rebase.md`
+  - Unit tests added: none
+  - Integration tests added: `mr01_merge_fetches_source_branch_and_merges_remote_tracking_ref`, `mr02_rebase_fetches_source_branch_and_rebases_current_branch`, `mr03_merge_uses_custom_source_remote_name`, `mr03_rebase_uses_custom_source_remote_name`, `mr04_merge_rejects_wrong_remote_before_fetching`, `mr04_rebase_rejects_wrong_remote_before_fetching`, `mr05_merge_records_outpost_fetch_event`, `mr05_rebase_records_outpost_fetch_event`, `mr06_merge_on_detached_head_returns_attached_branch_error_before_fetching`, `mr06_rebase_on_detached_head_returns_attached_branch_error_before_fetching`
+  - Docs updated: none; existing product and architecture document merge/rebase source-ref behavior, reporter events, custom remote behavior, and test scenarios
+  - Architecture deviations: none for claimed `P4-C2-merge-rebase` behavior
+  - Status: review pending
 
 ## Verification Log
 
@@ -221,6 +232,16 @@ Remaining chunk order:
   - `cargo test -p outpost-core --tests`: pass; same test binaries excluding doctests
   - `cargo test --workspace`: pass; same workspace coverage, 0 doctests
   - `git diff --check`: pass
+- `P4-C2-merge-rebase` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo check -p outpost-core`: pass
+  - `cargo test -p outpost-core --test merge`: pass; 5 merge integration tests
+  - `cargo test -p outpost-core --test rebase`: pass; 5 rebase integration tests
+  - `cargo test -p outpost-core --test source`: pass; 5 source integration tests
+  - `cargo test -p outpost-core --test pull`: pass; 9 pull integration tests
+  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 5 merge integration tests, 9 prune integration tests, 9 pull integration tests, 5 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; same test binaries excluding doctests
+  - `cargo test --workspace`: pass; same workspace coverage, 0 doctests
 
 ## Review Log
 
@@ -240,6 +261,7 @@ Remaining chunk order:
 ## Docs Log
 
 - `P4-C1-source-pull-foundation`: no docs changes; stable concepts are already covered by product `pull`/`source pull` and architecture sections 5.8, 5.9.0, 5.9.4, 5.9.5, 11.6, and 11.7.
+- `P4-C2-merge-rebase`: no docs changes; stable concepts are already covered by product `merge`/`rebase` and architecture sections 5.9.0, 5.9.6, 5.9.7, and 11.8.
 
 ## Commit Log
 
@@ -248,7 +270,8 @@ Remaining chunk order:
 - `9d491be phase-4: add source pull foundation`
 - `96969ea phase-4: fix source pull review findings`
 - `1669ea2 phase-4: record source pull reviews`
-- pending `P4-C2-merge-rebase` start commit
+- `6b4d8f5 phase-4: start merge rebase`
+- pending `P4-C2-merge-rebase` implementation/evidence commit
 
 ## Protected-Path Exception Log
 
@@ -262,4 +285,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Implement `P4-C2-merge-rebase` with MR-01..MR-06 coverage.
+- Commit `P4-C2-merge-rebase` implementation/evidence, then run scope, normal, and independent reviews.
