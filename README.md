@@ -4,6 +4,8 @@
 [![Development](https://github.com/OptimalCNC/git-outpost/actions/workflows/dev.yml/badge.svg)](https://github.com/OptimalCNC/git-outpost/actions/workflows/dev.yml)
 [![Integration](https://github.com/OptimalCNC/git-outpost/actions/workflows/integration.yml/badge.svg)](https://github.com/OptimalCNC/git-outpost/actions/workflows/integration.yml)
 [![Release](https://github.com/OptimalCNC/git-outpost/actions/workflows/release.yml/badge.svg)](https://github.com/OptimalCNC/git-outpost/actions/workflows/release.yml)
+[![crates.io: git-outpost](https://img.shields.io/crates/v/git-outpost.svg?label=git-outpost)](https://crates.io/crates/git-outpost)
+[![crates.io: outpost-core](https://img.shields.io/crates/v/outpost-core.svg?label=outpost-core)](https://crates.io/crates/outpost-core)
 
 Git Outpost is a Rust command-line tool for creating self-contained Git
 checkouts from an existing local repository. It gives you a `git worktree`-like
