@@ -140,11 +140,7 @@
 
 ## Active Chunk
 
-- `P4-C3-push-publication`
-- Scope: `ops::push`, C->B then B->A publication, branch-creation refusal, divergence checks, checked-out source policy, and `OutpostPush`/`SourcePush` reporting.
-- Test IDs: Pu-01..Pu-10
-- Out of scope: Phase 5 CLI/global `-C`/E2E/cross-platform behavior, new push flags or routing options, source-branch auto-creation, unrelated docs cleanup, unrelated refactors.
-- Status: implementation and QA evidence recorded; review pending.
+- none; Phase 4 closeout passed.
 
 ## Remaining Chunks
 
@@ -171,7 +167,7 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `phase-4-verification`
+- none
 
 ## Completed Chunks
 
@@ -292,6 +288,10 @@ Remaining chunk order:
   - `cargo test -p outpost-core --tests`: pass; same test binaries excluding doctests
   - `cargo test --workspace`: pass; same workspace coverage, 0 doctests
   - `git diff --check`: pass
+- Phase 4 closeout verification after `00ad2f2 phase-4: record push reviews`:
+  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 13 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass; same test binaries excluding doctests
+  - `cargo test --workspace`: pass; same workspace coverage, 0 doctests
 
 ## Review Log
 
@@ -343,6 +343,16 @@ Remaining chunk order:
 - `P4-C2-merge-rebase`: `docs/src/architecture.md` updated sections 5.9.6 and 5.9.7 to document full `refs/remotes/<remote>/<branch>` operands for final merge/rebase commands; this matches the adopted safety invariant and review fix.
 - `P4-C3-push-publication`: `docs/src/architecture.md` updated section 5.9.8 to document push-specific C->B and B->A fast-forward preflights; this matches the adopted review fix and safety invariant.
 
+## Phase Closeout
+
+- Verdict: passed
+- Required verification: passed
+- Review gates: `P4-C1-source-pull-foundation`, `P4-C2-merge-rebase`, and `P4-C3-push-publication` are approved with no blocking findings open.
+- QA coverage: all Phase 4 roadmap test IDs SP-01..SP-05, P-01..P-09, MR-01..MR-06, and Pu-01..Pu-10 are implemented as core tests.
+- Forbidden scope audit: no Phase 5 CLI binary, global `-C`, whole-binary E2E, or cross-platform behavior was implemented in Phase 4.
+- Protected paths: none.
+- Next phase: Phase 5 readiness.
+
 ## Commit Log
 
 - `83e8778 phase-4: record readiness and plan`
@@ -357,7 +367,8 @@ Remaining chunk order:
 - `5e42d0b phase-4: start push publication`
 - `03ee3f9 phase-4: add push publication`
 - `594890f phase-4: fix push review findings`
-- pending `P4-C3-push-publication` review-artifact commit
+- `00ad2f2 phase-4: record push reviews`
+- pending `phase-4: close phase`
 
 ## Protected-Path Exception Log
 
@@ -365,10 +376,8 @@ Remaining chunk order:
 
 ## Open Risks / Questions
 
-- Keep Phase 4 core-only; CLI binary behavior and full E2E remain Phase 5.
-- Preserve reporter event ordering: emit before each user-visible cross-repo action.
-- Avoid silently creating source branches in `push`; outpost-only branches must return `AmbiguousBranchCreation`.
+- Phase 5 owns CLI binary behavior, global `-C`, whole-binary E2E, and cross-platform behavior.
 
 ## Next Recommended Action
 
-- Commit `P4-C3-push-publication` re-review artifacts and adopted nits, then run Phase 4 closeout verification.
+- Commit Phase 4 closeout, then start Phase 5 readiness.
