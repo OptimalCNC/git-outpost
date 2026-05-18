@@ -125,7 +125,7 @@
 - Scope: wire CLI dispatch to `outpost-core` ops, context classification, global `-C`, stdout/stderr rendering, `StderrReporter`, and E2E fixture.
 - Test IDs: E-02, E-04, E-05, E-06, E-10, E-11, E-12, E-14
 - Out of scope: E-07 copied-outpost degradation, E-08 full exit-code matrix, E-09 color/NO_COLOR stripping, global registry behavior, unrelated docs cleanup, unrelated refactors.
-- Status: implementation and QA evidence recorded; review pending.
+- Status: approved.
 
 ## Remaining Chunks
 
@@ -194,7 +194,17 @@ Remaining chunk order:
   - Review fixes committed in `56eadac phase-5: fix dispatch e2e review findings`:
     - Replaced CLI-only `CliError` context failures with first-class `OutpostError` variants to preserve the architecture's single error/exit-code model.
     - Added matrix-edge CLI tests for list-from-outpost, lock/unlock explicit and default path dispatch, move/prune dispatch, representative wrong-context failures, and `add` under global `-C`.
-  - Status: review pending
+  - Review artifacts:
+    - Scope Reviewer: `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/scope-review.md`
+    - Normal Reviewer: `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/normal-review.md`
+    - Independent Reviewer: `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/independent-review.md`
+    - Scope Re-reviewer: `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/scope-rereview.md`
+    - Normal Re-reviewer: `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/normal-rereview.md`
+    - Independent Re-reviewer: `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/independent-rereview.md`
+  - Review verdicts after fixes: scope `pass`; normal `pass with nit`; independent `pass`
+  - Required review changes: none open
+  - Adopted nits: `add` with global `-C` and representative matrix negative/dual-context tests. Remaining low-severity nit: status healthy output currently prints `problems: none` instead of literal `ok`; P5-C3 may address if output hardening touches status formatting.
+  - Status: approved
 
 ## Verification Log
 
@@ -249,6 +259,10 @@ Remaining chunk order:
   - `OutpostError::WrongContext` and `OutpostError::MissingOutpostPath` now own CLI dispatch context failures and map to exit code 2.
   - Added matrix-edge coverage for list from outpost, lock/unlock from source and outpost contexts, move/prune from source, representative wrong-context failures, and `add` with global `-C`.
   - Evidence/progress updated to reflect docs and coverage changes.
+- `P5-C2-dispatch-e2e` Scope Re-reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/scope-rereview.md`; no required changes or nits.
+- `P5-C2-dispatch-e2e` Normal Re-reviewer: `pass with one low-severity nit`; artifact `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/normal-rereview.md`; nit was status healthy wording `problems: none` vs product's `ok` wording.
+- `P5-C2-dispatch-e2e` Independent Re-reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/independent-rereview.md`; prior blockers resolved.
+- Blocking review findings: none open for `P5-C2-dispatch-e2e`.
 
 ## Docs Log
 
@@ -265,6 +279,7 @@ Remaining chunk order:
 - `0b4ea9c phase-5: start dispatch e2e`
 - `6f68b95 phase-5: add dispatch e2e`
 - `56eadac phase-5: fix dispatch e2e review findings`
+- `fe717b6 phase-5: record dispatch review-fix commit`
 - pending `phase-5: record dispatch e2e reviews`
 
 ## Protected-Path Exception Log
@@ -279,4 +294,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Run P5-C2 re-review for adopted review fixes.
+- Commit `P5-C2-dispatch-e2e` review artifacts, then start `P5-C3-exit-color-platform-hardening`.
