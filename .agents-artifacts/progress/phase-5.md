@@ -84,19 +84,19 @@
 | ID | Scope | Status | Notes |
 | --- | --- | --- | --- |
 | E-01 | both `git-outpost` and `gop` debug binaries are built | completed | `crates/cli/tests/flags.rs::e_01_build_produces_both_binaries` |
-| E-02 | `git outpost status`, `git-outpost status`, and `gop status` produce identical stdout for same C | planned | `crates/cli/tests/e2e.rs::all_invocation_forms_produce_same_status_stdout` |
+| E-02 | `git outpost status`, `git-outpost status`, and `gop status` produce identical stdout for same C | completed | `crates/cli/tests/e2e.rs::e_02_invocation_forms_produce_same_status_stdout` |
 | E-03 | `gop --help` lists every subcommand exactly once and includes every long flag from the CLI surface | completed | `crates/cli/tests/help.rs::e_03_help_lists_commands_and_long_flags` |
-| E-04 | add/status/push/list/remove round trip through CLI exits 0 | planned | `crates/cli/tests/e2e.rs::basic_cli_lifecycle_round_trip_exits_zero` |
-| E-05 | `gop push` makes C commit visible in A | planned | `crates/cli/tests/e2e.rs::push_makes_outpost_commit_visible_upstream` |
-| E-06 | two outposts round trip via source | planned | `crates/cli/tests/e2e.rs::two_outposts_sync_through_source` |
+| E-04 | add/status/push/list/remove round trip through CLI exits 0 | completed | `crates/cli/tests/e2e.rs::e_04_basic_cli_lifecycle_round_trip_exits_zero` |
+| E-05 | `gop push` makes C commit visible in A | completed | `crates/cli/tests/e2e.rs::e_05_push_makes_outpost_commit_visible_upstream` |
+| E-06 | two outposts round trip via source | completed | `crates/cli/tests/e2e.rs::e_06_two_outposts_round_trip_via_source` |
 | E-07 | copied outpost remains Git-independent after deleting source and reports degraded status | planned | `crates/cli/tests/e2e.rs::copied_outpost_is_git_independent_when_source_is_missing` |
 | E-08 | every `OutpostError` variant maps to documented exit code | planned | `crates/cli/tests/flags.rs::outpost_errors_map_to_documented_exit_codes` |
 | E-09 | `--no-color` and `NO_COLOR=1` output contains no ANSI escapes | planned | `crates/cli/tests/flags.rs::no_color_flag_and_env_strip_ansi_output` |
-| E-10 | full Story flow exits 0 | planned | `crates/cli/tests/e2e.rs::story_flow_exits_zero` |
-| E-11 | `merge local/main` and `rebase local/main` accept Story source-ref form | planned | `crates/cli/tests/e2e.rs::merge_and_rebase_accept_story_source_ref` |
-| E-12 | global `-C <other-dir>` changes effective cwd | planned | `crates/cli/tests/flags.rs::global_c_changes_effective_cwd` |
+| E-10 | full Story flow exits 0 | completed | `crates/cli/tests/e2e.rs::e_10_story_flow_exits_zero` |
+| E-11 | `merge local/main` and `rebase local/main` accept Story source-ref form | completed | `crates/cli/tests/e2e.rs::e_11_merge_and_rebase_accept_story_source_ref` |
+| E-12 | global `-C <other-dir>` changes effective cwd | completed | `crates/cli/tests/flags.rs::e_12_global_c_changes_effective_cwd` |
 | E-13 | removed `add --detach` returns clap usage error | completed | `crates/cli/tests/flags.rs::e_13_add_detach_is_rejected_by_clap` |
-| E-14 | `gop add C -- -evil` returns `InvalidRefName`, not `GitFailed` | planned | `crates/cli/tests/flags.rs::add_target_branch_starting_with_dash_returns_invalid_ref` |
+| E-14 | `gop add C -- -evil` returns `InvalidRefName`, not `GitFailed` | completed | `crates/cli/tests/flags.rs::e_14_add_target_branch_starting_with_dash_returns_invalid_ref` |
 | E-15 | representative deferred/removed surfaces are rejected by clap | completed | `crates/cli/tests/flags.rs::e_15_deferred_and_removed_surfaces_are_rejected_by_clap` |
 | H-01 | `git-outpost --help` renders `git-outpost` as program name | completed | `crates/cli/tests/help.rs::h_01_git_outpost_help_uses_git_outpost_name` |
 | H-02 | `gop --help` renders `gop` as program name | completed | `crates/cli/tests/help.rs::h_02_gop_help_uses_gop_name` |
@@ -125,7 +125,7 @@
 - Scope: wire CLI dispatch to `outpost-core` ops, context classification, global `-C`, stdout/stderr rendering, `StderrReporter`, and E2E fixture.
 - Test IDs: E-02, E-04, E-05, E-06, E-10, E-11, E-12, E-14
 - Out of scope: E-07 copied-outpost degradation, E-08 full exit-code matrix, E-09 color/NO_COLOR stripping, global registry behavior, unrelated docs cleanup, unrelated refactors.
-- Status: assignment pending.
+- Status: implementation and QA evidence recorded; review pending.
 
 ## Remaining Chunks
 
@@ -150,7 +150,6 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `P5-C2-dispatch-e2e`
 - `P5-C3-exit-color-platform-hardening`
 
 ## Completed Chunks
@@ -182,6 +181,17 @@ Remaining chunk order:
   - Required review changes: none open
   - Adopted nits: progress log now records review-fix commit `a885c59`; future evidence should prefer `git diff --check HEAD^..HEAD` for committed diffs.
   - Status: approved
+- `P5-C2-dispatch-e2e` implementation evidence recorded:
+  - Files changed: `Cargo.lock`, `crates/cli/Cargo.toml`, `crates/cli/src/cli.rs`, `crates/cli/src/main.rs`, `crates/cli/src/exit.rs`, `crates/cli/src/output.rs`, `crates/cli/src/reporter_impls.rs`, `crates/cli/tests/common/mod.rs`, `crates/cli/tests/e2e.rs`, `crates/cli/tests/flags.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-5.md`, `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/evidence-pack.md`, `.agents-artifacts/qa/phase-5/P5-C2-dispatch-e2e.md`
+  - Test IDs advanced: E-02, E-04, E-05, E-06, E-10, E-11, E-12, E-14
+  - Evidence pack: `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-5/P5-C2-dispatch-e2e.md`
+  - CLI integration tests added: `e_02_invocation_forms_produce_same_status_stdout`, `e_04_basic_cli_lifecycle_round_trip_exits_zero`, `e_05_push_makes_outpost_commit_visible_upstream`, `e_06_two_outposts_round_trip_via_source`, `e_10_story_flow_exits_zero`, `e_11_merge_and_rebase_accept_story_source_ref`, `e_12_global_c_changes_effective_cwd`, `e_14_add_target_branch_starting_with_dash_returns_invalid_ref`
+  - Docs updated: none
+  - Architecture deviations: none for claimed `P5-C2-dispatch-e2e` behavior. CLI fixture uses sibling paths such as `../C` from source repo to preserve the core invariant that outposts are separate checkouts outside the source work tree.
+  - Implementation/evidence commit: pending `phase-5: add dispatch e2e`
+  - Status: review pending
 
 ## Verification Log
 
@@ -205,6 +215,14 @@ Remaining chunk order:
   - `cargo test -p outpost-core --tests`: pass with the same core test binaries excluding doctests
   - `cargo test --workspace`: pass; 7 CLI integration tests plus existing core coverage, 0 doctests
   - `git diff --check`: pass
+- `P5-C2-dispatch-e2e` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo build -p git-outpost`: pass; builds `git-outpost` and `gop`; Cargo warns that `src/main.rs` is present in both bin targets, matching the Phase 5 architecture
+  - `cargo test -p git-outpost --tests`: pass; 6 E2E tests, 5 flags tests, 4 help tests
+  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 13 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass with the same core test binaries excluding doctests
+  - `cargo test --workspace`: pass; 15 CLI integration tests plus existing core coverage, 0 doctests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -225,6 +243,7 @@ Remaining chunk order:
 ## Docs Log
 
 - `P5-C1-cli-surface`: `docs/src/architecture.md` updated H-03 to specify `git outpost -h`, because Git intercepts literal `git outpost --help` as a manpage request before external command dispatch.
+- `P5-C2-dispatch-e2e`: no docs changed. Evidence records that E2E paths use sibling outposts such as `../C` to honor the existing separate-checkout invariant.
 
 ## Commit Log
 
@@ -233,7 +252,8 @@ Remaining chunk order:
 - `00f48c7 phase-5: add cli surface`
 - `a885c59 phase-5: fix cli surface review findings`
 - `cc22594 phase-5: record cli surface reviews`
-- pending `phase-5: start dispatch e2e`
+- `0b4ea9c phase-5: start dispatch e2e`
+- pending `phase-5: add dispatch e2e`
 
 ## Protected-Path Exception Log
 
@@ -241,10 +261,10 @@ Remaining chunk order:
 
 ## Open Risks / Questions
 
-- P5-C2 owns real command dispatch, output formatting, `StderrReporter`, global `-C` behavior assertions, and E2E Story behavior.
+- P5-C3 owns copied-outpost degradation, full exit-code coverage, and no-color/NO_COLOR hardening.
 - H-03 should continue to use `git outpost -h`; literal `git outpost --help` is Git's manpage path on Git 2.43.
 - Local execution is Linux; cross-platform rules must be encoded in tests and CI-friendly code, but Windows/macOS behavior cannot be fully proven locally without runners.
 
 ## Next Recommended Action
 
-- Commit `P5-C1-cli-surface` review artifacts and adopted nits, then start `P5-C2-dispatch-e2e`.
+- Commit `P5-C2-dispatch-e2e` implementation/evidence, then run three-reviewer gate for the chunk.

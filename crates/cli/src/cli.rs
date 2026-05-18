@@ -1,7 +1,8 @@
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
+use outpost_core::ops;
 use outpost_core::{BranchName, OutpostResult, RemoteName, SourceRemoteRef};
 
 const ROOT_AFTER_HELP: &str =
@@ -137,6 +138,35 @@ impl AddArgs {
         RemoteName::parse(self.remote_name.clone())?;
         Ok(())
     }
+
+    pub fn to_options(&self, cwd: &Path) -> OutpostResult<ops::add::AddOptions> {
+        let target_branch = self
+            .target_branch
+            .clone()
+            .map(BranchName::parse)
+            .transpose()?;
+        let checkout = match &self.new_branch {
+            Some(new_branch) => ops::add::AddCheckout::NewBranch {
+                name: BranchName::parse(new_branch.clone())?,
+                target_branch,
+            },
+            None => ops::add::AddCheckout::CheckoutExisting { target_branch },
+        };
+
+        Ok(ops::add::AddOptions {
+            destination: resolve_path_arg(cwd, self.path.clone()),
+            checkout,
+            remote_name: RemoteName::parse(self.remote_name.clone())?,
+        })
+    }
+}
+
+fn resolve_path_arg(cwd: &Path, path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        path
+    } else {
+        cwd.join(path)
+    }
 }
 
 #[derive(Debug, Args)]
@@ -214,6 +244,12 @@ impl MergeArgs {
     fn validate_refs(&self) -> OutpostResult<()> {
         SourceRemoteRef::parse(self.source_ref.clone()).map(|_| ())
     }
+
+    pub fn to_options(&self) -> OutpostResult<ops::merge::MergeOptions> {
+        Ok(ops::merge::MergeOptions {
+            source_ref: SourceRemoteRef::parse(self.source_ref.clone())?,
+        })
+    }
 }
 
 #[derive(Debug, Args)]
@@ -225,6 +261,12 @@ pub struct RebaseArgs {
 impl RebaseArgs {
     fn validate_refs(&self) -> OutpostResult<()> {
         SourceRemoteRef::parse(self.source_ref.clone()).map(|_| ())
+    }
+
+    pub fn to_options(&self) -> OutpostResult<ops::rebase::RebaseOptions> {
+        Ok(ops::rebase::RebaseOptions {
+            source_ref: SourceRemoteRef::parse(self.source_ref.clone())?,
+        })
     }
 }
 
@@ -263,5 +305,11 @@ pub struct SourcePullArgs {
 impl SourcePullArgs {
     fn validate_refs(&self) -> OutpostResult<()> {
         BranchName::parse(self.source_branch.clone()).map(|_| ())
+    }
+
+    pub fn to_options(&self) -> OutpostResult<ops::source::SourcePullOptions> {
+        Ok(ops::source::SourcePullOptions {
+            branch: BranchName::parse(self.source_branch.clone())?,
+        })
     }
 }

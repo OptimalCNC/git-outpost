@@ -15,3 +15,6 @@ path = "src/main.rs"
 [dependencies]
 clap.workspace = true
 outpost-core = { path = "../core" }
+
+[dev-dependencies]
+tempfile.workspace = true
