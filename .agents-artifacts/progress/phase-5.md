@@ -214,7 +214,7 @@ Remaining chunk order:
   - CLI integration tests added: `e_07_copied_outpost_is_git_independent_when_source_is_missing`, `e_08_outpost_errors_map_to_documented_exit_codes`, `e_08_cli_errors_return_documented_exit_codes`, `e_09_no_color_flag_and_env_do_not_emit_ansi_output`
   - Docs updated: none. Status output already matched product source text after changing the CLI line to `health: ok` / `health: problems`.
   - Architecture deviations: E-09 uses an equivalent stricter ESC-byte assertion instead of adding `strip-ansi-escapes`; E-08 uses exhaustive variant mapping plus representative black-box CLI failures because not every variant is practical to force through stable CLI process fixtures.
-  - Implementation/evidence commit: pending
+  - Implementation/evidence commit: `47d10fd phase-5: harden exit color platform behavior`
   - Review artifacts: pending
   - Review verdicts: pending
   - Required review changes: pending
