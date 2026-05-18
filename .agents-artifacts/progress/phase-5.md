@@ -121,11 +121,11 @@
 
 ## Active Chunk
 
-- `P5-C1-cli-surface`
-- Scope: add `git-outpost` CLI crate, workspace membership, both binaries, clap command tree, help rendering, deferred/removed flag rejection, and initial CLI test harness.
-- Test IDs: E-01, E-03, E-13, E-15, H-01, H-02, H-03
-- Out of scope: core command semantic changes, real command dispatch/E2E beyond parse/help, output/color/exit-code hardening beyond clap usage exits, global registry behavior, unrelated docs cleanup, unrelated refactors.
-- Status: implementation and QA evidence recorded; review pending.
+- `P5-C2-dispatch-e2e`
+- Scope: wire CLI dispatch to `outpost-core` ops, context classification, global `-C`, stdout/stderr rendering, `StderrReporter`, and E2E fixture.
+- Test IDs: E-02, E-04, E-05, E-06, E-10, E-11, E-12, E-14
+- Out of scope: E-07 copied-outpost degradation, E-08 full exit-code matrix, E-09 color/NO_COLOR stripping, global registry behavior, unrelated docs cleanup, unrelated refactors.
+- Status: assignment pending.
 
 ## Remaining Chunks
 
@@ -232,7 +232,8 @@ Remaining chunk order:
 - `270cdde phase-5: start cli surface`
 - `00f48c7 phase-5: add cli surface`
 - `a885c59 phase-5: fix cli surface review findings`
-- pending `phase-5: record cli surface reviews`
+- `cc22594 phase-5: record cli surface reviews`
+- pending `phase-5: start dispatch e2e`
 
 ## Protected-Path Exception Log
 
