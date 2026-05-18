@@ -223,9 +223,14 @@ Remaining chunk order:
     - Scope Reviewer: `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/scope-review.md`
     - Normal Reviewer: `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/normal-review.md`
     - Independent Reviewer: `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/independent-review.md`
+    - Scope Re-reviewer: `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/scope-rereview.md`
+    - Normal Re-reviewer: `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/normal-rereview.md`
+    - Independent Re-reviewer: `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/independent-rereview.md`
+  - Review verdicts after fixes: scope `pass`; normal `pass`; independent `pass`
   - Review verdicts before fixes: scope `changes requested`; normal `changes requested`; independent `changes requested`
   - Required review changes before fixes: scope requested unrelated working tree changes removed from review boundary; normal requested negative `GitFailed` mapping fix, focused stderr assertions, and stale progress metadata fix; independent requested stronger E-08 broken-state traceability.
-  - Status: review pending
+  - Adopted re-review note: `docs/src/architecture.md` exit-code snippet now reflects `GitFailed` clamping to `1..=125`.
+  - Status: approved
 
 ## Verification Log
 
@@ -273,6 +278,10 @@ Remaining chunk order:
   - `cargo test -p outpost-core --tests`: pass with the same core test binaries excluding doctests
   - `cargo test --workspace`: pass; 21 CLI integration tests plus existing core coverage, 0 doctests
   - `git diff --check`: pass
+- `P5-C3-exit-color-platform-hardening` review-record targeted verification:
+  - `cargo test -p outpost-core exit_code_maps_each_variant`: pass
+  - `cargo test -p git-outpost --test flags e_08`: pass; 2 selected E-08 tests
+  - `git diff --check`: pass
 
 ## Review Log
 
@@ -300,6 +309,18 @@ Remaining chunk order:
 - `P5-C2-dispatch-e2e` Normal Re-reviewer: `pass with one low-severity nit`; artifact `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/normal-rereview.md`; nit was status healthy wording `problems: none` vs product's `ok` wording.
 - `P5-C2-dispatch-e2e` Independent Re-reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-5/P5-C2-dispatch-e2e/independent-rereview.md`; prior blockers resolved.
 - Blocking review findings: none open for `P5-C2-dispatch-e2e`.
+- `P5-C3-exit-color-platform-hardening` Scope Reviewer: `changes requested`; artifact `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/scope-review.md`; finding was unrelated current worktree files must remain outside the committed P5-C3 review boundary.
+- `P5-C3-exit-color-platform-hardening` Normal Reviewer: `changes requested`; artifact `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/normal-review.md`; required negative `GitFailed` process-code mapping fix, focused E-08 stderr assertions, and stale progress metadata fix.
+- `P5-C3-exit-color-platform-hardening` Independent Reviewer: `changes requested`; artifact `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/independent-review.md`; required stronger E-08 broken-state traceability.
+- Adopted `P5-C3-exit-color-platform-hardening` review fixes:
+  - `GitFailed` negative process codes clamp to exit code 1.
+  - E-08 uses focused reachable CLI broken-state fixtures with stderr assertions.
+  - P5-C3 progress, evidence, and QA artifacts updated.
+  - `docs/src/architecture.md` exit-code snippet aligned with `1..=125` `GitFailed` clamping.
+- `P5-C3-exit-color-platform-hardening` Scope Re-reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/scope-rereview.md`; P5-C3 commits exclude unrelated local files.
+- `P5-C3-exit-color-platform-hardening` Normal Re-reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/normal-rereview.md`; prior blockers resolved.
+- `P5-C3-exit-color-platform-hardening` Independent Re-reviewer: `pass`; artifact `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/independent-rereview.md`; prior E-08 blocker resolved.
+- Blocking review findings: none open for `P5-C3-exit-color-platform-hardening`.
 
 ## Docs Log
 
@@ -322,6 +343,7 @@ Remaining chunk order:
 - `47d10fd phase-5: harden exit color platform behavior`
 - `858f61e phase-5: record exit color hardening commit`
 - `c93bb8c phase-5: fix exit color review findings`
+- pending `phase-5: record exit color reviews`
 
 ## Protected-Path Exception Log
 
@@ -329,10 +351,10 @@ Remaining chunk order:
 
 ## Open Risks / Questions
 
-- P5-C3 re-review is pending after review-fix commit `c93bb8c`.
+- Phase 5 closeout is pending after committing the P5-C3 review record.
 - H-03 should continue to use `git outpost -h`; literal `git outpost --help` is Git's manpage path on Git 2.43.
 - Local execution is Linux; cross-platform rules must be encoded in tests and CI-friendly code, but Windows/macOS behavior cannot be fully proven locally without runners.
 
 ## Next Recommended Action
 
-- Run P5-C3 re-review for scope, normal, and independent reviewers.
+- Commit P5-C3 review records, then run Phase 5 closeout verification and closeout gate.

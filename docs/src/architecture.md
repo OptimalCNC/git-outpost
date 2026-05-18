@@ -1709,7 +1709,7 @@ impl OutpostError {
                 | RegistryEntryNotFound(_) => 6,
             // Clamp BEFORE the cast so a code like 256 doesn't wrap
             // through u8 to 0 and then satisfy `.min(125)` as 0.
-            GitFailed { code, .. } => (*code).clamp(0, 125) as u8,
+            GitFailed { code, .. } => (*code).clamp(1, 125) as u8,
             GitTerminatedBySignal { .. } => 137,    // "killed" by convention (128 + SIGKILL)
             IoAt { .. } => 70,                      // EX_SOFTWARE
         }
