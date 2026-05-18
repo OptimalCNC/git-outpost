@@ -140,11 +140,11 @@
 
 ## Active Chunk
 
-- `P4-C2-merge-rebase`
-- Scope: `ops::merge`, `ops::rebase`, configured source-remote validation, detached-head preconditions, and `OutpostFetch` reporting.
-- Test IDs: MR-01..MR-06
-- Out of scope: `ops::push`, Phase 5 CLI/global `-C`/E2E, refreshing B from `origin` inside merge/rebase, unrelated docs cleanup, unrelated refactors.
-- Status: approved after re-review; review artifacts pending commit.
+- `P4-C3-push-publication`
+- Scope: `ops::push`, C->B then B->A publication, branch-creation refusal, divergence checks, checked-out source policy, and `OutpostPush`/`SourcePush` reporting.
+- Test IDs: Pu-01..Pu-10
+- Out of scope: Phase 5 CLI/global `-C`/E2E/cross-platform behavior, new push flags or routing options, source-branch auto-creation, unrelated docs cleanup, unrelated refactors.
+- Status: started.
 
 ## Remaining Chunks
 
@@ -171,7 +171,6 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `P4-C3-push-publication`
 - `phase-4-verification`
 
 ## Completed Chunks
@@ -301,7 +300,8 @@ Remaining chunk order:
 - `6b4d8f5 phase-4: start merge rebase`
 - `4a68f15 phase-4: add merge rebase`
 - `6d5ee16 phase-4: fix merge rebase review findings`
-- pending `P4-C2-merge-rebase` review-artifact commit
+- `69bc123 phase-4: record merge rebase reviews`
+- pending `P4-C3-push-publication` start commit
 
 ## Protected-Path Exception Log
 
@@ -315,4 +315,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `P4-C2-merge-rebase` re-review artifacts and adopted nits, then start `P4-C3-push-publication`.
+- Implement `P4-C3-push-publication` production code and QA tests.
