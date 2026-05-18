@@ -89,9 +89,9 @@
 | E-04 | add/status/push/list/remove round trip through CLI exits 0 | completed | `crates/cli/tests/e2e.rs::e_04_basic_cli_lifecycle_round_trip_exits_zero` |
 | E-05 | `gop push` makes C commit visible in A | completed | `crates/cli/tests/e2e.rs::e_05_push_makes_outpost_commit_visible_upstream` |
 | E-06 | two outposts round trip via source | completed | `crates/cli/tests/e2e.rs::e_06_two_outposts_round_trip_via_source` |
-| E-07 | copied outpost remains Git-independent after deleting source and reports degraded status | planned | `crates/cli/tests/e2e.rs::copied_outpost_is_git_independent_when_source_is_missing` |
-| E-08 | every `OutpostError` variant maps to documented exit code | planned | `crates/cli/tests/flags.rs::outpost_errors_map_to_documented_exit_codes` |
-| E-09 | `--no-color` and `NO_COLOR=1` output contains no ANSI escapes | planned | `crates/cli/tests/flags.rs::no_color_flag_and_env_strip_ansi_output` |
+| E-07 | copied outpost remains Git-independent after deleting source and reports degraded status | completed | `crates/cli/tests/e2e.rs::e_07_copied_outpost_is_git_independent_when_source_is_missing` |
+| E-08 | every `OutpostError` variant maps to documented exit code | completed | `crates/cli/tests/flags.rs::e_08_outpost_errors_map_to_documented_exit_codes`; CLI smoke in `e_08_cli_errors_return_documented_exit_codes` |
+| E-09 | `--no-color` and `NO_COLOR=1` output contains no ANSI escapes | completed | `crates/cli/tests/flags.rs::e_09_no_color_flag_and_env_do_not_emit_ansi_output` |
 | E-10 | full Story flow exits 0 | completed | `crates/cli/tests/e2e.rs::e_10_story_flow_exits_zero` |
 | E-11 | `merge local/main` and `rebase local/main` accept Story source-ref form | completed | `crates/cli/tests/e2e.rs::e_11_merge_and_rebase_accept_story_source_ref` |
 | E-12 | global `-C <other-dir>` changes effective cwd | completed | `crates/cli/tests/flags.rs::e_12_global_c_changes_effective_cwd` |
@@ -125,7 +125,7 @@
 - Scope: copied-outpost degradation, CLI exit-code coverage, `--no-color`/`NO_COLOR`, status health output hardening if needed, and cross-platform test hardening.
 - Test IDs: E-07, E-08, E-09
 - Out of scope: new command surfaces, global registry behavior, unrelated docs cleanup, unrelated refactors.
-- Status: assignment pending.
+- Status: implemented locally; evidence recorded; review gate pending.
 
 ## Remaining Chunks
 
@@ -205,6 +205,20 @@ Remaining chunk order:
   - Required review changes: none open
   - Adopted nits: `add` with global `-C` and representative matrix negative/dual-context tests. Remaining low-severity nit: status healthy output currently prints `problems: none` instead of literal `ok`; P5-C3 may address if output hardening touches status formatting.
   - Status: approved
+- `P5-C3-exit-color-platform-hardening` implementation evidence recorded:
+  - Files changed: `crates/cli/src/output.rs`, `crates/cli/tests/common/mod.rs`, `crates/cli/tests/e2e.rs`, `crates/cli/tests/flags.rs`
+  - Artifact files changed: `.agents-artifacts/progress/phase-5.md`, `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/evidence-pack.md`, `.agents-artifacts/qa/phase-5/P5-C3-exit-color-platform-hardening.md`
+  - Test IDs advanced: E-07, E-08, E-09
+  - Evidence pack: `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/evidence-pack.md`
+  - QA note: `.agents-artifacts/qa/phase-5/P5-C3-exit-color-platform-hardening.md`
+  - CLI integration tests added: `e_07_copied_outpost_is_git_independent_when_source_is_missing`, `e_08_outpost_errors_map_to_documented_exit_codes`, `e_08_cli_errors_return_documented_exit_codes`, `e_09_no_color_flag_and_env_do_not_emit_ansi_output`
+  - Docs updated: none. Status output already matched product source text after changing the CLI line to `health: ok` / `health: problems`.
+  - Architecture deviations: E-09 uses an equivalent stricter ESC-byte assertion instead of adding `strip-ansi-escapes`; E-08 uses exhaustive variant mapping plus representative black-box CLI failures because not every variant is practical to force through stable CLI process fixtures.
+  - Implementation/evidence commit: pending
+  - Review artifacts: pending
+  - Review verdicts: pending
+  - Required review changes: pending
+  - Status: review pending
 
 ## Verification Log
 
@@ -235,6 +249,14 @@ Remaining chunk order:
   - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 13 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
   - `cargo test -p outpost-core --tests`: pass with the same core test binaries excluding doctests
   - `cargo test --workspace`: pass; 17 CLI integration tests plus existing core coverage, 0 doctests
+  - `git diff --check`: pass
+- `P5-C3-exit-color-platform-hardening` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo build -p git-outpost`: pass; builds `git-outpost` and `gop`; Cargo warns that `src/main.rs` is present in both bin targets, matching the Phase 5 architecture
+  - `cargo test -p git-outpost --tests`: pass; 9 E2E tests, 8 flags tests, 4 help tests
+  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 13 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass with the same core test binaries excluding doctests
+  - `cargo test --workspace`: pass; 21 CLI integration tests plus existing core coverage, 0 doctests
   - `git diff --check`: pass
 
 ## Review Log

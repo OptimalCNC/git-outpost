@@ -237,6 +237,23 @@ pub fn assert_usage_error(output: &Output, flag: &str) {
     );
 }
 
+pub fn copy_dir_recursively(source: &Path, destination: &Path) {
+    fs::create_dir(destination).expect("create destination directory");
+    for entry in fs::read_dir(source).expect("read source directory") {
+        let entry = entry.expect("read directory entry");
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let file_type = entry.file_type().expect("read entry file type");
+        if file_type.is_dir() {
+            copy_dir_recursively(&source_path, &destination_path);
+        } else if file_type.is_file() {
+            fs::copy(&source_path, &destination_path).expect("copy file");
+        } else if file_type.is_symlink() {
+            copy_symlink(&source_path, &destination_path);
+        }
+    }
+}
+
 fn fallback_binary_path(bin_name: &str) -> PathBuf {
     let mut path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -247,6 +264,27 @@ fn fallback_binary_path(bin_name: &str) -> PathBuf {
         .join(bin_name);
     path.set_extension(env::consts::EXE_EXTENSION);
     path
+}
+
+#[cfg(unix)]
+fn copy_symlink(source: &Path, destination: &Path) {
+    let target = fs::read_link(source).expect("read symlink");
+    std::os::unix::fs::symlink(target, destination).expect("copy symlink");
+}
+
+#[cfg(windows)]
+fn copy_symlink(source: &Path, destination: &Path) {
+    let target = fs::read_link(source).expect("read symlink");
+    if source.is_dir() {
+        std::os::windows::fs::symlink_dir(target, destination).expect("copy directory symlink");
+    } else {
+        std::os::windows::fs::symlink_file(target, destination).expect("copy file symlink");
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn copy_symlink(source: &Path, destination: &Path) {
+    fs::copy(source, destination).expect("copy symlink target");
 }
 
 fn path_with_binary_dir() -> OsString {

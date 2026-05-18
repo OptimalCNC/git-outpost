@@ -62,9 +62,9 @@ pub fn print_status(report: &ops::status::StatusReport) {
     );
 
     if report.problems.is_empty() {
-        println!("problems: none");
+        println!("health: ok");
     } else {
-        println!("problems:");
+        println!("health: problems");
         for problem in &report.problems {
             println!("  - {}", format_problem(problem));
         }

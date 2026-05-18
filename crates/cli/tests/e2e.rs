@@ -174,6 +174,42 @@ fn e_06_two_outposts_round_trip_via_source() {
 }
 
 #[test]
+fn e_07_copied_outpost_is_git_independent_when_source_is_missing() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    fixture.commit_file(&outpost, "copy seed", "seed.txt", "seed\n");
+
+    let copy = fixture.outpost("C-copy");
+    common::copy_dir_recursively(&outpost, &copy);
+    std::fs::remove_dir_all(&fixture.source).expect("remove source repository");
+
+    let git_status = common::run(fixture.git(&copy).arg("status"));
+    common::assert_success(&git_status, "git status in copied outpost");
+    let git_log = common::run(fixture.git(&copy).arg("log").arg("--oneline"));
+    common::assert_success(&git_log, "git log in copied outpost");
+    let git_diff = common::run(fixture.git(&copy).arg("diff").arg("HEAD~1"));
+    common::assert_success(&git_diff, "git diff HEAD~1 in copied outpost");
+    let git_checkout = common::run(fixture.git(&copy).args(["checkout", "-b", "new-branch"]));
+    common::assert_success(&git_checkout, "git checkout -b in copied outpost");
+
+    let status = common::run(fixture.gop().current_dir(&copy).arg("status"));
+    common::assert_success(&status, "gop status in copied outpost");
+    let stdout = common::stdout(&status);
+    assert!(
+        stdout.contains("source-present: false"),
+        "status should report the missing source as absent:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("health: problems"),
+        "status should report degraded health:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("source missing:"),
+        "status should include the SourceMissing config problem:\n{stdout}"
+    );
+}
+
+#[test]
 fn e_10_story_flow_exits_zero() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.outpost("C");
