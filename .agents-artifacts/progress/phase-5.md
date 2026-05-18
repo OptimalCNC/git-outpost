@@ -121,11 +121,11 @@
 
 ## Active Chunk
 
-- `P5-C2-dispatch-e2e`
-- Scope: wire CLI dispatch to `outpost-core` ops, context classification, global `-C`, stdout/stderr rendering, `StderrReporter`, and E2E fixture.
-- Test IDs: E-02, E-04, E-05, E-06, E-10, E-11, E-12, E-14
-- Out of scope: E-07 copied-outpost degradation, E-08 full exit-code matrix, E-09 color/NO_COLOR stripping, global registry behavior, unrelated docs cleanup, unrelated refactors.
-- Status: approved.
+- `P5-C3-exit-color-platform-hardening`
+- Scope: copied-outpost degradation, CLI exit-code coverage, `--no-color`/`NO_COLOR`, status health output hardening if needed, and cross-platform test hardening.
+- Test IDs: E-07, E-08, E-09
+- Out of scope: new command surfaces, global registry behavior, unrelated docs cleanup, unrelated refactors.
+- Status: assignment pending.
 
 ## Remaining Chunks
 
@@ -150,7 +150,7 @@ Chunk Planning Gate:
 
 Remaining chunk order:
 
-- `P5-C3-exit-color-platform-hardening`
+- none
 
 ## Completed Chunks
 
@@ -280,7 +280,8 @@ Remaining chunk order:
 - `6f68b95 phase-5: add dispatch e2e`
 - `56eadac phase-5: fix dispatch e2e review findings`
 - `fe717b6 phase-5: record dispatch review-fix commit`
-- pending `phase-5: record dispatch e2e reviews`
+- `6631f42 phase-5: record dispatch e2e reviews`
+- pending `phase-5: start exit color platform hardening`
 
 ## Protected-Path Exception Log
 
@@ -294,4 +295,4 @@ Remaining chunk order:
 
 ## Next Recommended Action
 
-- Commit `P5-C2-dispatch-e2e` review artifacts, then start `P5-C3-exit-color-platform-hardening`.
+- Commit `P5-C3-exit-color-platform-hardening` start marker, then assign implementation.
