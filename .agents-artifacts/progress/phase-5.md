@@ -215,9 +215,16 @@ Remaining chunk order:
   - Docs updated: none. Status output already matched product source text after changing the CLI line to `health: ok` / `health: problems`.
   - Architecture deviations: E-09 uses an equivalent stricter ESC-byte assertion instead of adding `strip-ansi-escapes`; E-08 keeps `GitTerminatedBySignal` table-driven because reliably forcing that process-control state through the CLI would be brittle.
   - Implementation/evidence commit: `47d10fd phase-5: harden exit color platform behavior`
-  - Review artifacts: pending
-  - Review verdicts: pending
-  - Required review changes: pending
+  - Review fixes committed in `c93bb8c phase-5: fix exit color review findings`:
+    - `GitFailed` negative process status values now clamp to exit code 1 instead of success exit code 0.
+    - E-08 CLI coverage now uses focused broken-state fixtures and stderr assertions for reachable `OutpostError` variants.
+    - Progress commit log and P5-C3 evidence/QA notes were updated.
+  - Review artifacts:
+    - Scope Reviewer: `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/scope-review.md`
+    - Normal Reviewer: `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/normal-review.md`
+    - Independent Reviewer: `.agents-artifacts/reviews/phase-5/P5-C3-exit-color-platform-hardening/independent-review.md`
+  - Review verdicts before fixes: scope `changes requested`; normal `changes requested`; independent `changes requested`
+  - Required review changes before fixes: scope requested unrelated working tree changes removed from review boundary; normal requested negative `GitFailed` mapping fix, focused stderr assertions, and stale progress metadata fix; independent requested stronger E-08 broken-state traceability.
   - Status: review pending
 
 ## Verification Log
@@ -251,6 +258,14 @@ Remaining chunk order:
   - `cargo test --workspace`: pass; 17 CLI integration tests plus existing core coverage, 0 doctests
   - `git diff --check`: pass
 - `P5-C3-exit-color-platform-hardening` local verification:
+  - `cargo fmt --check`: pass
+  - `cargo build -p git-outpost`: pass; builds `git-outpost` and `gop`; Cargo warns that `src/main.rs` is present in both bin targets, matching the Phase 5 architecture
+  - `cargo test -p git-outpost --tests`: pass; 9 E2E tests, 8 flags tests, 4 help tests
+  - `cargo test -p outpost-core`: pass; 48 unit tests, 22 add integration tests, 11 list integration tests, 9 lock/move/unlock integration tests, 6 merge integration tests, 9 prune integration tests, 9 pull integration tests, 13 push integration tests, 6 rebase integration tests, 11 remove integration tests, 5 source integration tests, 15 status integration tests, 1 fixture smoke test, 0 doctests
+  - `cargo test -p outpost-core --tests`: pass with the same core test binaries excluding doctests
+  - `cargo test --workspace`: pass; 21 CLI integration tests plus existing core coverage, 0 doctests
+  - `git diff --check`: pass
+- `P5-C3-exit-color-platform-hardening` review-fix verification:
   - `cargo fmt --check`: pass
   - `cargo build -p git-outpost`: pass; builds `git-outpost` and `gop`; Cargo warns that `src/main.rs` is present in both bin targets, matching the Phase 5 architecture
   - `cargo test -p git-outpost --tests`: pass; 9 E2E tests, 8 flags tests, 4 help tests
@@ -306,6 +321,7 @@ Remaining chunk order:
 - `f0c41c7 phase-5: start exit color platform hardening`
 - `47d10fd phase-5: harden exit color platform behavior`
 - `858f61e phase-5: record exit color hardening commit`
+- `c93bb8c phase-5: fix exit color review findings`
 
 ## Protected-Path Exception Log
 
@@ -313,10 +329,10 @@ Remaining chunk order:
 
 ## Open Risks / Questions
 
-- P5-C3 review fixes are in progress for exit-code traceability, focused CLI stderr assertions, negative Git process-code mapping, and stale progress metadata.
+- P5-C3 re-review is pending after review-fix commit `c93bb8c`.
 - H-03 should continue to use `git outpost -h`; literal `git outpost --help` is Git's manpage path on Git 2.43.
 - Local execution is Linux; cross-platform rules must be encoded in tests and CI-friendly code, but Windows/macOS behavior cannot be fully proven locally without runners.
 
 ## Next Recommended Action
 
-- Complete P5-C3 review fixes, rerun verification, record the fix commit, and request re-review.
+- Run P5-C3 re-review for scope, normal, and independent reviewers.
