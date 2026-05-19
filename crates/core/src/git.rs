@@ -209,10 +209,7 @@ mod tests {
 
         match err {
             OutpostError::GitFailed { args, code, stderr } => {
-                assert_eq!(
-                    args,
-                    r#"["definitely-not-a-git-outpost-command", "--literal", "value with spaces"]"#
-                );
+                assert_eq!(args, expected_bad_command_argv());
                 assert_ne!(
                     args,
                     r#"["definitely-not-a-git-outpost-command", "--literal", "value", "with", "spaces"]"#
@@ -222,6 +219,16 @@ mod tests {
             }
             other => panic!("expected GitFailed, got {other:?}"),
         }
+    }
+
+    #[cfg(unix)]
+    fn expected_bad_command_argv() -> &'static str {
+        r#"["definitely-not-a-git-outpost-command", "--literal", "value with spaces"]"#
+    }
+
+    #[cfg(windows)]
+    fn expected_bad_command_argv() -> &'static str {
+        r#"[w"definitely-not-a-git-outpost-command", w"--literal", w"value with spaces"]"#
     }
 
     #[test]

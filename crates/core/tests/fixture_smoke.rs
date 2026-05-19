@@ -59,10 +59,20 @@ fn abc_fixture_builds_a_b_with_hermetic_git_env() {
         .expect_err("empty fixture global config should not contain user.name");
     match err {
         outpost_core::OutpostError::GitFailed { args, code, stderr } => {
-            assert_eq!(args, r#"["config", "--global", "user.name"]"#);
+            assert_eq!(args, expected_global_config_argv());
             assert_eq!(code, 1);
             assert!(stderr.is_empty());
         }
         other => panic!("expected GitFailed, got {other:?}"),
     }
+}
+
+#[cfg(unix)]
+fn expected_global_config_argv() -> &'static str {
+    r#"["config", "--global", "user.name"]"#
+}
+
+#[cfg(windows)]
+fn expected_global_config_argv() -> &'static str {
+    r#"[w"config", w"--global", w"user.name"]"#
 }
