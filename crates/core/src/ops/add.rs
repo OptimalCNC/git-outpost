@@ -3,6 +3,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::metadata::Metadata;
+use crate::path::git_path_arg;
 use crate::registry::RegistryEntry;
 use crate::safety;
 use crate::{
@@ -46,8 +47,8 @@ pub fn run(
         OsString::from("clone"),
         OsString::from("--no-shared"),
         OsString::from("--"),
-        source.work_tree().as_os_str().to_os_string(),
-        destination.as_os_str().to_os_string(),
+        git_path_arg(source.work_tree()),
+        git_path_arg(&destination),
     ])?;
 
     let outpost_git = crate::source_repo::invoker_at(&destination, source.env());

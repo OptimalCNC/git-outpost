@@ -201,14 +201,11 @@ fn add_relative_sibling_destination_uses_same_resolved_path_for_all_steps() {
         canonical(&destination)
     );
     assert_eq!(
-        fixture
-            .invoker(&destination)
-            .run_capture(["remote", "get-url", "local"])
-            .expect("local remote url"),
-        source.work_tree().to_string_lossy()
+        remote_url_path(&fixture, &destination, "local"),
+        source.work_tree()
     );
     let clone_argv = recorded_clone_argv(&source).expect("clone argv should be recorded");
-    let expected_destination = canonical(&destination);
+    let expected_destination = git_path(&canonical(&destination));
     assert_eq!(
         clone_argv.last().expect("clone destination"),
         expected_destination.as_os_str()
@@ -270,11 +267,8 @@ fn add_configures_local_remote_and_non_shared_clone() {
     add_existing(&source, &destination, None).expect("add outpost");
 
     assert_eq!(
-        fixture
-            .invoker(&destination)
-            .run_capture(["remote", "get-url", "local"])
-            .expect("local remote url"),
-        source.work_tree().to_string_lossy()
+        remote_url_path(&fixture, &destination, "local"),
+        source.work_tree()
     );
     assert!(destination.join(".git").is_dir());
     assert!(!destination
@@ -310,9 +304,8 @@ fn add_custom_remote_name_replaces_origin_and_updates_metadata() {
 
     let git = fixture.invoker(&destination);
     assert_eq!(
-        git.run_capture(["remote", "get-url", "custom"])
-            .expect("custom remote url"),
-        source.work_tree().to_string_lossy()
+        remote_url_path(&fixture, &destination, "custom"),
+        source.work_tree()
     );
     assert!(matches!(
         git.run_capture(["remote", "get-url", "origin"]),
@@ -580,6 +573,18 @@ fn canonical(path: &Path) -> PathBuf {
 fn canonical_missing(path: &Path) -> PathBuf {
     let parent = path.parent().expect("path parent");
     canonical(parent).join(path.file_name().expect("file name"))
+}
+
+fn git_path(path: &Path) -> PathBuf {
+    dunce::simplified(path).to_path_buf()
+}
+
+fn remote_url_path(fixture: &AbcFixture, repo: &Path, remote: &str) -> PathBuf {
+    let url = fixture
+        .invoker(repo)
+        .run_capture(["remote", "get-url", remote])
+        .expect("remote url");
+    canonical(Path::new(&url))
 }
 
 #[derive(Debug, Default)]

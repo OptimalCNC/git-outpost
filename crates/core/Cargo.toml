@@ -13,10 +13,12 @@ test-helpers = []
 
 [dependencies]
 chrono.workspace = true
+dunce.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+dunce.workspace = true
 outpost-core = { path = ".", features = ["test-helpers"] }

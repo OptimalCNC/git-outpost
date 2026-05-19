@@ -93,7 +93,7 @@ impl GitInvoker {
             .push(argv.to_vec());
 
         Command::new("git")
-            .current_dir(&self.cwd)
+            .current_dir(crate::path::git_path(&self.cwd))
             .envs(&self.env)
             // Keep argv as separate OS strings; no shell parses user input here.
             .args(argv)

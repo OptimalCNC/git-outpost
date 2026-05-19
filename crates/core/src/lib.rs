@@ -3,6 +3,7 @@ pub mod git;
 pub mod metadata;
 pub mod ops;
 pub mod outpost;
+mod path;
 pub mod refname;
 pub mod registry;
 pub mod reporter;
