@@ -4,7 +4,7 @@ mod common;
 use std::fs;
 
 use common::fixture::{AbcFixture, CapturingReporter};
-use outpost_core::ops::source::{pull, SourcePullOptions};
+use outpost_core::ops::source::{SourcePullOptions, pull};
 use outpost_core::{BranchName, Outpost, OutpostError, OutpostResult, StepKind};
 
 #[test]

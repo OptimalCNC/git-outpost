@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::{safety, OutpostError, OutpostResult, SourceRepo};
+use crate::{OutpostError, OutpostResult, SourceRepo, safety};
 
 pub struct MoveOptions {
     pub path: PathBuf,

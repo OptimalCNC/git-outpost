@@ -4,7 +4,7 @@ mod common;
 use std::fs;
 
 use common::fixture::{AbcFixture, CapturingReporter};
-use outpost_core::ops::pull::{run, PullOptions};
+use outpost_core::ops::pull::{PullOptions, run};
 use outpost_core::{BranchName, Outpost, OutpostError, OutpostResult, StepKind};
 
 #[test]
@@ -90,10 +90,12 @@ fn p03_pull_returns_divergence_when_source_and_origin_diverge() {
     );
 
     assert!(matches!(err, OutpostError::Divergence { branch } if branch == "main"));
-    assert!(!reporter
-        .step_kinds()
-        .iter()
-        .any(|kind| *kind == StepKind::OutpostFetch));
+    assert!(
+        !reporter
+            .step_kinds()
+            .iter()
+            .any(|kind| *kind == StepKind::OutpostFetch)
+    );
 }
 
 #[test]

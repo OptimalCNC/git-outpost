@@ -1,6 +1,6 @@
+use outpost_core::AheadBehind;
 use outpost_core::ops;
 use outpost_core::ops::status::ConfigProblem;
-use outpost_core::AheadBehind;
 
 pub fn print_added(outpost: &outpost_core::Outpost) {
     println!("added {}", outpost.work_tree().display());
@@ -153,11 +153,7 @@ fn list_state(state: ops::list::OutpostState) -> &'static str {
 }
 
 fn lock_suffix(locked: bool) -> &'static str {
-    if locked {
-        "\tlocked"
-    } else {
-        ""
-    }
+    if locked { "\tlocked" } else { "" }
 }
 
 fn format_ahead_behind(value: Option<AheadBehind>) -> String {

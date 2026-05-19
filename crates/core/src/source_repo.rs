@@ -371,9 +371,11 @@ mod tests {
         let feature = BranchName::parse("feature").unwrap();
 
         assert!(source.branch_exists(&main).unwrap());
-        assert!(!source
-            .branch_exists(&BranchName::parse("missing").unwrap())
-            .unwrap());
+        assert!(
+            !source
+                .branch_exists(&BranchName::parse("missing").unwrap())
+                .unwrap()
+        );
         assert_eq!(
             source
                 .upstream_for(&main)

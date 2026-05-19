@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use common::fixture::AbcFixture;
-use outpost_core::ops::add::{run, AddCheckout, AddOptions};
+use outpost_core::ops::add::{AddCheckout, AddOptions, run};
 use outpost_core::{
     BranchName, Outpost, OutpostError, OutpostResult, RemoteName, Reporter, SourceRepo, StepKind,
 };
@@ -119,7 +119,9 @@ fn add_rejects_existing_non_empty_directory() {
         "non-empty dir should fail",
     );
 
-    assert!(matches!(err, OutpostError::DestinationExists(path) if path == canonical_missing(&destination)));
+    assert!(
+        matches!(err, OutpostError::DestinationExists(path) if path == canonical_missing(&destination))
+    );
     assert!(!destination.join(".git").exists());
 }
 
@@ -135,7 +137,9 @@ fn add_rejects_existing_file() {
         "file should fail",
     );
 
-    assert!(matches!(err, OutpostError::DestinationExists(path) if path == canonical_missing(&destination)));
+    assert!(
+        matches!(err, OutpostError::DestinationExists(path) if path == canonical_missing(&destination))
+    );
 }
 
 #[test]
@@ -161,7 +165,9 @@ fn add_rejects_destination_inside_existing_repo() {
         "repo-contained dest fails",
     );
 
-    assert!(matches!(err, OutpostError::DestinationInsideRepo(path) if path == canonical_missing(&destination)));
+    assert!(
+        matches!(err, OutpostError::DestinationInsideRepo(path) if path == canonical_missing(&destination))
+    );
     assert!(!destination.exists());
 }
 
@@ -271,10 +277,12 @@ fn add_configures_local_remote_and_non_shared_clone() {
         source.work_tree()
     );
     assert!(destination.join(".git").is_dir());
-    assert!(!destination
-        .join(".git")
-        .join("objects/info/alternates")
-        .exists());
+    assert!(
+        !destination
+            .join(".git")
+            .join("objects/info/alternates")
+            .exists()
+    );
     let clone_argv = recorded_clone_argv(&source).expect("clone argv should be recorded");
     assert!(
         clone_argv.iter().any(|arg| arg == "--no-shared"),

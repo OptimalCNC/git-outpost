@@ -253,9 +253,10 @@ mod tests {
     fn run_status_distinguishes_exit_one_from_real_failure() {
         let git = GitInvoker::at(env!("CARGO_MANIFEST_DIR"));
 
-        assert!(!git
-            .run_status(["rev-parse", "--verify", "--quiet", "refs/heads/missing"])
-            .expect("rev-parse reports missing ref as status false"));
+        assert!(
+            !git.run_status(["rev-parse", "--verify", "--quiet", "refs/heads/missing"])
+                .expect("rev-parse reports missing ref as status false")
+        );
 
         let err = git
             .run_status(["ls-tree", "--bad-option", "HEAD"])

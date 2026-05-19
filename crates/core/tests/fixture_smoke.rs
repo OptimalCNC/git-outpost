@@ -37,11 +37,13 @@ fn abc_fixture_builds_a_b_with_hermetic_git_env() {
     source
         .current_branch()
         .expect("source should have current branch");
-    assert!(source
-        .test_invoker()
-        .argv_log()
-        .iter()
-        .any(|argv| argv.iter().any(|arg| arg == "symbolic-ref")));
+    assert!(
+        source
+            .test_invoker()
+            .argv_log()
+            .iter()
+            .any(|argv| argv.iter().any(|arg| arg == "symbolic-ref"))
+    );
 
     let source_oid = fixture
         .commit_in_source("source commit")

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::metadata::{Metadata, RawMetadata};
 use crate::source_repo::{
-    canonicalize_path, current_branch, invoker_at, is_dirty, read_optional_config, SourceRepo,
+    SourceRepo, canonicalize_path, current_branch, invoker_at, is_dirty, read_optional_config,
 };
 use crate::{BranchName, GitInvoker, OutpostError, OutpostResult, RefName, UpstreamRef};
 

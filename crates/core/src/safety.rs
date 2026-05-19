@@ -576,14 +576,16 @@ mod tests {
         source_git
             .run_check(["branch", "-D", "feature"])
             .expect("delete source feature");
-        assert!(outpost_git
-            .run_status([
-                "rev-parse",
-                "--verify",
-                "--quiet",
-                "refs/remotes/local/feature"
-            ])
-            .expect("stale remote-tracking ref check"));
+        assert!(
+            outpost_git
+                .run_status([
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    "refs/remotes/local/feature"
+                ])
+                .expect("stale remote-tracking ref check")
+        );
         let outpost = Outpost::at(&outpost).expect("outpost");
         let branch = BranchName::parse("feature").unwrap();
         let upstream = UpstreamRef {

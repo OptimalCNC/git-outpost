@@ -5,8 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use common::fixture::AbcFixture;
-use outpost_core::ops::add::{run as add_run, AddCheckout, AddOptions};
-use outpost_core::ops::status::{run_with, ConfigProblem};
+use outpost_core::ops::add::{AddCheckout, AddOptions, run as add_run};
+use outpost_core::ops::status::{ConfigProblem, run_with};
 use outpost_core::{AheadBehind, OutpostError, RemoteName, Reporter, StepKind};
 
 #[test]
@@ -149,11 +149,13 @@ fn s10_run_with_reports_missing_source_problem() {
 
     assert_eq!(report.source_path, Some(canonical_missing(&fixture.source)));
     assert!(!report.source_present);
-    assert!(report
-        .problems
-        .contains(&ConfigProblem::SourceMissing(canonical_missing(
-            &fixture.source
-        ))));
+    assert!(
+        report
+            .problems
+            .contains(&ConfigProblem::SourceMissing(canonical_missing(
+                &fixture.source
+            )))
+    );
 }
 
 #[test]
@@ -164,12 +166,14 @@ fn s11_run_with_flags_local_remote_mismatch() {
 
     let report = run_with(&outpost, &fixture.git_env).expect("status report");
 
-    assert!(report
-        .problems
-        .contains(&ConfigProblem::LocalRemoteMismatch {
-            configured: canonical(&fixture.source),
-            actual: canonical(&fixture.upstream),
-        }));
+    assert!(
+        report
+            .problems
+            .contains(&ConfigProblem::LocalRemoteMismatch {
+                configured: canonical(&fixture.source),
+                actual: canonical(&fixture.upstream),
+            })
+    );
 }
 
 #[test]
@@ -203,10 +207,12 @@ fn s12_run_with_uses_metadata_remote_name_for_custom_remote() {
             behind: 1
         })
     );
-    assert!(!report
-        .problems
-        .iter()
-        .any(|problem| matches!(problem, ConfigProblem::LocalRemoteMismatch { .. })));
+    assert!(
+        !report
+            .problems
+            .iter()
+            .any(|problem| matches!(problem, ConfigProblem::LocalRemoteMismatch { .. }))
+    );
 }
 
 #[test]
@@ -273,9 +279,11 @@ fn s09_missing_source_repo_config_is_reported_as_problem() {
 
     let report = run_with(&outpost, &fixture.git_env).expect("degraded status report");
 
-    assert!(report
-        .problems
-        .contains(&ConfigProblem::MissingSourceRepoConfig));
+    assert!(
+        report
+            .problems
+            .contains(&ConfigProblem::MissingSourceRepoConfig)
+    );
 }
 
 #[test]
@@ -292,9 +300,11 @@ fn s13_missing_source_repo_config_keeps_degraded_report_available() {
         report.remote_name.as_ref().map(|remote| remote.as_str()),
         Some("local")
     );
-    assert!(report
-        .problems
-        .contains(&ConfigProblem::MissingSourceRepoConfig));
+    assert!(
+        report
+            .problems
+            .contains(&ConfigProblem::MissingSourceRepoConfig)
+    );
 }
 
 fn unset_local_config(fixture: &AbcFixture, repo: &Path, key: &str) {
@@ -334,9 +344,11 @@ fn set_remote_url(fixture: &AbcFixture, repo: &Path, remote: &str, url: &Path) {
 fn remove_from_registry(fixture: &AbcFixture, outpost: &Path) {
     let source = fixture.source_repo().expect("source repo");
     let mut registry = source.registry_mut().expect("registry mut");
-    assert!(registry
-        .remove_by_path(outpost)
-        .expect("remove registry entry"));
+    assert!(
+        registry
+            .remove_by_path(outpost)
+            .expect("remove registry entry")
+    );
     registry.save().expect("save registry");
 }
 

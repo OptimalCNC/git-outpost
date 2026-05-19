@@ -3,7 +3,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use outpost_core::ops::add::{run as add_run, AddCheckout, AddOptions};
+use outpost_core::ops::add::{AddCheckout, AddOptions, run as add_run};
 use outpost_core::{
     BranchName, GitInvoker, OutpostError, OutpostResult, RemoteName, Reporter, SourceRepo, StepKind,
 };

@@ -4,7 +4,7 @@ mod common;
 use std::fs;
 
 use common::fixture::AbcFixture;
-use outpost_core::ops::list::{run, OutpostState};
+use outpost_core::ops::list::{OutpostState, run};
 use outpost_core::{OutpostError, SourceRepo};
 
 #[test]

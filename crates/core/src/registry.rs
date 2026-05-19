@@ -366,11 +366,11 @@ fn canonicalize_path(path: &Path) -> OutpostResult<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    use chrono::TimeZone;
     use super::*;
     use crate::GitInvoker;
+    use chrono::TimeZone;
 
     #[test]
     fn empty_registry_serializes_to_expected_json_and_round_trips() {
@@ -386,10 +386,12 @@ mod tests {
         let expected: serde_json::Value =
             serde_json::from_str(r#"{ "version": 1, "outposts": [] }"#).expect("expected json");
         assert_eq!(value, expected);
-        assert!(fs::read_to_string(source.local_exclude_path())
-            .expect("local exclude")
-            .lines()
-            .any(|line| line == OUTPOST_IGNORE_LINE));
+        assert!(
+            fs::read_to_string(source.local_exclude_path())
+                .expect("local exclude")
+                .lines()
+                .any(|line| line == OUTPOST_IGNORE_LINE)
+        );
 
         let loaded = Registry::load(&source).expect("registry reloads");
         assert!(loaded.entries().is_empty());
@@ -477,15 +479,19 @@ mod tests {
             .expect("add path");
         fs::remove_dir(&outpost).expect("remove outpost dir");
 
-        assert!(registry
-            .remove_by_path(&canonical_outpost)
-            .expect("remove missing registered path"));
+        assert!(
+            registry
+                .remove_by_path(&canonical_outpost)
+                .expect("remove missing registered path")
+        );
         registry.save().expect("save");
 
-        assert!(Registry::load(&source)
-            .expect("reload")
-            .entries()
-            .is_empty());
+        assert!(
+            Registry::load(&source)
+                .expect("reload")
+                .entries()
+                .is_empty()
+        );
     }
 
     #[test]

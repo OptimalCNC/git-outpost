@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::{safety, OutpostError, OutpostResult, SourceRepo};
+use crate::{OutpostError, OutpostResult, SourceRepo, safety};
 
 pub struct UnlockOptions {
     pub path: PathBuf,

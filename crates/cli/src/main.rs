@@ -8,7 +8,7 @@ use std::process::ExitCode;
 
 use cli::{Cli, Command, SourceCommand};
 use exit::CliResult;
-use outpost_core::{ops, Outpost, OutpostError, SourceRepo};
+use outpost_core::{Outpost, OutpostError, SourceRepo, ops};
 use reporter_impls::StderrReporter;
 
 fn main() -> ExitCode {

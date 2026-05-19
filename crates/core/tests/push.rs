@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use common::fixture::{AbcFixture, CapturingReporter};
-use outpost_core::ops::push::{run, PushOptions, StepResult};
+use outpost_core::ops::push::{PushOptions, StepResult, run};
 use outpost_core::{Outpost, OutpostError, OutpostResult, StepKind};
 
 #[test]
