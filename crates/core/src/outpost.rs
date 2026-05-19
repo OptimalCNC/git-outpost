@@ -275,7 +275,9 @@ mod tests {
         let Err(err) = Outpost::at(temp.path()) else {
             panic!("unmanaged repo should fail");
         };
-        assert!(matches!(err, OutpostError::NotAnOutpost(path) if path == temp.path()));
+        assert!(
+            matches!(err, OutpostError::NotAnOutpost(path) if path == fs::canonicalize(temp.path()).unwrap())
+        );
     }
 
     #[test]

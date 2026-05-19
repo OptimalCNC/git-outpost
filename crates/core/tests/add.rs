@@ -119,7 +119,7 @@ fn add_rejects_existing_non_empty_directory() {
         "non-empty dir should fail",
     );
 
-    assert!(matches!(err, OutpostError::DestinationExists(path) if path == destination));
+    assert!(matches!(err, OutpostError::DestinationExists(path) if path == canonical_missing(&destination)));
     assert!(!destination.join(".git").exists());
 }
 
@@ -135,7 +135,7 @@ fn add_rejects_existing_file() {
         "file should fail",
     );
 
-    assert!(matches!(err, OutpostError::DestinationExists(path) if path == destination));
+    assert!(matches!(err, OutpostError::DestinationExists(path) if path == canonical_missing(&destination)));
 }
 
 #[test]
@@ -161,7 +161,7 @@ fn add_rejects_destination_inside_existing_repo() {
         "repo-contained dest fails",
     );
 
-    assert!(matches!(err, OutpostError::DestinationInsideRepo(path) if path == destination));
+    assert!(matches!(err, OutpostError::DestinationInsideRepo(path) if path == canonical_missing(&destination)));
     assert!(!destination.exists());
 }
 
@@ -177,7 +177,7 @@ fn add_rejects_relative_destination_inside_source_repo() {
 
     assert!(matches!(
         err,
-        OutpostError::DestinationInsideRepo(path) if path == source.work_tree().join("C")
+        OutpostError::DestinationInsideRepo(path) if path == canonical_missing(&source.work_tree().join("C"))
     ));
     assert!(!source.work_tree().join("C").exists());
 }
@@ -208,9 +208,10 @@ fn add_relative_sibling_destination_uses_same_resolved_path_for_all_steps() {
         source.work_tree().to_string_lossy()
     );
     let clone_argv = recorded_clone_argv(&source).expect("clone argv should be recorded");
+    let expected_destination = canonical(&destination);
     assert_eq!(
         clone_argv.last().expect("clone destination"),
-        destination.as_os_str()
+        expected_destination.as_os_str()
     );
 }
 
@@ -574,6 +575,11 @@ fn has_adjacent_args(argv: &[OsString], first: &str, second: &str) -> bool {
 
 fn canonical(path: &Path) -> PathBuf {
     fs::canonicalize(path).expect("canonical path")
+}
+
+fn canonical_missing(path: &Path) -> PathBuf {
+    let parent = path.parent().expect("path parent");
+    canonical(parent).join(path.file_name().expect("file name"))
 }
 
 #[derive(Debug, Default)]

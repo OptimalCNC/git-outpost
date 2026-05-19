@@ -216,11 +216,32 @@ fn resolve_destination(parent: &Path, dest: &Path) -> OutpostResult<PathBuf> {
         parent.join(dest)
     };
 
-    if anchored.exists() {
-        canonicalize_path(&anchored)
-    } else {
-        Ok(normalize_existing_or_missing(&anchored))
+    canonicalize_existing_or_missing(&anchored)
+}
+
+fn canonicalize_existing_or_missing(path: &Path) -> OutpostResult<PathBuf> {
+    if path.exists() {
+        return canonicalize_path(path);
     }
+
+    let mut missing = Vec::new();
+    let mut existing = path;
+    while !existing.exists() {
+        let Some(name) = existing.file_name() else {
+            return Ok(normalize_existing_or_missing(path));
+        };
+        missing.push(name.to_os_string());
+        let Some(parent) = existing.parent() else {
+            return Ok(normalize_existing_or_missing(path));
+        };
+        existing = parent;
+    }
+
+    let mut canonical = canonicalize_path(existing)?;
+    for component in missing.iter().rev() {
+        canonical.push(component);
+    }
+    Ok(normalize_existing_or_missing(&canonical))
 }
 
 fn normalize_existing_or_missing(path: &Path) -> PathBuf {
