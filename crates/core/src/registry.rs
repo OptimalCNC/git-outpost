@@ -369,8 +369,6 @@ mod tests {
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
     use chrono::TimeZone;
-    use serde_json::json;
-
     use super::*;
     use crate::GitInvoker;
 
@@ -385,7 +383,9 @@ mod tests {
             &fs::read_to_string(source.registry_path()).expect("registry file"),
         )
         .expect("registry json parses");
-        assert_eq!(value, json!({ "version": 1, "outposts": [] }));
+        let expected: serde_json::Value =
+            serde_json::from_str(r#"{ "version": 1, "outposts": [] }"#).expect("expected json");
+        assert_eq!(value, expected);
         assert!(fs::read_to_string(source.local_exclude_path())
             .expect("local exclude")
             .lines()
