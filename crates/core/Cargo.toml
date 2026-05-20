@@ -1,6 +1,6 @@
 [package]
 name = "outpost-core"
-version = "0.1.0"
+version = "0.1.1"
 description = "Core library for Git Outpost, a clone-backed alternative to git worktree workflows."
 edition.workspace = true
 rust-version.workspace = true
