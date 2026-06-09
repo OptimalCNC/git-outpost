@@ -6,7 +6,8 @@ use std::path::Path;
 
 use common::fixture::{AbcFixture, CapturingReporter};
 use outpost_core::ops::push::{PushOptions, StepResult, run};
-use outpost_core::{Outpost, OutpostError, OutpostResult, StepKind};
+use outpost_core::ops::status::{ConfigProblem, run_with as status_run_with};
+use outpost_core::{AheadBehind, Outpost, OutpostError, OutpostResult, StepKind};
 
 #[test]
 fn pu01_push_sends_outpost_branch_to_source_then_origin() {
@@ -286,6 +287,34 @@ fn push_first_publication_to_absent_origin_branch_counts_only_new_commits() {
             .rev_parse(&fixture.upstream, "refs/heads/feature/first-publication")
             .expect("origin feature"),
         outpost_oid
+    );
+    let upstream = fixture
+        .source_repo()
+        .expect("source repo")
+        .upstream_for(&feature)
+        .expect("source upstream")
+        .expect("feature branch upstream");
+    assert_eq!(upstream.remote.as_str(), "origin");
+    assert_eq!(
+        upstream.merge_ref.as_str(),
+        "refs/heads/feature/first-publication"
+    );
+
+    let status = status_run_with(&outpost_path, &fixture.git_env).expect("status after push");
+    assert!(
+        !status
+            .problems
+            .contains(&ConfigProblem::NoUpstreamTracking {
+                branch: feature.clone(),
+            }),
+        "push should leave source branch tracking origin"
+    );
+    assert_eq!(
+        status.source_ahead_behind_upstream,
+        Some(AheadBehind {
+            ahead: 0,
+            behind: 0,
+        })
     );
 }
 

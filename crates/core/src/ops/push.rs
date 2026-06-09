@@ -75,7 +75,7 @@ pub fn run(
     let source_refspec = branch_refspec(branch.as_str());
     source
         .git()
-        .run_check(["push", "origin", &source_refspec])?;
+        .run_check(["push", "--set-upstream", "origin", &source_refspec])?;
     let origin_after =
         remote_origin_oid(&source, &branch)?.ok_or_else(|| OutpostError::BranchNotFound {
             branch: branch.as_str().to_owned(),

@@ -1231,7 +1231,7 @@ Step-by-step:
    `BranchName` / `RemoteName` (§5.3). Recipes:
    - base: `git push <metadata.remote_name> <branch>:<branch>`
 7. `reporter.step(SourcePush, "pushing source <B> branch <X> -> origin/<X>")`.
-8. Run `git -C <source> push origin <branch>:<branch>`.
+8. Run `git -C <source> push --set-upstream origin <branch>:<branch>`.
 
 #### 5.9.9 `ops/lock.rs`
 

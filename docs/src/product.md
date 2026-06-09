@@ -315,7 +315,8 @@ updated.
 Publish the current outpost branch for review. `gop push` runs from a managed
 outpost on an attached branch. It pushes the outpost branch to the matching
 branch in the source repository, then pushes that source branch to the matching
-branch on `origin`. The matching branch in the source repository must already
+branch on `origin` and records the source branch's upstream as
+`origin/<branch>`. The matching branch in the source repository must already
 exist; `gop push` refuses a branch that exists only in the outpost rather than
 creating it in the source repository.
 
