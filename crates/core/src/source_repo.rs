@@ -151,6 +151,98 @@ impl SourceRepo {
             .run_status(["rev-parse", "--verify", "--quiet", &branch_ref])
     }
 
+    pub fn branch_oid(&self, branch: &BranchName) -> OutpostResult<Option<String>> {
+        if !self.branch_exists(branch)? {
+            return Ok(None);
+        }
+
+        rev_parse(&self.git, &source_branch_ref(branch)).map(|oid| Some(oid.trim().to_owned()))
+    }
+
+    pub fn origin_branch_oid(&self, branch: &BranchName) -> OutpostResult<Option<String>> {
+        let remote_ref = source_branch_ref(branch);
+        let output = self.git.run_capture(["ls-remote", "origin", &remote_ref])?;
+        if output.is_empty() {
+            return Ok(None);
+        }
+
+        let mut fields = output.split_whitespace();
+        let oid = fields
+            .next()
+            .ok_or_else(|| invalid_git_output(&self.git, &output))?;
+        let name = fields
+            .next()
+            .ok_or_else(|| invalid_git_output(&self.git, &output))?;
+        if fields.next().is_some() || name != remote_ref {
+            return Err(invalid_git_output(&self.git, &output));
+        }
+
+        Ok(Some(oid.to_owned()))
+    }
+
+    pub fn origin_default_branch(&self) -> OutpostResult<Option<BranchName>> {
+        if !self
+            .git
+            .run_status(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])?
+        {
+            return Ok(None);
+        }
+
+        let reference =
+            self.git
+                .run_capture(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])?;
+        let Some(branch) = reference.strip_prefix("refs/remotes/origin/") else {
+            return Err(invalid_git_output(&self.git, &reference));
+        };
+
+        BranchName::parse(branch.to_owned()).map(Some)
+    }
+
+    pub fn fetch_origin_default_branch(&self) -> OutpostResult<Option<(BranchName, String)>> {
+        let Some(branch) = self.origin_default_branch()? else {
+            return Ok(None);
+        };
+
+        let remote_tracking_ref = format!("refs/remotes/origin/{}", branch.as_str());
+        let fetch_refspec = format!("+{}:{remote_tracking_ref}", source_branch_ref(&branch));
+        self.git.run_check(["fetch", "origin", &fetch_refspec])?;
+        let oid = rev_parse(&self.git, &remote_tracking_ref)?;
+
+        Ok(Some((branch, oid.trim().to_owned())))
+    }
+
+    pub fn is_ancestor_oid(&self, ancestor: &str, descendant: &str) -> OutpostResult<bool> {
+        is_ancestor(&self.git, ancestor, descendant)
+    }
+
+    pub fn is_branch_checked_out(&self, branch: &BranchName) -> OutpostResult<bool> {
+        self.checked_out_worktree_for(branch)
+            .map(|path| path.is_some())
+    }
+
+    pub fn delete_branch_if_oid(
+        &self,
+        branch: &BranchName,
+        expected_oid: &str,
+    ) -> OutpostResult<()> {
+        self.git
+            .run_check(["update-ref", "-d", &source_branch_ref(branch), expected_oid])
+    }
+
+    pub fn delete_origin_branch_if_oid(
+        &self,
+        branch: &BranchName,
+        expected_oid: &str,
+    ) -> OutpostResult<()> {
+        let lease = format!(
+            "--force-with-lease=refs/heads/{}:{expected_oid}",
+            branch.as_str()
+        );
+        let delete_refspec = format!(":refs/heads/{}", branch.as_str());
+        self.git
+            .run_check(["push", &lease, "origin", &delete_refspec])
+    }
+
     pub fn fast_forward_branch_from_origin(&self, branch: &BranchName) -> OutpostResult<()> {
         if !self.branch_exists(branch)? {
             return Err(OutpostError::BranchNotFound {
@@ -286,6 +378,20 @@ fn map_discovery_error(err: OutpostError, path: &Path) -> OutpostError {
     match err {
         OutpostError::GitFailed { .. } => OutpostError::NotARepo(path.to_path_buf()),
         other => other,
+    }
+}
+
+fn source_branch_ref(branch: &BranchName) -> String {
+    format!("refs/heads/{}", branch.as_str())
+}
+
+fn invalid_git_output(git: &GitInvoker, output: &str) -> OutpostError {
+    OutpostError::IoAt {
+        path: git.cwd().to_path_buf(),
+        source: std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unexpected git output: {output}"),
+        ),
     }
 }
 

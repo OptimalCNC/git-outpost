@@ -5,8 +5,7 @@ use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use outpost_core::ops;
 use outpost_core::{BranchName, OutpostResult, RemoteName, SourceRemoteRef};
 
-const ROOT_AFTER_HELP: &str =
-    "Command-specific long flags: --remote-name, --reason, --verbose, --force, --dry-run";
+const ROOT_AFTER_HELP: &str = "Command-specific long flags: --remote-name, --reason, --verbose, --force, --no-branch-cleanup, --dry-run";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -212,6 +211,10 @@ pub struct RemoveArgs {
     /// Ignore dirty, unpushed, and lock guards.
     #[arg(short = 'f', long)]
     pub force: bool,
+
+    /// Do not prompt to delete a safely merged source or upstream branch.
+    #[arg(long)]
+    pub no_branch_cleanup: bool,
 }
 
 #[derive(Debug, Args)]

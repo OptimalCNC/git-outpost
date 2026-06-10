@@ -47,6 +47,7 @@ fn e_03_help_lists_commands_and_long_flags() {
         "--reason",
         "--verbose",
         "--force",
+        "--no-branch-cleanup",
         "--dry-run",
     ] {
         assert!(help.contains(flag), "expected {flag} in help:\n{help}");
@@ -57,7 +58,10 @@ fn e_03_help_lists_commands_and_long_flags() {
         (&["list", "--help"][..], &["--verbose"][..]),
         (&["lock", "--help"][..], &["--reason"][..]),
         (&["move", "--help"][..], &["--force"][..]),
-        (&["remove", "--help"][..], &["--force"][..]),
+        (
+            &["remove", "--help"][..],
+            &["--force", "--no-branch-cleanup"][..],
+        ),
         (&["prune", "--help"][..], &["--dry-run", "--verbose"][..]),
     ] {
         let subcommand_help = help_for(args);

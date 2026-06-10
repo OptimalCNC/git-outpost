@@ -1,8 +1,10 @@
 mod cli;
 mod exit;
+mod gh;
 mod output;
 mod reporter_impls;
 
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -106,14 +108,39 @@ fn dispatch(cli: Cli) -> CliResult<()> {
         Command::Remove(args) => {
             let source = require_source("remove", &cwd)?;
             let path = resolve_path_arg(&cwd, args.outpost_path);
-            ops::remove::run(
-                &source,
-                ops::remove::RemoveOptions {
-                    path: path.clone(),
-                    force: args.force,
-                },
-            )?;
-            println!("removed {}", path.display());
+            let opts = ops::remove::RemoveOptions {
+                path: path.clone(),
+                force: args.force,
+            };
+            let mut gh_status = None;
+            let report = if args.no_branch_cleanup {
+                ops::remove::run_with_cleanup(
+                    &source,
+                    opts,
+                    ops::remove::BranchCleanupMode::Disabled,
+                )?
+            } else if cleanup_prompts_available() {
+                let status = gh::GhStatus::detect(&source);
+                let provider = status.provider();
+                let mut prompt = TerminalBranchCleanupPrompt;
+                let report = ops::remove::run_with_cleanup(
+                    &source,
+                    opts,
+                    ops::remove::BranchCleanupMode::Prompt(ops::remove::BranchCleanupOptions {
+                        provider,
+                        prompt: &mut prompt,
+                    }),
+                )?;
+                gh_status = Some(status);
+                report
+            } else {
+                ops::remove::run_with_cleanup(
+                    &source,
+                    opts,
+                    ops::remove::BranchCleanupMode::NonInteractive,
+                )?
+            };
+            output::print_remove(&report, gh_status.as_ref());
         }
         Command::Prune(args) => {
             let source = require_source("prune", &cwd)?;
@@ -133,6 +160,79 @@ fn dispatch(cli: Cli) -> CliResult<()> {
     }
 
     Ok(())
+}
+
+fn cleanup_prompts_available() -> bool {
+    io::stdin().is_terminal() && io::stderr().is_terminal()
+}
+
+struct TerminalBranchCleanupPrompt;
+
+impl ops::remove::BranchCleanupPrompt for TerminalBranchCleanupPrompt {
+    fn confirm_source_branch_delete(
+        &mut self,
+        candidate: &ops::remove::BranchCleanupCandidate,
+    ) -> bool {
+        prompt_yes_no(&format!(
+            "Delete source branch '{}' ({})? [y/N] ",
+            candidate.branch.as_str(),
+            proof_summary(&candidate.proof)
+        ))
+    }
+
+    fn confirm_upstream_branch_delete(
+        &mut self,
+        candidate: &ops::remove::BranchCleanupCandidate,
+    ) -> bool {
+        prompt_yes_no(&format!(
+            "Delete upstream branch 'origin/{}' at {}? [y/N] ",
+            candidate.branch.as_str(),
+            candidate
+                .upstream_oid
+                .as_deref()
+                .map(short_oid)
+                .unwrap_or("-")
+        ))
+    }
+}
+
+fn prompt_yes_no(message: &str) -> bool {
+    let mut stderr = io::stderr();
+    if write!(stderr, "{message}")
+        .and_then(|_| stderr.flush())
+        .is_err()
+    {
+        return false;
+    }
+
+    let mut input = String::new();
+    if io::stdin().read_line(&mut input).is_err() {
+        return false;
+    }
+
+    matches!(input.trim(), "y" | "Y" | "yes" | "YES" | "Yes")
+}
+
+fn proof_summary(proof: &ops::remove::BranchCleanupProof) -> String {
+    match proof {
+        ops::remove::BranchCleanupProof::MergedPullRequest(pr) => {
+            format!("merged pull request {}", pr.id)
+        }
+        ops::remove::BranchCleanupProof::AncestorOfDefaultBranch {
+            default_branch,
+            default_oid,
+        } => {
+            format!(
+                "ancestor of origin/{} at {}",
+                default_branch.as_str(),
+                short_oid(default_oid)
+            )
+        }
+    }
+}
+
+fn short_oid(oid: &str) -> &str {
+    oid.get(..12).unwrap_or(oid)
 }
 
 fn effective_cwd(cd: Option<PathBuf>) -> CliResult<PathBuf> {

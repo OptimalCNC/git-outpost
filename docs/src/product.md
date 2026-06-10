@@ -86,17 +86,21 @@ into outposts. This is Git Outpost's source-owned analogue to Git's
 
 Git Outpost creates and configures only a small amount of local state.
 
-Git Outpost owns and removes only these removable artifacts:
+Git Outpost always owns and removes these removable artifacts:
 
 - the outpost directory
 - the source registry entry for that outpost
 
 `gop add -b` may create source-repo branches for tracking. Those branches are
-not owned by Git Outpost after creation. Once created, they are ordinary
-source-repository branches. Tracking enough provenance to know whether a branch
-is still safe to delete would require Git Outpost to monitor or constrain
-normal Git branch operations in the source repository, which is outside the
-product model.
+not recorded as owned provenance after creation. Once created, they are
+ordinary source-repository branches. `gop remove` may offer best-effort branch
+cleanup, but only from proof derived at removal time: the outpost must still
+track the configured source remote branch, the outpost and source branch tips
+must match, the branch must not be checked out or be the upstream default
+branch, and the branch must be proven merged by a merged pull request or by
+local ancestry to the fetched upstream default branch. The user is prompted
+before deleting the source branch, and prompted separately before deleting the
+matching upstream `origin/<branch>` branch.
 
 Git Outpost also writes source-local setup state: a local ignore entry for
 `.outpost/` and `receive.denyCurrentBranch=updateInstead`. This setup state is
@@ -198,7 +202,7 @@ gop list [-v|--verbose]
 gop lock [--reason <string>] [<outpost>]
 gop unlock [<outpost>]
 gop move [-f|--force] <outpost> <new-path>
-gop remove [-f|--force] <outpost>
+gop remove [-f|--force] [--no-branch-cleanup] <outpost>
 gop prune [-n|--dry-run] [-v|--verbose]
 gop status
 ```
@@ -379,11 +383,24 @@ outpost's existing lock state.
 
 Safely remove a managed outpost. The command refuses dirty outposts, outposts
 with unpushed commits, and locked outposts by default. After safety checks pass,
-it removes the source registry entry and deletes the outpost directory. It does
-not delete source-repo branches, including branches originally created by
-`gop add -b`.
+it removes the source registry entry and deletes the outpost directory.
+
+In interactive terminals, `remove` then analyzes the outpost's tracked source
+branch and prompts before branch cleanup when it can prove deletion is safe. It
+deletes the local source branch with an exact-OID guard, so a branch that moves
+during cleanup is left intact. If `origin/<branch>` exists at the analyzed OID,
+the command prompts separately before deleting the upstream branch with
+`--force-with-lease`. If proof is missing, prompts are declined, the command is
+non-interactive, or cleanup fails after the outpost directory is removed,
+outpost removal still succeeds and branches are left intact or reported as
+warnings. The CLI prints branch-cleanup diagnostics to stderr after the stable
+stdout result `removed <path>`, including skipped cleanup reasons and declined
+prompts. When `gh` is not installed or unavailable, merged-PR proof is reported
+as unavailable and cleanup falls back to local Git proof.
 
 `-f`/`--force` allows removal despite dirty state, unpushed commits, or a lock.
+It does not weaken branch cleanup proof. `--no-branch-cleanup` disables branch
+cleanup analysis and prompts.
 
 ### `prune`
 

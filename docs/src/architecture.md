@@ -1307,10 +1307,21 @@ pub struct RemoveOptions {
 }
 
 pub fn run(source: &SourceRepo, opts: RemoveOptions) -> OutpostResult<()>;
+
+pub fn run_with_cleanup(
+    source: &SourceRepo,
+    opts: RemoveOptions,
+    mode: BranchCleanupMode<'_>,
+) -> OutpostResult<RemoveReport>;
 ```
 
-`run` performs (order matters: registry lookup and the registry lock
-check precede missing-path cleanup):
+`run` preserves the original library behavior and never performs branch
+cleanup. CLI removal calls `run_with_cleanup`, which performs the same remove
+preflight and then optionally runs prompt-driven branch cleanup. Order matters:
+registry lookup and the registry lock check precede missing-path cleanup. After
+a successful CLI removal, stdout remains `removed <path>` and branch-cleanup
+diagnostics from `RemoveReport` are rendered to stderr.
+
 1. Canonicalize `opts.path`, retaining the original if the path is
    missing.
 2. Open `RegistryMut` and look up the entry. If not found:
@@ -1325,8 +1336,28 @@ check precede missing-path cleanup):
 6. If not `force`: `safety::check_clean` and
    `safety::check_no_unpushed`. Both raise `DirtyTree { hint: "pass --force" }` /
    `UnpushedCommits { hint: "pass --force" }`.
-7. Remove the registry entry, save.
-8. `std::fs::remove_dir_all(path)`. Errors here surface as `IoAt`.
+7. In `run_with_cleanup` interactive mode only, analyze a branch cleanup
+   candidate from the outpost's current branch upstream. The outpost upstream
+   remote must equal `outpost.remoteName`; the upstream merge ref must be
+   `refs/heads/BRANCH`; the matching source branch must exist; outpost
+   `HEAD` must equal that source branch tip; the branch must not be checked
+   out in the source repository or another source worktree; and the branch
+   must not equal the resolved `origin/HEAD` default branch.
+8. A cleanup candidate needs one proof: either the provider reports a merged
+   pull request whose `headRefName` and `headRefOid` match the branch and
+   source tip, or local Git proves the source branch tip is an ancestor of the
+   fetched upstream default branch. If `gh` is unavailable or fails, CLI
+   cleanup falls back to local Git proof only. Missing proof skips cleanup
+   without blocking outpost removal.
+9. Remove the registry entry, save.
+10. `std::fs::remove_dir_all(path)`. Errors here surface as `IoAt`.
+11. After the outpost directory is removed, prompt to delete the source branch.
+    Source deletion uses `git update-ref -d refs/heads/BRANCH EXPECTED_OID`.
+12. If `origin/BRANCH` existed at analysis time and still points at the same
+    OID, prompt separately before upstream deletion. Upstream deletion uses
+    `git push --force-with-lease=refs/heads/BRANCH:EXPECTED_OID origin
+    :refs/heads/BRANCH`. Any branch cleanup failure becomes a warning in
+    `RemoveReport`, not a rollback trigger.
 
 The lock check uses the registry entry and runs before missing-path
 cleanup. A locked registered-but-missing path therefore returns
@@ -1632,8 +1663,10 @@ removes entries when their registered outpost path is missing.
 `outpost.*` metadata is removed only as part of deleting the outpost
 directory. Source-local setup state is not cleaned up by `remove` or
 `prune`: the `.outpost/` container and its local ignore entry,
-`receive.denyCurrentBranch=updateInstead`, and source branches are left
-in place.
+`receive.denyCurrentBranch=updateInstead`, and unproven or declined branches
+are left in place. `remove` may delete source and upstream branches only through
+the prompt-and-proof cleanup path described in §5.9.12; it records no branch
+ownership provenance.
 
 ---
 

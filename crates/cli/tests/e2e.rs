@@ -51,6 +51,84 @@ fn e_04_basic_cli_lifecycle_round_trip_exits_zero() {
 }
 
 #[test]
+fn remove_noninteractive_skips_branch_cleanup() {
+    let fixture = common::CliFixture::new();
+    let create_branch = common::run(fixture.git(&fixture.source).args(["branch", "feat"]));
+    common::assert_success(&create_branch, "create feat");
+    let outpost = fixture.outpost("C");
+    let add = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["add", "../C", "feat"]),
+    );
+    common::assert_success(&add, "gop add feat");
+
+    let remove = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["remove", "../C"]),
+    );
+    common::assert_success(&remove, "gop remove noninteractive");
+
+    assert_eq!(
+        common::stdout(&remove),
+        format!("removed {}\n", outpost.display())
+    );
+    let stderr = common::stderr(&remove);
+    assert!(
+        stderr.contains("branch-cleanup: skipped: non-interactive"),
+        "remove stderr should explain non-interactive branch cleanup skip:\n{stderr}"
+    );
+    assert!(!outpost.exists(), "outpost directory should be removed");
+    let branch = common::run(fixture.git(&fixture.source).args([
+        "rev-parse",
+        "--verify",
+        "refs/heads/feat",
+    ]));
+    common::assert_success(&branch, "source branch should remain");
+}
+
+#[test]
+fn remove_no_branch_cleanup_reports_disabled_cleanup() {
+    let fixture = common::CliFixture::new();
+    let create_branch = common::run(fixture.git(&fixture.source).args(["branch", "feat"]));
+    common::assert_success(&create_branch, "create feat");
+    let outpost = fixture.outpost("C");
+    let add = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["add", "../C", "feat"]),
+    );
+    common::assert_success(&add, "gop add feat");
+
+    let remove = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "remove",
+        "--no-branch-cleanup",
+        "../C",
+    ]));
+    common::assert_success(&remove, "gop remove with cleanup disabled");
+
+    assert_eq!(
+        common::stdout(&remove),
+        format!("removed {}\n", outpost.display())
+    );
+    let stderr = common::stderr(&remove);
+    assert!(
+        stderr.contains("branch-cleanup: skipped: cleanup disabled"),
+        "remove stderr should explain disabled branch cleanup:\n{stderr}"
+    );
+    let branch = common::run(fixture.git(&fixture.source).args([
+        "rev-parse",
+        "--verify",
+        "refs/heads/feat",
+    ]));
+    common::assert_success(&branch, "source branch should remain");
+}
+
+#[test]
 fn dispatch_matrix_contextual_source_and_outpost_commands() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");

@@ -217,6 +217,8 @@ version = "0.1.1"
 dependencies = [
  "clap",
  "outpost-core",
+ "serde",
+ "serde_json",
  "tempfile",
 ]
 

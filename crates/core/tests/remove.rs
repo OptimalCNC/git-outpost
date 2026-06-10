@@ -1,6 +1,7 @@
 #[allow(dead_code)]
 mod common;
 
+use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -319,6 +320,348 @@ fn remove_locked_missing_path_requires_force_then_deregisters() {
     assert!(sentinel.exists());
 }
 
+#[test]
+fn remove_with_cleanup_deletes_source_branch_proven_by_default_ancestor() {
+    let fixture = AbcFixture::new();
+    ensure_origin_head(&fixture);
+    let branch = fixture.create_source_branch("feat").expect("create feat");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add C");
+    let source = fixture.source_repo().expect("source repo");
+    let mut prompt = TestPrompt::new([true], []);
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            path: outpost.clone(),
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("remove with cleanup");
+
+    assert!(!outpost.exists());
+    assert_source_branch_missing(&source, "feat");
+    assert_eq!(prompt.source_prompts, vec![branch.clone()]);
+    assert!(report.branch_cleanup.iter().any(|outcome| matches!(
+        outcome,
+        remove::BranchCleanupOutcome::DeletedSourceBranch { branch: deleted } if deleted == &branch
+    )));
+}
+
+#[test]
+fn remove_with_cleanup_skips_default_branch_even_when_not_checked_out() {
+    let fixture = AbcFixture::new();
+    ensure_origin_head(&fixture);
+    fixture.create_source_branch("dev").expect("create dev");
+    switch_source(&fixture, "dev");
+    let main = BranchName::parse("main".to_owned()).expect("main branch");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(main.clone()))
+        .expect("add C");
+    let source = fixture.source_repo().expect("source repo");
+    let mut prompt = TestPrompt::new([true], []);
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            path: outpost,
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("remove main outpost");
+
+    assert_source_branch_exists(&source, "main");
+    assert!(prompt.source_prompts.is_empty());
+    assert!(report.branch_cleanup.iter().any(|outcome| matches!(
+        outcome,
+        remove::BranchCleanupOutcome::Skipped {
+            branch: Some(branch),
+            reason: remove::BranchCleanupSkipReason::DefaultBranch,
+        } if branch == &main
+    )));
+}
+
+#[test]
+fn remove_with_cleanup_skips_checked_out_source_branch() {
+    let fixture = AbcFixture::new();
+    ensure_origin_head(&fixture);
+    let branch = fixture.create_source_branch("feat").expect("create feat");
+    switch_source(&fixture, "feat");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add C");
+    let source = fixture.source_repo().expect("source repo");
+    let mut prompt = TestPrompt::new([true], []);
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            path: outpost,
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("remove checked-out branch outpost");
+
+    assert_source_branch_exists(&source, "feat");
+    assert!(prompt.source_prompts.is_empty());
+    assert!(report.branch_cleanup.iter().any(|outcome| matches!(
+        outcome,
+        remove::BranchCleanupOutcome::Skipped {
+            branch: Some(skipped),
+            reason: remove::BranchCleanupSkipReason::BranchCheckedOut,
+        } if skipped == &branch
+    )));
+}
+
+#[test]
+fn remove_with_cleanup_accepts_matching_merged_pr_proof() {
+    let fixture = AbcFixture::new();
+    ensure_origin_head(&fixture);
+    let branch = source_branch_with_unmerged_commit(&fixture, "feat");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add C");
+    let source = fixture.source_repo().expect("source repo");
+    let source_oid = source
+        .branch_oid(&branch)
+        .expect("source oid")
+        .expect("branch oid");
+    let provider = FakeProvider {
+        proof: Some(remove::MergedPullRequest {
+            id: "#12".to_owned(),
+            head_ref_name: branch.clone(),
+            head_ref_oid: source_oid,
+        }),
+    };
+    let mut prompt = TestPrompt::new([true], []);
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            path: outpost,
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: Some(&provider),
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("remove with pr proof");
+
+    assert_source_branch_missing(&source, "feat");
+    assert_eq!(prompt.source_prompts, vec![branch.clone()]);
+    assert!(report.branch_cleanup.iter().any(|outcome| matches!(
+        outcome,
+        remove::BranchCleanupOutcome::DeletedSourceBranch { branch: deleted } if deleted == &branch
+    )));
+}
+
+#[test]
+fn remove_with_cleanup_rejects_mismatched_merged_pr_proof() {
+    let fixture = AbcFixture::new();
+    ensure_origin_head(&fixture);
+    let branch = source_branch_with_unmerged_commit(&fixture, "feat");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add C");
+    let source = fixture.source_repo().expect("source repo");
+    let provider = FakeProvider {
+        proof: Some(remove::MergedPullRequest {
+            id: "#12".to_owned(),
+            head_ref_name: branch.clone(),
+            head_ref_oid: "0000000000000000000000000000000000000000".to_owned(),
+        }),
+    };
+    let mut prompt = TestPrompt::new([true], []);
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            path: outpost,
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: Some(&provider),
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("remove with mismatched pr proof");
+
+    assert_source_branch_exists(&source, "feat");
+    assert!(prompt.source_prompts.is_empty());
+    assert!(report.branch_cleanup.iter().any(|outcome| matches!(
+        outcome,
+        remove::BranchCleanupOutcome::Skipped {
+            branch: Some(skipped),
+            reason: remove::BranchCleanupSkipReason::NoProof,
+        } if skipped == &branch
+    )));
+}
+
+#[test]
+fn remove_with_cleanup_prompts_separately_for_upstream_branch() {
+    let fixture = AbcFixture::new();
+    ensure_origin_head(&fixture);
+    let branch = fixture.create_source_branch("feat").expect("create feat");
+    fixture
+        .push_source_branch(&branch)
+        .expect("push feat to origin");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add C");
+    let source = fixture.source_repo().expect("source repo");
+    let mut prompt = TestPrompt::new([true], [false]);
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            path: outpost,
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("remove with upstream branch");
+
+    assert_source_branch_missing(&source, "feat");
+    assert_origin_branch_exists(&source, "feat");
+    assert_eq!(prompt.source_prompts, vec![branch.clone()]);
+    assert_eq!(prompt.upstream_prompts, vec![branch.clone()]);
+    assert!(report.branch_cleanup.iter().any(|outcome| matches!(
+        outcome,
+        remove::BranchCleanupOutcome::DeclinedUpstreamBranch { branch: declined } if declined == &branch
+    )));
+}
+
+#[test]
+fn remove_with_cleanup_declined_source_prompt_leaves_branches_intact() {
+    let fixture = AbcFixture::new();
+    ensure_origin_head(&fixture);
+    let branch = fixture.create_source_branch("feat").expect("create feat");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add C");
+    let source = fixture.source_repo().expect("source repo");
+    let mut prompt = TestPrompt::new([false], []);
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            path: outpost,
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("remove with declined cleanup");
+
+    assert_source_branch_exists(&source, "feat");
+    assert_eq!(prompt.source_prompts, vec![branch.clone()]);
+    assert!(report.branch_cleanup.iter().any(|outcome| matches!(
+        outcome,
+        remove::BranchCleanupOutcome::DeclinedSourceBranch { branch: declined } if declined == &branch
+    )));
+}
+
+#[test]
+fn remove_with_cleanup_source_branch_oid_race_leaves_branch_intact() {
+    let fixture = AbcFixture::new();
+    ensure_origin_head(&fixture);
+    let branch = fixture.create_source_branch("feat").expect("create feat");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add C");
+    let new_oid = fixture
+        .commit_in_source("main moved locally")
+        .expect("commit on main");
+    let source = fixture.source_repo().expect("source repo");
+    let mut prompt = RacePrompt {
+        fixture: &fixture,
+        branch: branch.clone(),
+        new_oid: new_oid.clone(),
+    };
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            path: outpost,
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("remove with branch race");
+
+    assert_eq!(
+        source.branch_oid(&branch).expect("branch oid").as_deref(),
+        Some(new_oid.as_str())
+    );
+    assert!(report.branch_cleanup.iter().any(|outcome| matches!(
+        outcome,
+        remove::BranchCleanupOutcome::Warning {
+            branch: Some(warned),
+            ..
+        } if warned == &branch
+    )));
+}
+
+#[test]
+fn remove_force_does_not_bypass_branch_cleanup_proof() {
+    let fixture = AbcFixture::new();
+    ensure_origin_head(&fixture);
+    let branch = source_branch_with_unmerged_commit(&fixture, "feat");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add C");
+    fixture
+        .commit_file_in_outpost(&outpost, "dirty proof bypass check", "x.txt", "x\n")
+        .expect("outpost-only commit");
+    let source = fixture.source_repo().expect("source repo");
+    let mut prompt = TestPrompt::new([true], []);
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            path: outpost,
+            force: true,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("force remove without cleanup proof");
+
+    assert_source_branch_exists(&source, "feat");
+    assert!(prompt.source_prompts.is_empty());
+    assert!(report.branch_cleanup.iter().any(|outcome| matches!(
+        outcome,
+        remove::BranchCleanupOutcome::Skipped {
+            branch: Some(skipped),
+            reason: remove::BranchCleanupSkipReason::OutpostHeadMismatch,
+        } if skipped == &branch
+    )));
+}
+
 fn single_entry(source: &SourceRepo) -> RegistryEntry {
     let registry = source.registry().expect("registry");
     assert_eq!(registry.entries().len(), 1);
@@ -364,6 +707,127 @@ fn assert_source_branch_exists(source: &SourceRepo, branch: &str) {
         "source branch {} should remain",
         branch.as_str()
     );
+}
+
+fn assert_source_branch_missing(source: &SourceRepo, branch: &str) {
+    let branch = BranchName::parse(branch.to_owned()).expect("branch name");
+    assert!(
+        !source.branch_exists(&branch).expect("branch exists query"),
+        "source branch {} should be deleted",
+        branch.as_str()
+    );
+}
+
+fn assert_origin_branch_exists(source: &SourceRepo, branch: &str) {
+    let branch = BranchName::parse(branch.to_owned()).expect("branch name");
+    assert!(
+        source
+            .origin_branch_oid(&branch)
+            .expect("origin branch oid")
+            .is_some(),
+        "origin branch {} should remain",
+        branch.as_str()
+    );
+}
+
+fn ensure_origin_head(fixture: &AbcFixture) {
+    fixture
+        .invoker(&fixture.source)
+        .run_check(["remote", "set-head", "origin", "main"])
+        .expect("set origin head");
+}
+
+fn switch_source(fixture: &AbcFixture, branch: &str) {
+    fixture
+        .invoker(&fixture.source)
+        .run_check(["switch", branch])
+        .expect("switch source branch");
+}
+
+fn source_branch_with_unmerged_commit(fixture: &AbcFixture, branch: &str) -> BranchName {
+    let branch = fixture
+        .create_source_branch(branch)
+        .expect("create source branch");
+    switch_source(fixture, branch.as_str());
+    fixture
+        .commit_in_source("feature commit")
+        .expect("feature commit");
+    switch_source(fixture, "main");
+    branch
+}
+
+struct FakeProvider {
+    proof: Option<remove::MergedPullRequest>,
+}
+
+impl remove::BranchCleanupProvider for FakeProvider {
+    fn merged_pull_request(
+        &self,
+        _branch: &BranchName,
+        _source_oid: &str,
+    ) -> OutpostResult<Option<remove::MergedPullRequest>> {
+        Ok(self.proof.clone())
+    }
+}
+
+struct TestPrompt {
+    source_responses: VecDeque<bool>,
+    upstream_responses: VecDeque<bool>,
+    source_prompts: Vec<BranchName>,
+    upstream_prompts: Vec<BranchName>,
+}
+
+impl TestPrompt {
+    fn new<const S: usize, const U: usize>(source: [bool; S], upstream: [bool; U]) -> Self {
+        Self {
+            source_responses: VecDeque::from(source),
+            upstream_responses: VecDeque::from(upstream),
+            source_prompts: Vec::new(),
+            upstream_prompts: Vec::new(),
+        }
+    }
+}
+
+impl remove::BranchCleanupPrompt for TestPrompt {
+    fn confirm_source_branch_delete(&mut self, candidate: &remove::BranchCleanupCandidate) -> bool {
+        self.source_prompts.push(candidate.branch.clone());
+        self.source_responses.pop_front().unwrap_or(false)
+    }
+
+    fn confirm_upstream_branch_delete(
+        &mut self,
+        candidate: &remove::BranchCleanupCandidate,
+    ) -> bool {
+        self.upstream_prompts.push(candidate.branch.clone());
+        self.upstream_responses.pop_front().unwrap_or(false)
+    }
+}
+
+struct RacePrompt<'a> {
+    fixture: &'a AbcFixture,
+    branch: BranchName,
+    new_oid: String,
+}
+
+impl remove::BranchCleanupPrompt for RacePrompt<'_> {
+    fn confirm_source_branch_delete(
+        &mut self,
+        _candidate: &remove::BranchCleanupCandidate,
+    ) -> bool {
+        let branch_ref = format!("refs/heads/{}", self.branch.as_str());
+        self.fixture
+            .invoker(&self.fixture.source)
+            .run_check(["update-ref", &branch_ref, &self.new_oid])
+            .expect("move branch during cleanup prompt");
+        true
+    }
+
+    fn confirm_upstream_branch_delete(
+        &mut self,
+        _candidate: &remove::BranchCleanupCandidate,
+    ) -> bool {
+        false
+    }
 }
 
 fn expect_error<T>(result: OutpostResult<T>, message: &str) -> OutpostError {

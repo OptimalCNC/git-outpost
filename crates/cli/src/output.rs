@@ -1,4 +1,6 @@
+use crate::gh;
 use outpost_core::AheadBehind;
+use outpost_core::BranchName;
 use outpost_core::ops;
 use outpost_core::ops::status::ConfigProblem;
 
@@ -129,6 +131,16 @@ pub fn print_push(report: &ops::push::PushReport) {
     );
 }
 
+pub fn print_remove(report: &ops::remove::RemoveReport, gh_status: Option<&gh::GhStatus>) {
+    println!("removed {}", report.path.display());
+    if let Some(status) = gh_status.and_then(format_gh_status) {
+        eprintln!("{status}");
+    }
+    for outcome in &report.branch_cleanup {
+        eprintln!("{}", format_branch_cleanup_outcome(outcome));
+    }
+}
+
 pub fn print_prune(report: &ops::prune::PruneReport, verbose: bool) {
     if report.dry_run {
         println!("dry-run: true");
@@ -186,5 +198,226 @@ fn format_problem(problem: &ConfigProblem) -> String {
 fn format_push_step(step: ops::push::StepResult) -> String {
     match step {
         ops::push::StepResult::Pushed { commits } => format!("pushed {commits} commit(s)"),
+    }
+}
+
+fn format_gh_status(status: &gh::GhStatus) -> Option<String> {
+    match status {
+        gh::GhStatus::Available(_) => None,
+        gh::GhStatus::NotInstalled => Some(
+            "branch-cleanup: gh not found; merged-PR proof unavailable; trying local Git proof only"
+                .to_owned(),
+        ),
+        gh::GhStatus::Unavailable { message } => Some(format!(
+            "branch-cleanup: gh unavailable: {message}; merged-PR proof unavailable; trying local Git proof only"
+        )),
+    }
+}
+
+fn format_branch_cleanup_outcome(outcome: &ops::remove::BranchCleanupOutcome) -> String {
+    match outcome {
+        ops::remove::BranchCleanupOutcome::Skipped { branch, reason } => {
+            format_branch_cleanup_skip(branch.as_ref(), *reason)
+        }
+        ops::remove::BranchCleanupOutcome::DeclinedSourceBranch { branch } => {
+            format!("branch-cleanup: kept source branch {}", branch.as_str())
+        }
+        ops::remove::BranchCleanupOutcome::DeletedSourceBranch { branch } => {
+            format!("cleanup: deleted source branch {}", branch.as_str())
+        }
+        ops::remove::BranchCleanupOutcome::DeclinedUpstreamBranch { branch } => {
+            format!(
+                "branch-cleanup: kept upstream branch origin/{}",
+                branch.as_str()
+            )
+        }
+        ops::remove::BranchCleanupOutcome::DeletedUpstreamBranch { branch } => {
+            format!(
+                "cleanup: deleted upstream branch origin/{}",
+                branch.as_str()
+            )
+        }
+        ops::remove::BranchCleanupOutcome::Warning { message, .. } => {
+            format!("warning: {message}")
+        }
+    }
+}
+
+fn format_branch_cleanup_skip(
+    branch: Option<&BranchName>,
+    reason: ops::remove::BranchCleanupSkipReason,
+) -> String {
+    let prefix = match branch {
+        Some(branch) => format!(
+            "branch-cleanup: skipped source branch {}: ",
+            branch.as_str()
+        ),
+        None => "branch-cleanup: skipped: ".to_owned(),
+    };
+    let reason = match reason {
+        ops::remove::BranchCleanupSkipReason::CleanupDisabled => "cleanup disabled",
+        ops::remove::BranchCleanupSkipReason::NonInteractive => {
+            "non-interactive terminal; branch cleanup requires prompts"
+        }
+        ops::remove::BranchCleanupSkipReason::MissingOutpost => "outpost path was already missing",
+        ops::remove::BranchCleanupSkipReason::DetachedHead => "outpost HEAD is detached",
+        ops::remove::BranchCleanupSkipReason::NoUpstreamTracking => {
+            "outpost has no upstream tracking branch"
+        }
+        ops::remove::BranchCleanupSkipReason::UpstreamRemoteMismatch => {
+            "outpost upstream remote does not match the configured source remote"
+        }
+        ops::remove::BranchCleanupSkipReason::UpstreamNotBranch => {
+            "outpost upstream is not a branch"
+        }
+        ops::remove::BranchCleanupSkipReason::SourceBranchMissing => "source branch is missing",
+        ops::remove::BranchCleanupSkipReason::OutpostHeadMismatch => {
+            "outpost HEAD does not match source branch tip"
+        }
+        ops::remove::BranchCleanupSkipReason::BranchCheckedOut => "branch is checked out",
+        ops::remove::BranchCleanupSkipReason::DefaultBranch => {
+            "branch is the upstream default branch"
+        }
+        ops::remove::BranchCleanupSkipReason::DefaultBranchUnknown => {
+            "upstream default branch is unknown"
+        }
+        ops::remove::BranchCleanupSkipReason::NoProof => "no safe deletion proof found",
+    };
+    format!("{prefix}{reason}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ops::remove::BranchCleanupSkipReason;
+
+    #[test]
+    fn branch_cleanup_skip_reasons_have_useful_messages() {
+        let branch = BranchName::parse("feat".to_owned()).expect("branch");
+        let cases = [
+            (
+                BranchCleanupSkipReason::CleanupDisabled,
+                false,
+                "cleanup disabled",
+            ),
+            (
+                BranchCleanupSkipReason::NonInteractive,
+                false,
+                "non-interactive",
+            ),
+            (
+                BranchCleanupSkipReason::MissingOutpost,
+                false,
+                "outpost path was already missing",
+            ),
+            (
+                BranchCleanupSkipReason::DetachedHead,
+                false,
+                "outpost HEAD is detached",
+            ),
+            (
+                BranchCleanupSkipReason::NoUpstreamTracking,
+                false,
+                "no upstream tracking branch",
+            ),
+            (
+                BranchCleanupSkipReason::UpstreamRemoteMismatch,
+                false,
+                "upstream remote does not match",
+            ),
+            (
+                BranchCleanupSkipReason::UpstreamNotBranch,
+                false,
+                "upstream is not a branch",
+            ),
+            (
+                BranchCleanupSkipReason::SourceBranchMissing,
+                true,
+                "source branch is missing",
+            ),
+            (
+                BranchCleanupSkipReason::OutpostHeadMismatch,
+                true,
+                "does not match source branch tip",
+            ),
+            (
+                BranchCleanupSkipReason::BranchCheckedOut,
+                true,
+                "branch is checked out",
+            ),
+            (
+                BranchCleanupSkipReason::DefaultBranch,
+                true,
+                "upstream default branch",
+            ),
+            (
+                BranchCleanupSkipReason::DefaultBranchUnknown,
+                true,
+                "default branch is unknown",
+            ),
+            (
+                BranchCleanupSkipReason::NoProof,
+                true,
+                "no safe deletion proof found",
+            ),
+        ];
+
+        for (reason, include_branch, expected) in cases {
+            let message = format_branch_cleanup_skip(include_branch.then_some(&branch), reason);
+            assert!(
+                message.starts_with("branch-cleanup: skipped"),
+                "skip message should identify branch cleanup: {message}"
+            );
+            assert!(
+                message.contains(expected),
+                "skip message for {reason:?} should contain {expected:?}: {message}"
+            );
+            if include_branch {
+                assert!(
+                    message.contains("source branch feat"),
+                    "branch-specific skip should include branch name: {message}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn gh_status_diagnostics_explain_proof_fallback() {
+        assert_eq!(
+            format_gh_status(&gh::GhStatus::NotInstalled).as_deref(),
+            Some(
+                "branch-cleanup: gh not found; merged-PR proof unavailable; trying local Git proof only"
+            )
+        );
+
+        let message = format_gh_status(&gh::GhStatus::Unavailable {
+            message: "permission denied".to_owned(),
+        })
+        .expect("unavailable diagnostic");
+        assert!(
+            message.contains("permission denied")
+                && message.contains("trying local Git proof only"),
+            "unavailable gh diagnostic should preserve the cause and fallback: {message}"
+        );
+    }
+
+    #[test]
+    fn branch_cleanup_declines_are_reported_as_kept_branches() {
+        let branch = BranchName::parse("feat".to_owned()).expect("branch");
+
+        assert_eq!(
+            format_branch_cleanup_outcome(
+                &ops::remove::BranchCleanupOutcome::DeclinedSourceBranch {
+                    branch: branch.clone(),
+                }
+            ),
+            "branch-cleanup: kept source branch feat"
+        );
+        assert_eq!(
+            format_branch_cleanup_outcome(
+                &ops::remove::BranchCleanupOutcome::DeclinedUpstreamBranch { branch }
+            ),
+            "branch-cleanup: kept upstream branch origin/feat"
+        );
     }
 }
