@@ -77,7 +77,8 @@ impl Metadata {
             "--local",
             "outpost.remoteName",
             self.remote_name.as_str(),
-        ])
+        ])?;
+        Ok(())
     }
 }
 
@@ -139,6 +140,10 @@ mod tests {
             git.run_capture(["config", "--local", "--get", "outpost.remoteName"])
                 .expect("remote key"),
             "local"
+        );
+        assert!(
+            !git.run_status(["config", "--local", "--get", "outpost.id"])
+                .expect("id key absent")
         );
     }
 

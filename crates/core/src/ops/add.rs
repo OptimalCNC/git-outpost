@@ -56,6 +56,7 @@ pub fn run(
         outpost_git.run_check(["remote", "rename", "origin", remote_name.as_str()])?;
     }
     apply_checkout(source, &outpost_git, &checkout, &branch, &remote_name)?;
+    let entry = RegistryEntry::new(destination.clone(), remote_name.clone())?;
     Metadata {
         source_repo: source.work_tree().to_path_buf(),
         remote_name: remote_name.clone(),
@@ -77,7 +78,7 @@ pub fn run(
     ])?;
 
     let mut registry = source.registry_mut()?;
-    registry.add(RegistryEntry::new(destination.clone(), remote_name)?)?;
+    registry.add(entry)?;
     registry.save()?;
 
     source.outpost_at(&destination)

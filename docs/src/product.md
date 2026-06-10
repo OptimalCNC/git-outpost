@@ -82,6 +82,10 @@ source repository so the registry is neither tracked project content nor copied
 into outposts. This is Git Outpost's source-owned analogue to Git's
 `.git/worktrees` registry.
 
+Each registered outpost has a derived ID alias for human selection. The alias
+is computed from the source repository path and the outpost path. It is not
+stored in the registry or the outpost's local git config.
+
 ### Artifact Ownership And Deletion
 
 Git Outpost creates and configures only a small amount of local state.
@@ -206,6 +210,12 @@ gop remove [-f|--force] [--no-branch-cleanup] <outpost>
 gop prune [-n|--dry-run] [-v|--verbose]
 gop status
 ```
+
+For `lock`, `unlock`, `move`, and `remove`, `<outpost>` is either a path or a
+unique outpost ID prefix from `gop list`. ID prefixes are scoped to the current
+source repository registry and are derived from each registered path. Prefixes
+must be at least 5 hex characters; if a prefix is missing or matches more than
+one registered outpost, the command fails instead of guessing.
 
 The MVP keeps only the options that are meaningful for clone-backed outposts.
 It does not mirror every `git worktree` option. Synchronization commands have
@@ -332,6 +342,7 @@ source repository and not be published upstream.
 List outposts registered to the current source repository. The default output
 shows one outpost per line and should include:
 
+- shortest unique derived outpost ID prefix, minimum 5 hex characters
 - outpost path
 - current branch
 - dirty or clean state
@@ -341,6 +352,12 @@ shows one outpost per line and should include:
 With `-v`, include lock reasons and other human-readable annotations. Stable
 machine-readable list output is deferred until the fields have settled.
 
+Example:
+
+```text
+abc12	/path/to/outpost	main	clean	ahead 0, behind 0	locked
+```
+
 When run in a managed outpost, `list` resolves the source repository from
 outpost metadata and produces the same output as running `list` in that source
 repository.
@@ -348,9 +365,9 @@ repository.
 ### `lock [--reason <string>] [<outpost>]`
 
 Lock a managed outpost so cleanup commands cannot remove or move it
-accidentally. The path must identify a registered outpost of the current source
-repository. `--reason <string>` stores an explanation for the lock in the
-source registry.
+accidentally. `<outpost>` must identify a registered outpost of the current
+source repository by path or unique ID prefix. `--reason <string>` stores an
+explanation for the lock in the source registry.
 
 When run in a source repository, `<outpost>` is required. When run in a managed
 outpost, omitting `<outpost>` locks the current outpost.
@@ -359,31 +376,55 @@ Locked outposts are kept by `prune`. `move` and `remove` refuse locked
 outposts unless `--force` is passed. Lock state is advisory to Git Outpost; it
 does not affect normal Git commands or filesystem tools.
 
+Examples:
+
+```bash
+gop lock ../C --reason "release freeze"
+gop lock abc12 --reason "release freeze"
+```
+
 ### `unlock [<outpost>]`
 
-Unlock a managed outpost. The path must identify a registered outpost of the
-current source repository. The command clears the registry lock state and lock
-reason, and leaves repository files untouched.
+Unlock a managed outpost. `<outpost>` must identify a registered outpost of the
+current source repository by path or unique ID prefix. The command clears the
+registry lock state and lock reason, and leaves repository files untouched.
 
 When run in a source repository, `<outpost>` is required. When run in a managed
 outpost, omitting `<outpost>` unlocks the current outpost.
 
+Examples:
+
+```bash
+gop unlock ../C
+gop unlock abc12
+```
+
 ### `move <outpost> <new-path>`
 
-Safely move a managed outpost directory. The path must identify a registered
-outpost of the current source repository; the command does not move arbitrary
-unregistered paths. The destination must be absent or empty.
+Safely move a managed outpost directory. `<outpost>` must identify a registered
+outpost of the current source repository by path or unique ID prefix; the
+command does not move arbitrary unregistered paths. `<new-path>` is always a
+path, never an ID selector. The destination must be absent or empty.
 
 By default, `move` refuses dirty or locked outposts. `-f`/`--force` allows the
 move despite dirty state or a lock. After the filesystem move succeeds, Git
 Outpost updates the source registry entry to the new path and preserves the
-outpost's existing lock state.
+lock state. Because the ID alias is derived from the registered path, the
+outpost's listed ID prefix changes after a move.
+
+Examples:
+
+```bash
+gop move ../C ../D
+gop move abc12 ../D
+```
 
 ### `remove <outpost>`
 
-Safely remove a managed outpost. The command refuses dirty outposts, outposts
-with unpushed commits, and locked outposts by default. After safety checks pass,
-it removes the source registry entry and deletes the outpost directory.
+Safely remove a managed outpost by path or unique ID prefix. The command
+refuses dirty outposts, outposts with unpushed commits, and locked outposts by
+default. After safety checks pass, it removes the source registry entry and
+deletes the outpost directory.
 
 In interactive terminals, `remove` then analyzes the outpost's tracked source
 branch and prompts before branch cleanup when it can prove deletion is safe. It
@@ -401,6 +442,13 @@ as unavailable and cleanup falls back to local Git proof.
 `-f`/`--force` allows removal despite dirty state, unpushed commits, or a lock.
 It does not weaken branch cleanup proof. `--no-branch-cleanup` disables branch
 cleanup analysis and prompts.
+
+Examples:
+
+```bash
+gop remove ../C
+gop remove abc12
+```
 
 ### `prune`
 
@@ -507,6 +555,7 @@ The following surfaces are intentionally outside the MVP:
   `gop merge`, `gop rebase`, ordinary `git push`, or the dedicated two-hop
   `gop push` instead.
 
-Commands that accept `<outpost>` identify a managed outpost by path. Paths may
-be absolute or relative to the current working directory. For `lock` and
-`unlock` from a managed outpost, omitting `<outpost>` means the current outpost.
+Commands that accept `<outpost>` identify a managed outpost by path or unique
+outpost ID prefix. Paths may be absolute or relative to the current working
+directory. For `lock` and `unlock` from a managed outpost, omitting
+`<outpost>` means the current outpost.

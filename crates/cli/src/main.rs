@@ -10,6 +10,7 @@ use std::process::ExitCode;
 
 use cli::{Cli, Command, SourceCommand};
 use exit::CliResult;
+use outpost_core::selector::OutpostSelector;
 use outpost_core::{Outpost, OutpostError, SourceRepo, ops};
 use reporter_impls::StderrReporter;
 
@@ -76,40 +77,45 @@ fn dispatch(cli: Cli) -> CliResult<()> {
             output::print_list(&summaries, args.verbose);
         }
         Command::Lock(args) => {
-            let (source, path) = contextual_outpost_path("lock", &cwd, args.outpost_path)?;
-            ops::lock::run(
+            let (source, selector) = contextual_outpost_selector("lock", &cwd, args.outpost_path)?;
+            let path = ops::lock::run(
                 &source,
                 ops::lock::LockOptions {
-                    path: path.clone(),
+                    selector,
                     reason: args.reason,
                 },
             )?;
             println!("locked {}", path.display());
         }
         Command::Unlock(args) => {
-            let (source, path) = contextual_outpost_path("unlock", &cwd, args.outpost_path)?;
-            ops::unlock::run(&source, ops::unlock::UnlockOptions { path: path.clone() })?;
+            let (source, selector) =
+                contextual_outpost_selector("unlock", &cwd, args.outpost_path)?;
+            let path = ops::unlock::run(&source, ops::unlock::UnlockOptions { selector })?;
             println!("unlocked {}", path.display());
         }
         Command::Move(args) => {
             let source = require_source("move", &cwd)?;
-            let path = resolve_path_arg(&cwd, args.outpost_path);
+            let selector = OutpostSelector::from_cli_arg(&cwd, args.outpost_path);
             let new_path = resolve_path_arg(&cwd, args.new_path);
-            ops::r#move::run(
+            let report = ops::r#move::run(
                 &source,
                 ops::r#move::MoveOptions {
-                    path: path.clone(),
+                    selector,
                     new_path: new_path.clone(),
                     force: args.force,
                 },
             )?;
-            println!("moved {} -> {}", path.display(), new_path.display());
+            println!(
+                "moved {} -> {}",
+                report.old_path.display(),
+                report.new_path.display()
+            );
         }
         Command::Remove(args) => {
             let source = require_source("remove", &cwd)?;
-            let path = resolve_path_arg(&cwd, args.outpost_path);
+            let selector = OutpostSelector::from_cli_arg(&cwd, args.outpost_path);
             let opts = ops::remove::RemoveOptions {
-                path: path.clone(),
+                selector,
                 force: args.force,
             };
             let mut gh_status = None;
@@ -299,14 +305,14 @@ fn list_source(cwd: &Path) -> CliResult<SourceRepo> {
     }
 }
 
-fn contextual_outpost_path(
+fn contextual_outpost_selector(
     command: &'static str,
     cwd: &Path,
     path: Option<PathBuf>,
-) -> CliResult<(SourceRepo, PathBuf)> {
+) -> CliResult<(SourceRepo, OutpostSelector)> {
     match classify(cwd)? {
         Context::Source(source) => match path {
-            Some(path) => Ok((source, resolve_path_arg(cwd, path))),
+            Some(path) => Ok((source, OutpostSelector::from_cli_arg(cwd, path))),
             None => Err(OutpostError::MissingOutpostPath {
                 command,
                 cwd: cwd.to_path_buf(),
@@ -314,8 +320,8 @@ fn contextual_outpost_path(
         },
         Context::Outpost(outpost) => {
             let path = path
-                .map(|path| resolve_path_arg(cwd, path))
-                .unwrap_or_else(|| outpost.work_tree().to_path_buf());
+                .map(|path| OutpostSelector::from_cli_arg(cwd, path))
+                .unwrap_or_else(|| OutpostSelector::from_path(outpost.work_tree().to_path_buf()));
             Ok((outpost.source_repo()?, path))
         }
     }

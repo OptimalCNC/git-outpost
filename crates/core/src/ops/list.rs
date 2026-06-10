@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 
+use crate::outpost_id::{OutpostId, shortest_unique_prefixes};
 use crate::{AheadBehind, BranchName, OutpostError, OutpostResult, SourceRepo};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutpostSummary {
+    pub display_id: String,
     pub path: PathBuf,
     pub current_branch: Option<BranchName>,
     pub state: OutpostState,
@@ -21,19 +23,28 @@ pub enum OutpostState {
 }
 
 pub fn run(source: &SourceRepo) -> OutpostResult<Vec<OutpostSummary>> {
-    source
-        .registry()?
+    let registry = source.registry()?;
+    let ids = registry
         .entries()
         .iter()
-        .map(|entry| summarize_entry(source, entry))
+        .map(|entry| OutpostId::derive(source.work_tree(), &entry.path))
+        .collect::<Vec<_>>();
+    let prefixes = shortest_unique_prefixes(ids.iter());
+    registry
+        .entries()
+        .iter()
+        .zip(prefixes)
+        .map(|(entry, display_id)| summarize_entry(source, entry, display_id))
         .collect()
 }
 
 fn summarize_entry(
     source: &SourceRepo,
     entry: &crate::RegistryEntry,
+    display_id: String,
 ) -> OutpostResult<OutpostSummary> {
     let mut summary = OutpostSummary {
+        display_id,
         path: entry.path.clone(),
         current_branch: None,
         state: OutpostState::Missing,
@@ -46,7 +57,7 @@ fn summarize_entry(
         return Ok(summary);
     }
 
-    let outpost = match crate::safety::check_path_is_managed_outpost_of(source, &entry.path) {
+    let outpost = match crate::safety::check_entry_is_managed_outpost_of(source, entry) {
         Ok(outpost) => outpost,
         Err(OutpostError::RegistryEntryNotManaged(_)) => {
             summary.state = OutpostState::NotManaged;

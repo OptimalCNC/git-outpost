@@ -76,6 +76,15 @@ pub enum OutpostError {
     #[error("registry entry not found: {}", .0.display())]
     RegistryEntryNotFound(PathBuf),
 
+    #[error("outpost id prefix not found: {0}")]
+    OutpostIdPrefixNotFound(String),
+
+    #[error("outpost id prefix is ambiguous: {0}")]
+    OutpostIdPrefixAmbiguous(String),
+
+    #[error("outpost selector is ambiguous: {0}")]
+    OutpostSelectorAmbiguous(String),
+
     #[error("invalid registry file at {}: {reason}", .path.display())]
     BadRegistry { path: PathBuf, reason: String },
 
@@ -122,6 +131,9 @@ impl OutpostError {
             | UpstreamNotABranch { .. } => 5,
             BadRegistry { .. }
             | BadMetadata { .. }
+            | OutpostIdPrefixNotFound(_)
+            | OutpostIdPrefixAmbiguous(_)
+            | OutpostSelectorAmbiguous(_)
             | RegistryEntryNotManaged(_)
             | RegistryEntryNotFound(_) => 6,
             GitFailed { code, .. } => (*code).clamp(1, 125) as u8,
@@ -250,6 +262,18 @@ mod tests {
             (
                 OutpostError::RegistryEntryNotFound(path("/missing")),
                 "registry entry not found: /missing",
+            ),
+            (
+                OutpostError::OutpostIdPrefixNotFound("abcde".to_owned()),
+                "outpost id prefix not found: abcde",
+            ),
+            (
+                OutpostError::OutpostIdPrefixAmbiguous("abcde".to_owned()),
+                "outpost id prefix is ambiguous: abcde",
+            ),
+            (
+                OutpostError::OutpostSelectorAmbiguous("abcde".to_owned()),
+                "outpost selector is ambiguous: abcde",
             ),
             (
                 OutpostError::BadRegistry {
@@ -385,6 +409,15 @@ mod tests {
             ),
             (OutpostError::RegistryEntryNotManaged(path("/outpost")), 6),
             (OutpostError::RegistryEntryNotFound(path("/missing")), 6),
+            (OutpostError::OutpostIdPrefixNotFound("abcde".to_owned()), 6),
+            (
+                OutpostError::OutpostIdPrefixAmbiguous("abcde".to_owned()),
+                6,
+            ),
+            (
+                OutpostError::OutpostSelectorAmbiguous("abcde".to_owned()),
+                6,
+            ),
             (
                 OutpostError::BadRegistry {
                     path: path("/repo/.outpost/registry.json"),

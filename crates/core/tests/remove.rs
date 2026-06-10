@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 
 use common::fixture::AbcFixture;
 use outpost_core::ops::remove;
+use outpost_core::selector::OutpostSelector;
 use outpost_core::{
-    BranchName, OutpostError, OutpostResult, RegistryEntry, RemoteName, SourceRepo,
+    BranchName, OutpostError, OutpostId, OutpostResult, RegistryEntry, RemoteName, SourceRepo,
 };
 
 #[test]
@@ -21,7 +22,7 @@ fn remove_clean_fully_pushed_outpost_deletes_dir_and_registry_entry() {
     remove::run(
         &source,
         remove::RemoveOptions {
-            path: outpost.clone(),
+            selector: OutpostSelector::from_path(outpost.clone()),
             force: false,
         },
     )
@@ -34,6 +35,26 @@ fn remove_clean_fully_pushed_outpost_deletes_dir_and_registry_entry() {
 }
 
 #[test]
+fn remove_accepts_unique_id_prefix() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+    let source = fixture.source_repo().expect("source repo");
+    let prefix = single_entry_prefix(&source);
+
+    remove::run(
+        &source,
+        remove::RemoveOptions {
+            selector: OutpostSelector::from_cli_arg(&fixture.root, prefix.into()),
+            force: false,
+        },
+    )
+    .expect("remove by id");
+
+    assert!(!outpost.exists());
+    assert_registry_empty(&source);
+}
+
+#[test]
 fn remove_dirty_outpost_returns_dirty_tree_with_force_hint() {
     let fixture = AbcFixture::new();
     let outpost = fixture.dirty_outpost("C").expect("dirty C");
@@ -43,7 +64,7 @@ fn remove_dirty_outpost_returns_dirty_tree_with_force_hint() {
         remove::run(
             &source,
             remove::RemoveOptions {
-                path: outpost.clone(),
+                selector: OutpostSelector::from_path(outpost.clone()),
                 force: false,
             },
         ),
@@ -70,7 +91,7 @@ fn remove_unpushed_outpost_returns_unpushed_commits() {
         remove::run(
             &source,
             remove::RemoveOptions {
-                path: outpost.clone(),
+                selector: OutpostSelector::from_path(outpost.clone()),
                 force: false,
             },
         ),
@@ -94,7 +115,7 @@ fn remove_force_deletes_dirty_outpost() {
     remove::run(
         &source,
         remove::RemoveOptions {
-            path: outpost.clone(),
+            selector: OutpostSelector::from_path(outpost.clone()),
             force: true,
         },
     )
@@ -119,7 +140,7 @@ fn remove_force_deletes_outpost_with_unpushed_commits() {
     remove::run(
         &source,
         remove::RemoveOptions {
-            path: outpost.clone(),
+            selector: OutpostSelector::from_path(outpost.clone()),
             force: true,
         },
     )
@@ -142,7 +163,7 @@ fn remove_unregistered_path_returns_registry_entry_not_found() {
         remove::run(
             &source,
             remove::RemoveOptions {
-                path: path.clone(),
+                selector: OutpostSelector::from_path(path.clone()),
                 force: false,
             },
         ),
@@ -167,7 +188,7 @@ fn remove_unlocked_missing_registered_path_deregisters_without_rmtree() {
     remove::run(
         &source,
         remove::RemoveOptions {
-            path: outpost.clone(),
+            selector: OutpostSelector::from_path(outpost.clone()),
             force: false,
         },
     )
@@ -176,6 +197,26 @@ fn remove_unlocked_missing_registered_path_deregisters_without_rmtree() {
     assert!(!outpost.exists());
     assert_registry_empty(&source);
     assert!(sentinel.exists());
+}
+
+#[test]
+fn remove_id_prefix_deregisters_missing_registered_path() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+    let source = fixture.source_repo().expect("source repo");
+    let prefix = single_entry_prefix(&source);
+    fs::remove_dir_all(&outpost).expect("remove outpost dir");
+
+    remove::run(
+        &source,
+        remove::RemoveOptions {
+            selector: OutpostSelector::from_cli_arg(&fixture.root, prefix.into()),
+            force: false,
+        },
+    )
+    .expect("remove missing by id");
+
+    assert_registry_empty(&source);
 }
 
 #[test]
@@ -192,7 +233,7 @@ fn remove_registry_entry_pointing_at_unrelated_dir_returns_not_managed() {
         remove::run(
             &source,
             remove::RemoveOptions {
-                path: unrelated.clone(),
+                selector: OutpostSelector::from_path(unrelated.clone()),
                 force: true,
             },
         ),
@@ -221,7 +262,7 @@ fn remove_wrong_source_outpost_returns_not_managed() {
         remove::run(
             &source,
             remove::RemoveOptions {
-                path: outpost.clone(),
+                selector: OutpostSelector::from_path(outpost.clone()),
                 force: true,
             },
         ),
@@ -248,7 +289,7 @@ fn remove_refuses_locked_outpost_unless_forced() {
         remove::run(
             &source,
             remove::RemoveOptions {
-                path: outpost.clone(),
+                selector: OutpostSelector::from_path(outpost.clone()),
                 force: false,
             },
         ),
@@ -266,7 +307,7 @@ fn remove_refuses_locked_outpost_unless_forced() {
     remove::run(
         &source,
         remove::RemoveOptions {
-            path: outpost.clone(),
+            selector: OutpostSelector::from_path(outpost.clone()),
             force: true,
         },
     )
@@ -291,7 +332,7 @@ fn remove_locked_missing_path_requires_force_then_deregisters() {
         remove::run(
             &source,
             remove::RemoveOptions {
-                path: outpost.clone(),
+                selector: OutpostSelector::from_path(outpost.clone()),
                 force: false,
             },
         ),
@@ -309,7 +350,7 @@ fn remove_locked_missing_path_requires_force_then_deregisters() {
     remove::run(
         &source,
         remove::RemoveOptions {
-            path: outpost.clone(),
+            selector: OutpostSelector::from_path(outpost.clone()),
             force: true,
         },
     )
@@ -334,7 +375,7 @@ fn remove_with_cleanup_deletes_source_branch_proven_by_default_ancestor() {
     let report = remove::run_with_cleanup(
         &source,
         remove::RemoveOptions {
-            path: outpost.clone(),
+            selector: OutpostSelector::from_path(outpost.clone()),
             force: false,
         },
         remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
@@ -369,7 +410,7 @@ fn remove_with_cleanup_skips_default_branch_even_when_not_checked_out() {
     let report = remove::run_with_cleanup(
         &source,
         remove::RemoveOptions {
-            path: outpost,
+            selector: OutpostSelector::from_path(outpost),
             force: false,
         },
         remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
@@ -405,7 +446,7 @@ fn remove_with_cleanup_skips_checked_out_source_branch() {
     let report = remove::run_with_cleanup(
         &source,
         remove::RemoveOptions {
-            path: outpost,
+            selector: OutpostSelector::from_path(outpost),
             force: false,
         },
         remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
@@ -451,7 +492,7 @@ fn remove_with_cleanup_accepts_matching_merged_pr_proof() {
     let report = remove::run_with_cleanup(
         &source,
         remove::RemoveOptions {
-            path: outpost,
+            selector: OutpostSelector::from_path(outpost),
             force: false,
         },
         remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
@@ -490,7 +531,7 @@ fn remove_with_cleanup_rejects_mismatched_merged_pr_proof() {
     let report = remove::run_with_cleanup(
         &source,
         remove::RemoveOptions {
-            path: outpost,
+            selector: OutpostSelector::from_path(outpost),
             force: false,
         },
         remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
@@ -528,7 +569,7 @@ fn remove_with_cleanup_prompts_separately_for_upstream_branch() {
     let report = remove::run_with_cleanup(
         &source,
         remove::RemoveOptions {
-            path: outpost,
+            selector: OutpostSelector::from_path(outpost),
             force: false,
         },
         remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
@@ -562,7 +603,7 @@ fn remove_with_cleanup_declined_source_prompt_leaves_branches_intact() {
     let report = remove::run_with_cleanup(
         &source,
         remove::RemoveOptions {
-            path: outpost,
+            selector: OutpostSelector::from_path(outpost),
             force: false,
         },
         remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
@@ -601,7 +642,7 @@ fn remove_with_cleanup_source_branch_oid_race_leaves_branch_intact() {
     let report = remove::run_with_cleanup(
         &source,
         remove::RemoveOptions {
-            path: outpost,
+            selector: OutpostSelector::from_path(outpost),
             force: false,
         },
         remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
@@ -641,7 +682,7 @@ fn remove_force_does_not_bypass_branch_cleanup_proof() {
     let report = remove::run_with_cleanup(
         &source,
         remove::RemoveOptions {
-            path: outpost,
+            selector: OutpostSelector::from_path(outpost),
             force: true,
         },
         remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
@@ -666,6 +707,11 @@ fn single_entry(source: &SourceRepo) -> RegistryEntry {
     let registry = source.registry().expect("registry");
     assert_eq!(registry.entries().len(), 1);
     registry.entries()[0].clone()
+}
+
+fn single_entry_prefix(source: &SourceRepo) -> String {
+    let entry = single_entry(source);
+    OutpostId::derive(source.work_tree(), &entry.path).as_str()[..5].to_owned()
 }
 
 fn assert_registry_empty(source: &SourceRepo) {

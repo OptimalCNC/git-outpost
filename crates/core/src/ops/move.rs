@@ -1,18 +1,22 @@
 use std::path::{Path, PathBuf};
 
+use crate::selector::{OutpostSelector, resolve_entry};
 use crate::{OutpostError, OutpostResult, SourceRepo, safety};
 
 pub struct MoveOptions {
-    pub path: PathBuf,
+    pub selector: OutpostSelector,
     pub new_path: PathBuf,
     pub force: bool,
 }
 
-pub fn run(source: &SourceRepo, opts: MoveOptions) -> OutpostResult<()> {
-    let mut registry = source.registry_mut()?;
-    let index = registry_entry_index(registry.entries(), &opts.path)?;
-    let entry = registry.entries()[index].clone();
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MoveReport {
+    pub old_path: PathBuf,
+    pub new_path: PathBuf,
+}
 
+pub fn run(source: &SourceRepo, opts: MoveOptions) -> OutpostResult<MoveReport> {
+    let entry = resolve_entry(source, &opts.selector)?.entry;
     if entry.locked && !opts.force {
         return Err(OutpostError::OutpostLocked {
             path: entry.path,
@@ -20,7 +24,7 @@ pub fn run(source: &SourceRepo, opts: MoveOptions) -> OutpostResult<()> {
         });
     }
 
-    let outpost = safety::check_path_is_managed_outpost_of(source, &entry.path)?;
+    let outpost = safety::check_entry_is_managed_outpost_of(source, &entry)?;
     if !opts.force {
         safety::check_clean(outpost.work_tree(), outpost.git())?;
     }
@@ -30,17 +34,17 @@ pub fn run(source: &SourceRepo, opts: MoveOptions) -> OutpostResult<()> {
         path: entry.path.clone(),
         source,
     })?;
-    registry.update_path(&entry.path, opts.new_path)?;
-    registry.save()
-}
-
-fn registry_entry_index(entries: &[crate::RegistryEntry], path: &Path) -> OutpostResult<usize> {
-    let canonical = std::fs::canonicalize(path)
-        .map_err(|_| OutpostError::RegistryEntryNotFound(path.to_path_buf()))?;
-    entries
-        .iter()
-        .position(|entry| entry.path == canonical)
-        .ok_or(OutpostError::RegistryEntryNotFound(canonical))
+    let old_path = entry.path;
+    let mut registry = source.registry_mut()?;
+    registry.update_path(&old_path, opts.new_path.clone())?;
+    registry.save()?;
+    Ok(MoveReport {
+        old_path,
+        new_path: std::fs::canonicalize(&opts.new_path).map_err(|source| OutpostError::IoAt {
+            path: opts.new_path,
+            source,
+        })?,
+    })
 }
 
 fn check_destination_clean(destination: &Path) -> OutpostResult<()> {

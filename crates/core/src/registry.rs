@@ -148,9 +148,11 @@ impl Registry {
 
 impl RegistryEntry {
     pub fn new(path: PathBuf, remote_name: RemoteName) -> OutpostResult<Self> {
+        let path = canonicalize_path(&path)?;
+        let created_at = Utc::now();
         Ok(Self {
-            path: canonicalize_path(&path)?,
-            created_at: Utc::now(),
+            path,
+            created_at,
             remote_name,
             locked: false,
             lock_reason: None,
@@ -573,10 +575,12 @@ mod tests {
     }
 
     fn entry_at(path: &Path, remote: &str, seconds: i64) -> RegistryEntry {
+        let created_at = Utc.timestamp_opt(seconds, 0).single().unwrap();
+        let remote_name = RemoteName::parse(remote).expect("remote parses");
         RegistryEntry {
             path: path.to_path_buf(),
-            created_at: Utc.timestamp_opt(seconds, 0).single().unwrap(),
-            remote_name: RemoteName::parse(remote).expect("remote parses"),
+            created_at,
+            remote_name,
             locked: false,
             lock_reason: None,
             locked_at: None,

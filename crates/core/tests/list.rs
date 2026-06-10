@@ -38,6 +38,28 @@ fn list_reports_three_added_outpost_paths() {
 }
 
 #[test]
+fn list_includes_short_unique_outpost_id_prefixes() {
+    let fixture = AbcFixture::new();
+    fixture.add_outpost("C1").expect("add C1");
+    fixture.add_outpost("C2").expect("add C2");
+    let source = fixture.source_repo().expect("source repo");
+
+    let summaries = run(&source).expect("list summaries");
+
+    assert_eq!(summaries.len(), 2);
+    for summary in summaries {
+        assert_eq!(summary.display_id.len(), 5);
+        assert!(summary.display_id.chars().all(|ch| ch.is_ascii_hexdigit()));
+        assert!(
+            summary
+                .display_id
+                .chars()
+                .all(|ch| !ch.is_ascii_uppercase())
+        );
+    }
+}
+
+#[test]
 fn list_reports_current_branch_for_each_outpost() {
     let fixture = AbcFixture::new();
     fixture.add_outpost("C").expect("add C");

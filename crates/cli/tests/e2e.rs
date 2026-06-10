@@ -51,6 +51,86 @@ fn e_04_basic_cli_lifecycle_round_trip_exits_zero() {
 }
 
 #[test]
+fn list_prints_id_column_and_lifecycle_accepts_id_prefix() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+
+    let list = common::run(fixture.gop().current_dir(&fixture.source).arg("list"));
+    common::assert_success(&list, "gop list");
+    let stdout = common::stdout(&list);
+    let first_line = stdout.lines().next().expect("list line");
+    let columns = first_line.split('\t').collect::<Vec<_>>();
+    assert!(
+        columns.len() >= 5,
+        "list output should include id, path, branch, state, and ahead/behind columns:\n{stdout}"
+    );
+    let id_prefix = columns[0];
+    assert_eq!(id_prefix.len(), 5);
+    assert!(id_prefix.chars().all(|ch| ch.is_ascii_hexdigit()));
+    assert_eq!(columns[1], outpost.display().to_string());
+
+    let lock = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["lock", id_prefix]),
+    );
+    common::assert_success(&lock, "gop lock by id");
+    assert_eq!(
+        common::stdout(&lock),
+        format!("locked {}\n", outpost.display())
+    );
+
+    let unlock = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["unlock", id_prefix]),
+    );
+    common::assert_success(&unlock, "gop unlock by id");
+    assert_eq!(
+        common::stdout(&unlock),
+        format!("unlocked {}\n", outpost.display())
+    );
+
+    let moved = fixture.outpost("D");
+    let move_out = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["move", id_prefix, "../D"]),
+    );
+    common::assert_success(&move_out, "gop move by id");
+    assert_eq!(
+        common::stdout(&move_out),
+        format!("moved {} -> {}\n", outpost.display(), moved.display())
+    );
+    assert!(!outpost.exists());
+    assert!(moved.exists());
+
+    let list = common::run(fixture.gop().current_dir(&fixture.source).arg("list"));
+    common::assert_success(&list, "gop list after move");
+    let stdout = common::stdout(&list);
+    let first_line = stdout.lines().next().expect("post-move list line");
+    let columns = first_line.split('\t').collect::<Vec<_>>();
+    let moved_id_prefix = columns[0];
+    assert_ne!(moved_id_prefix, id_prefix);
+    assert_eq!(columns[1], moved.display().to_string());
+
+    let remove = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "remove",
+        "--no-branch-cleanup",
+        moved_id_prefix,
+    ]));
+    common::assert_success(&remove, "gop remove by id");
+    assert_eq!(
+        common::stdout(&remove),
+        format!("removed {}\n", moved.display())
+    );
+    assert!(!moved.exists());
+}
+
+#[test]
 fn remove_noninteractive_skips_branch_cleanup() {
     let fixture = common::CliFixture::new();
     let create_branch = common::run(fixture.git(&fixture.source).args(["branch", "feat"]));

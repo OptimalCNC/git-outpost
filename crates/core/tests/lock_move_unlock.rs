@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use common::fixture::AbcFixture;
 use outpost_core::ops::r#move as move_op;
 use outpost_core::ops::{lock, unlock};
-use outpost_core::{OutpostError, OutpostResult, RegistryEntry, SourceRepo};
+use outpost_core::selector::OutpostSelector;
+use outpost_core::{OutpostError, OutpostId, OutpostResult, RegistryEntry, SourceRepo};
 
 #[test]
 fn lock_with_reason_marks_registry_entry_locked() {
@@ -18,7 +19,7 @@ fn lock_with_reason_marks_registry_entry_locked() {
     lock::run(
         &source,
         lock::LockOptions {
-            path: outpost,
+            selector: OutpostSelector::from_path(outpost),
             reason: Some("keep".to_owned()),
         },
     )
@@ -37,12 +38,45 @@ fn unlock_clears_registry_lock_state_and_reason() {
     let source = fixture.source_repo().expect("source repo");
     lock_registry_entry(&source, &outpost, Some("keep")).expect("lock setup");
 
-    unlock::run(&source, unlock::UnlockOptions { path: outpost }).expect("unlock outpost");
+    unlock::run(
+        &source,
+        unlock::UnlockOptions {
+            selector: OutpostSelector::from_path(outpost),
+        },
+    )
+    .expect("unlock outpost");
 
     let entry = single_entry(&source);
     assert!(!entry.locked);
     assert!(entry.lock_reason.is_none());
     assert!(entry.locked_at.is_none());
+}
+
+#[test]
+fn lock_and_unlock_accept_unique_id_prefix() {
+    let fixture = AbcFixture::new();
+    fixture.add_outpost("C").expect("add C");
+    let source = fixture.source_repo().expect("source repo");
+    let prefix = single_entry_prefix(&source);
+
+    lock::run(
+        &source,
+        lock::LockOptions {
+            selector: OutpostSelector::from_cli_arg(&fixture.root, prefix.clone().into()),
+            reason: Some("keep".to_owned()),
+        },
+    )
+    .expect("lock by id");
+    assert!(single_entry(&source).locked);
+
+    unlock::run(
+        &source,
+        unlock::UnlockOptions {
+            selector: OutpostSelector::from_cli_arg(&fixture.root, prefix.into()),
+        },
+    )
+    .expect("unlock by id");
+    assert!(!single_entry(&source).locked);
 }
 
 #[test]
@@ -55,7 +89,7 @@ fn move_updates_filesystem_and_registry_path() {
     move_op::run(
         &source,
         move_op::MoveOptions {
-            path: outpost.clone(),
+            selector: OutpostSelector::from_path(outpost.clone()),
             new_path: destination.clone(),
             force: false,
         },
@@ -65,6 +99,32 @@ fn move_updates_filesystem_and_registry_path() {
     assert!(!outpost.exists());
     assert!(destination.join(".git").exists());
     assert_eq!(single_entry(&source).path, canonical(&destination));
+}
+
+#[test]
+fn move_accepts_unique_id_prefix_and_updates_derived_id() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+    let destination = fixture.root.join("D");
+    let source = fixture.source_repo().expect("source repo");
+    let before = OutpostId::derive(source.work_tree(), &single_entry(&source).path);
+    let prefix = before.as_str()[..5].to_owned();
+
+    move_op::run(
+        &source,
+        move_op::MoveOptions {
+            selector: OutpostSelector::from_cli_arg(&fixture.root, prefix.into()),
+            new_path: destination.clone(),
+            force: false,
+        },
+    )
+    .expect("move by id");
+
+    assert!(!outpost.exists());
+    assert!(destination.join(".git").exists());
+    let entry = single_entry(&source);
+    assert_eq!(entry.path, canonical(&destination));
+    assert_ne!(OutpostId::derive(source.work_tree(), &entry.path), before);
 }
 
 #[test]
@@ -79,7 +139,7 @@ fn move_refuses_locked_outpost_without_force() {
         move_op::run(
             &source,
             move_op::MoveOptions {
-                path: outpost.clone(),
+                selector: OutpostSelector::from_path(outpost.clone()),
                 new_path: destination.clone(),
                 force: false,
             },
@@ -106,7 +166,7 @@ fn move_force_moves_locked_outpost_and_preserves_lock() {
     move_op::run(
         &source,
         move_op::MoveOptions {
-            path: outpost.clone(),
+            selector: OutpostSelector::from_path(outpost.clone()),
             new_path: destination.clone(),
             force: true,
         },
@@ -133,7 +193,7 @@ fn move_refuses_dirty_outpost_but_force_succeeds() {
         move_op::run(
             &source,
             move_op::MoveOptions {
-                path: outpost.clone(),
+                selector: OutpostSelector::from_path(outpost.clone()),
                 new_path: destination.clone(),
                 force: false,
             },
@@ -150,7 +210,7 @@ fn move_refuses_dirty_outpost_but_force_succeeds() {
     move_op::run(
         &source,
         move_op::MoveOptions {
-            path: outpost.clone(),
+            selector: OutpostSelector::from_path(outpost.clone()),
             new_path: destination.clone(),
             force: true,
         },
@@ -175,7 +235,7 @@ fn move_refuses_non_empty_destination() {
         move_op::run(
             &source,
             move_op::MoveOptions {
-                path: outpost.clone(),
+                selector: OutpostSelector::from_path(outpost.clone()),
                 new_path: destination.clone(),
                 force: false,
             },
@@ -199,7 +259,7 @@ fn lock_move_unlock_reject_unregistered_paths() {
         lock::run(
             &source,
             lock::LockOptions {
-                path: path.clone(),
+                selector: OutpostSelector::from_path(path.clone()),
                 reason: None,
             },
         ),
@@ -209,7 +269,7 @@ fn lock_move_unlock_reject_unregistered_paths() {
         move_op::run(
             &source,
             move_op::MoveOptions {
-                path: path.clone(),
+                selector: OutpostSelector::from_path(path.clone()),
                 new_path: fixture.root.join("D"),
                 force: false,
             },
@@ -217,7 +277,12 @@ fn lock_move_unlock_reject_unregistered_paths() {
         "unregistered move should fail",
     );
     let unlock_err = expect_error(
-        unlock::run(&source, unlock::UnlockOptions { path: path.clone() }),
+        unlock::run(
+            &source,
+            unlock::UnlockOptions {
+                selector: OutpostSelector::from_path(path.clone()),
+            },
+        ),
         "unregistered unlock should fail",
     );
 
@@ -247,7 +312,7 @@ fn lock_move_unlock_reject_wrong_source_registered_path() {
         lock::run(
             &source,
             lock::LockOptions {
-                path: outpost.clone(),
+                selector: OutpostSelector::from_path(outpost.clone()),
                 reason: Some("keep".to_owned()),
             },
         ),
@@ -257,7 +322,7 @@ fn lock_move_unlock_reject_wrong_source_registered_path() {
         move_op::run(
             &source,
             move_op::MoveOptions {
-                path: outpost.clone(),
+                selector: OutpostSelector::from_path(outpost.clone()),
                 new_path: fixture.root.join("D"),
                 force: true,
             },
@@ -269,7 +334,7 @@ fn lock_move_unlock_reject_wrong_source_registered_path() {
         unlock::run(
             &source,
             unlock::UnlockOptions {
-                path: outpost.clone(),
+                selector: OutpostSelector::from_path(outpost.clone()),
             },
         ),
         "wrong-source unlock should fail",
@@ -296,6 +361,11 @@ fn single_entry(source: &SourceRepo) -> RegistryEntry {
     let registry = source.registry().expect("registry");
     assert_eq!(registry.entries().len(), 1);
     registry.entries()[0].clone()
+}
+
+fn single_entry_prefix(source: &SourceRepo) -> String {
+    let entry = single_entry(source);
+    OutpostId::derive(source.work_tree(), &entry.path).as_str()[..5].to_owned()
 }
 
 fn lock_registry_entry(

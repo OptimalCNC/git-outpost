@@ -260,6 +260,11 @@ fn add_writes_outpost_metadata_keys() {
             .expect("remote name config"),
         "local"
     );
+    assert!(
+        !git.run_status(["config", "--local", "--get", "outpost.id"])
+            .expect("outpost.id lookup"),
+        "derived outpost IDs must not be stored in local git config"
+    );
     assert_eq!(outpost.metadata().source_repo, source.work_tree());
     assert_eq!(outpost.metadata().remote_name.as_str(), "local");
 }

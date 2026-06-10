@@ -107,6 +107,15 @@ fn e_08_outpost_errors_map_to_documented_exit_codes() {
         ),
         (OutpostError::RegistryEntryNotManaged(path("/outpost")), 6),
         (OutpostError::RegistryEntryNotFound(path("/missing")), 6),
+        (OutpostError::OutpostIdPrefixNotFound("abcde".to_owned()), 6),
+        (
+            OutpostError::OutpostIdPrefixAmbiguous("abcde".to_owned()),
+            6,
+        ),
+        (
+            OutpostError::OutpostSelectorAmbiguous("abcde".to_owned()),
+            6,
+        ),
         (
             OutpostError::BadRegistry {
                 path: path("/repo/.outpost/registry.json"),
@@ -592,6 +601,10 @@ fn e_15_deferred_and_removed_surfaces_are_rejected_by_clap() {
         (vec!["list", "--all"], "--all"),
         (vec!["list", "--porcelain"], "--porcelain"),
         (vec!["list", "-z"], "-z"),
+        (vec!["lock", "--outpost", "abcde"], "--outpost"),
+        (vec!["unlock", "--outpost", "abcde"], "--outpost"),
+        (vec!["move", "--outpost", "abcde", "D"], "--outpost"),
+        (vec!["remove", "--outpost", "abcde"], "--outpost"),
         (vec!["prune", "--expire", "now"], "--expire"),
         (vec!["pull", "--update-source"], "--update-source"),
         (vec!["pull", "--rebase"], "--rebase"),

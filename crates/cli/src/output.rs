@@ -16,7 +16,8 @@ pub fn print_list(summaries: &[ops::list::OutpostSummary], verbose: bool) {
             .map(|branch| branch.as_str())
             .unwrap_or("-");
         println!(
-            "{}\t{}\t{}\t{}{}",
+            "{}\t{}\t{}\t{}\t{}{}",
+            summary.display_id,
             summary.path.display(),
             branch,
             list_state(summary.state),

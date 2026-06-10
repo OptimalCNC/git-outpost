@@ -1,9 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
+use crate::selector::{OutpostSelector, resolve_entry};
 use crate::{BranchName, Outpost, OutpostError, OutpostResult, SourceRepo, safety};
 
 pub struct RemoveOptions {
-    pub path: PathBuf,
+    pub selector: OutpostSelector,
     pub force: bool,
 }
 
@@ -120,8 +121,7 @@ fn run_internal(
     mut mode: BranchCleanupMode<'_>,
 ) -> OutpostResult<RemoveReport> {
     let mut branch_cleanup = Vec::new();
-    let mut registry = source.registry_mut()?;
-    let entry = registry_entry(registry.entries(), &opts.path)?.clone();
+    let entry = resolve_entry(source, &opts.selector)?.entry;
     let report_path = entry.path.clone();
 
     if entry.locked && !opts.force {
@@ -132,6 +132,7 @@ fn run_internal(
     }
 
     if !entry.path.exists() {
+        let mut registry = source.registry_mut()?;
         registry.remove_by_path(&entry.path)?;
         registry.save()?;
         record_mode_skip(
@@ -145,7 +146,7 @@ fn run_internal(
         });
     }
 
-    let outpost = safety::check_path_is_managed_outpost_of(source, &entry.path)?;
+    let outpost = safety::check_entry_is_managed_outpost_of(source, &entry)?;
     if !opts.force {
         safety::check_clean(outpost.work_tree(), outpost.git())?;
         safety::check_no_unpushed(&outpost, source)?;
@@ -171,6 +172,7 @@ fn run_internal(
         }
     };
 
+    let mut registry = source.registry_mut()?;
     registry.remove_by_path(&entry.path)?;
     registry.save()?;
     std::fs::remove_dir_all(&entry.path).map_err(|source| OutpostError::IoAt {
@@ -186,29 +188,6 @@ fn run_internal(
         path: report_path,
         branch_cleanup,
     })
-}
-
-fn registry_entry<'a>(
-    entries: &'a [crate::RegistryEntry],
-    path: &Path,
-) -> OutpostResult<&'a crate::RegistryEntry> {
-    let lookup = canonicalize_existing_or_missing(path);
-    entries
-        .iter()
-        .find(|entry| entry.path == lookup)
-        .ok_or(OutpostError::RegistryEntryNotFound(lookup))
-}
-
-fn canonicalize_existing_or_missing(path: &Path) -> PathBuf {
-    match std::fs::canonicalize(path) {
-        Ok(canonical) => canonical,
-        Err(_) => match (path.parent(), path.file_name()) {
-            (Some(parent), Some(name)) => std::fs::canonicalize(parent)
-                .map(|parent| parent.join(Path::new(name)))
-                .unwrap_or_else(|_| path.to_path_buf()),
-            _ => path.to_path_buf(),
-        },
-    }
 }
 
 fn lock_reason(reason: &Option<String>) -> String {

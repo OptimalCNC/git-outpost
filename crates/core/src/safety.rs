@@ -2,7 +2,8 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::{
-    BranchName, GitInvoker, Outpost, OutpostError, OutpostResult, SourceRepo, UpstreamRef,
+    BranchName, GitInvoker, Outpost, OutpostError, OutpostResult, RegistryEntry, SourceRepo,
+    UpstreamRef,
 };
 
 const FORCE_HINT: &str = "pass --force";
@@ -67,6 +68,13 @@ pub fn check_path_is_managed_outpost_of(
     } else {
         Err(OutpostError::RegistryEntryNotManaged(candidate))
     }
+}
+
+pub fn check_entry_is_managed_outpost_of(
+    source: &SourceRepo,
+    entry: &RegistryEntry,
+) -> OutpostResult<Outpost> {
+    check_path_is_managed_outpost_of(source, &entry.path)
 }
 
 pub fn check_destination_clean(parent: &Path, dest: &Path) -> OutpostResult<()> {

@@ -83,8 +83,10 @@ git-outpost/                       # repo root
 │   │   │   ├── source_repo.rs       # SourceRepo type + helpers
 │   │   │   ├── outpost.rs           # Outpost type + helpers
 │   │   │   ├── metadata.rs          # outpost.* git config keys (always --local)
+│   │   │   ├── outpost_id.rs        # derived registry-scoped outpost ID aliases
 │   │   │   ├── registry.rs          # source .outpost registry JSON store
 │   │   │   ├── safety.rs            # dirty/divergence/path checks
+│   │   │   ├── selector.rs          # path-or-ID outpost selector resolution
 │   │   │   └── ops/                 # one file per command
 │   │   │       ├── mod.rs
 │   │   │       ├── add.rs
@@ -225,6 +227,15 @@ pub enum OutpostError {
 
     #[error("registry entry not found: {0}")]
     RegistryEntryNotFound(PathBuf),
+
+    #[error("outpost id prefix not found: {0}")]
+    OutpostIdPrefixNotFound(String),
+
+    #[error("outpost id prefix is ambiguous: {0}")]
+    OutpostIdPrefixAmbiguous(String),
+
+    #[error("outpost selector is ambiguous: {0}")]
+    OutpostSelectorAmbiguous(String),
 
     #[error("invalid registry file at {path}: {reason}")]
     BadRegistry { path: PathBuf, reason: String },
@@ -568,8 +579,8 @@ impl Metadata {
     /// - `Ok(Metadata { ... })` otherwise.
     pub fn from_raw(outpost: &Path, raw: RawMetadata) -> OutpostResult<Self>;
 
-    /// Writes via `git config --local <key> <value>` for each of the
-    /// three keys. `--local` is mandatory for the same reason as `read`.
+    /// Writes via `git config --local <key> <value>` for each required key.
+    /// `--local` is mandatory for the same reason as `read`.
     pub fn write(&self, git: &GitInvoker) -> OutpostResult<()>;
 }
 ```
@@ -713,12 +724,46 @@ as the destination, so the rename is intra-filesystem.
 `Registry::add` deduplicates by canonical path: re-adding an existing
 entry replaces it (with the new `created_at`/`remote_name`), it does
 not create a duplicate. If the old entry is locked, re-adding preserves
-the lock fields unless the caller explicitly supplies a new lock state.
-Tested by `U-02`.
+the lock fields unless the caller explicitly supplies a new lock state. The
+registry does not store outpost IDs; IDs are derived aliases over source path
+and registered outpost path.
 
 **Concurrency:** the registry is not protected against concurrent
 writes. Documented as a known limitation (§13). File locking with
 `fs2` is on the post-MVP list (§14).
+
+### 5.7.1 Outpost Identity And Selector Resolution
+
+`outpost_id.rs` owns `OutpostId` and `OutpostIdPrefix`. `OutpostId` is a
+64-character lowercase hex alias derived from a namespaced SHA-256 seed:
+canonical source path and canonical outpost path. It is not stored in the
+registry or in outpost metadata. `move` updates the registered path, so the
+outpost's derived ID changes after a move.
+
+`selector.rs` owns all `<outpost>` resolution for commands that accept an
+outpost operand: `lock`, `unlock`, `move`, and `remove`. The CLI passes raw
+operands and the effective cwd; it does not decide whether the operand is a
+path or an ID. This keeps ambiguity rules centralized and prevents future
+path-only lookup helpers from drifting.
+
+Resolver rules:
+
+- Explicit path syntax is path-only: absolute paths, paths with separators,
+  `.`/`..`, and non-UTF paths.
+- Bare non-hex tokens are path selectors.
+- Bare hex tokens of length at least 5 are checked as both ID prefixes and
+  relative path candidates.
+- A matching ID prefix must uniquely match one entry after deriving IDs from
+  the current source path and each registered outpost path; otherwise
+  resolution returns `OutpostIdPrefixNotFound` or `OutpostIdPrefixAmbiguous`.
+- If a bare hex token resolves as a path and as an ID for different entries,
+  resolution returns `OutpostSelectorAmbiguous`. This is a failure mode, not a
+  precedence decision.
+
+`ResolvedOutpostEntry` carries the cloned `RegistryEntry` and resolved path.
+Operations mutate the registry by the resolved registry path after resolution.
+`remove` uses entry-only resolution first, so a registered path missing on disk
+can still be deregistered by ID prefix.
 
 ### 5.8 `safety.rs`
 
@@ -768,8 +813,8 @@ This makes P-04 and Pu-04 reliable without surfacing `GitFailed` for
 stale refs.
 
 **`check_path_is_managed_outpost_of(source, candidate)`** is the
-security gate for operations that delete or move existing filesystem
-paths, such as `remove` and `move`. It:
+path-level security gate for operations that inspect an existing filesystem
+path. It:
 
 1. Canonicalizes `candidate`.
 2. Calls `source.outpost_at(candidate)` (an internal helper that
@@ -783,6 +828,10 @@ paths, such as `remove` and `move`. It:
    `.outpost/` directory (per §5.7), so an outpost belongs to the
    source path recorded in its metadata.
 4. Returns the `Outpost` only if all checks pass.
+
+**`check_entry_is_managed_outpost_of(source, entry)`** wraps the path-level
+gate for callers that already resolved a registry entry. Selector commands
+must use this entry-level gate before moving or deleting live directories.
 
 This means a hand-edited registry pointing at `/etc/passwd` cannot
 trick `gop remove` into deleting it: the path is not a managed
@@ -1237,20 +1286,18 @@ Step-by-step:
 
 ```rust
 pub struct LockOptions {
-    pub path: PathBuf,
+    pub selector: OutpostSelector,
     pub reason: Option<String>,
 }
 
-pub fn run(source: &SourceRepo, opts: LockOptions) -> OutpostResult<()>;
+pub fn run(source: &SourceRepo, opts: LockOptions) -> OutpostResult<PathBuf>;
 ```
 
 `run` performs:
-1. Canonicalize `opts.path`.
-2. Open `RegistryMut` and require an existing entry, else
-   `RegistryEntryNotFound`.
-3. Validate the path with `safety::check_path_is_managed_outpost_of`.
-4. Set `locked=true`, `lock_reason=opts.reason`,
-   `locked_at=Utc::now()`, save.
+1. Resolve `opts.selector` through `selector::resolve_live_entry`.
+2. Mutate the registry by the resolved path.
+3. Set `locked=true`, `lock_reason=opts.reason`,
+   `locked_at=Utc::now()`, save, and return the resolved path for CLI output.
 
 Lock state lives only in the source registry. It guards `move`,
 `remove`, and `prune` without changing the outpost's `.git` directory.
@@ -1259,50 +1306,52 @@ Lock state lives only in the source registry. It guards `move`,
 
 ```rust
 pub struct MoveOptions {
-    pub path: PathBuf,
+    pub selector: OutpostSelector,
     pub new_path: PathBuf,
     pub force: bool,
 }
 
-pub fn run(source: &SourceRepo, opts: MoveOptions) -> OutpostResult<()>;
+pub struct MoveReport {
+    pub old_path: PathBuf,
+    pub new_path: PathBuf,
+}
+
+pub fn run(source: &SourceRepo, opts: MoveOptions) -> OutpostResult<MoveReport>;
 ```
 
 `run` performs:
-1. Canonicalize `opts.path`, or return `RegistryEntryNotFound` if it
-   cannot be resolved.
-2. Open `RegistryMut` and require an existing entry. If the entry is
-   locked and `force=false`, return `OutpostLocked`.
-3. Validate the current path with
-   `safety::check_path_is_managed_outpost_of`; never move an
-   arbitrary registry target.
+1. Resolve `opts.selector` through `selector::resolve_entry`.
+2. If the entry is locked and `force=false`, return `OutpostLocked`.
+3. Validate the current entry with `safety::check_entry_is_managed_outpost_of`;
+   never move an arbitrary registry target.
 4. If `force=false`, require a clean outpost with hint
    `"pass --force"`; this matches `git worktree move`'s conservative
    surface.
 5. Validate `opts.new_path` with `safety::check_destination_clean`.
 6. Move with `std::fs::rename`. Cross-device moves are not emulated in
    MVP; `EXDEV` surfaces as `IoAt` and leaves the registry unchanged.
-7. Canonicalize the new path, update the registry entry path while
+7. Canonicalize the new path, update the registry entry by old path while
    preserving `created_at`, `remote_name`, and lock fields, save.
 
 #### 5.9.11 `ops/unlock.rs`
 
 ```rust
 pub struct UnlockOptions {
-    pub path: PathBuf,
+    pub selector: OutpostSelector,
 }
 
-pub fn run(source: &SourceRepo, opts: UnlockOptions) -> OutpostResult<()>;
+pub fn run(source: &SourceRepo, opts: UnlockOptions) -> OutpostResult<PathBuf>;
 ```
 
-`run` canonicalizes the path, requires an existing registry entry,
-validates that it is a managed outpost of the current source, clears
-`locked`, `lock_reason`, and `locked_at`, then saves the registry.
+`run` resolves `opts.selector` through `selector::resolve_live_entry`, mutates
+the registry by the resolved path, clears `locked`, `lock_reason`, and
+`locked_at`, saves the registry, and returns the resolved path for CLI output.
 
 #### 5.9.12 `ops/remove.rs`
 
 ```rust
 pub struct RemoveOptions {
-    pub path: PathBuf,
+    pub selector: OutpostSelector,
     pub force: bool,
 }
 
@@ -1322,15 +1371,15 @@ registry lookup and the registry lock check precede missing-path cleanup. After
 a successful CLI removal, stdout remains `removed <path>` and branch-cleanup
 diagnostics from `RemoveReport` are rendered to stderr.
 
-1. Canonicalize `opts.path`, retaining the original if the path is
-   missing.
-2. Open `RegistryMut` and look up the entry. If not found:
-   `RegistryEntryNotFound`.
+1. Resolve `opts.selector` through `selector::resolve_entry`. This does not
+   require the registered path to exist.
+2. If not found, return the resolver's selector error or
+   `RegistryEntryNotFound` for path-only selectors.
 3. If the entry is locked and `force=false`, return `OutpostLocked`.
-4. Missing on disk: remove the entry, save, and return Ok; no
+4. Missing on disk: remove the entry by path, save, and return Ok; no
    filesystem work (R-07).
 5. Existing path: require
-   `safety::check_path_is_managed_outpost_of(source, &path)`. On
+   `safety::check_entry_is_managed_outpost_of(source, &entry)`. On
    failure, return `RegistryEntryNotManaged` and delete nothing
    (R-08, R-09).
 6. If not `force`: `safety::check_clean` and
@@ -1349,7 +1398,7 @@ diagnostics from `RemoveReport` are rendered to stderr.
    fetched upstream default branch. If `gh` is unavailable or fails, CLI
    cleanup falls back to local Git proof only. Missing proof skips cleanup
    without blocking outpost removal.
-9. Remove the registry entry, save.
+9. Remove the registry entry by path, save.
 10. `std::fs::remove_dir_all(path)`. Errors here surface as `IoAt`.
 11. After the outpost directory is removed, prompt to delete the source branch.
     Source deletion uses `git update-ref -d refs/heads/BRANCH EXPECTED_OID`.
@@ -1601,10 +1650,13 @@ sync/status commands (`pull`, `source pull`, `merge`, `rebase`, `push`,
 documented dual-context behavior, opening the source directly from a
 source cwd or resolving it through outpost metadata from an outpost cwd.
 Contextual `lock` and `unlock` require an explicit `outpost_path` from a
-source cwd, but resolve a missing `outpost_path` from the effective cwd
-when it is a managed outpost, then pass that resolved path to the core
-operation. `status` has no positional target; its target is the
-effective cwd after global `-C` processing.
+source cwd, but build `OutpostSelector::from_path(current_outpost)` when
+the argument is omitted from a managed outpost cwd. For provided `<outpost>`
+operands, the CLI passes the raw operand and effective cwd into
+`OutpostSelector::from_cli_arg`; core owns path-vs-ID resolution. `move`
+treats only its first operand this way; `<new-path>` is resolved as a path by
+the CLI. `status` has no positional target; its target is the effective cwd
+after global `-C` processing.
 
 ### 6.3 Two binaries from one CLI crate
 
@@ -1697,10 +1749,12 @@ ownership provenance.
    `git switch` is preferred over `git checkout` because it is
    unambiguous about branch-vs-pathspec; no `--` is needed. Validated
    `BranchName` values prevent argv injection.
-10. It writes the three `outpost.*` config keys.
+10. It creates one `RegistryEntry`, then writes `outpost.managed`,
+    `outpost.sourceRepo`, and `outpost.remoteName` to C. Outpost ID aliases
+    are derived later from the source path and registered outpost path.
 11. It runs
     `git -C <source> config --local receive.denyCurrentBranch updateInstead`.
-12. It opens `RegistryMut`, adds an entry for the canonicalized
+12. It opens `RegistryMut`, adds the same entry for the canonicalized
     destination, and saves.
 13. Returns `source.outpost_at(destination)` so the resulting
     `Outpost` inherits `source.env` (closes the env-leakage gap
@@ -1738,6 +1792,9 @@ impl OutpostError {
             BranchNotFound { .. } | NoUpstreamTracking { .. }
                 | InvalidRefName { .. } | UpstreamNotABranch { .. } => 5,
             BadRegistry { .. } | BadMetadata { .. }
+                | OutpostIdPrefixNotFound(_)
+                | OutpostIdPrefixAmbiguous(_)
+                | OutpostSelectorAmbiguous(_)
                 | RegistryEntryNotManaged(_)
                 | RegistryEntryNotFound(_) => 6,
             // Clamp BEFORE the cast so a code like 256 doesn't wrap
@@ -2118,6 +2175,7 @@ Pin to compatible-version ranges (`^x.y` style); MSRV is **Rust 1.75**.
 | `thiserror` | 1.0 | Derived `Display`/`Error` for `OutpostError`. |
 | `serde` / `serde_json` | 1.0 | Registry on-disk format. |
 | `chrono` | 0.4 (features: `["clock", "serde", "std"]`, `default-features = false`) | Registry timestamps. The `clock` feature is required for `Utc::now()`; `serde` for JSON. Replaceable with `time`/`jiff` if a CVE forces it. |
+| `sha2` | 0.10 | Namespaced SHA-256 generation for derived outpost ID aliases. |
 | `fs_extra` | 1.3 | Cross-platform recursive directory copy in test E-07. |
 | `tempfile` | 3 | Test fixtures and atomic registry writes. |
 | `assert_cmd` | 2 | CLI integration tests. |
