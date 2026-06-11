@@ -121,7 +121,7 @@ fn entry_at(path: &Path) -> RegistryEntry {
 fn colliding_paths(fixture: &AbcFixture, source: &SourceRepo) -> (PathBuf, PathBuf, String) {
     let mut prefixes = HashMap::<String, PathBuf>::new();
     for index in 0..5000 {
-        let path = fixture.root.join(format!("candidate-{index}"));
+        let path = canonical_missing(&fixture.root.join(format!("candidate-{index}")));
         let id = OutpostId::derive(source.work_tree(), &path);
         let prefix = id.as_str()[..5].to_owned();
         if let Some(first) = prefixes.insert(prefix.clone(), path.clone()) {
@@ -147,4 +147,12 @@ fn missing_prefix(source_path: &Path, paths: &[PathBuf]) -> String {
 
 fn canonical(path: &Path) -> PathBuf {
     fs::canonicalize(path).expect("canonical path")
+}
+
+fn canonical_missing(path: &Path) -> PathBuf {
+    let parent = path.parent().expect("candidate parent");
+    let name = path.file_name().expect("candidate name");
+    let mut canonical = canonical(parent);
+    canonical.push(name);
+    canonical
 }
