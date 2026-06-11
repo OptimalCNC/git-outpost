@@ -54,6 +54,7 @@ fn e_04_basic_cli_lifecycle_round_trip_exits_zero() {
 fn list_prints_id_column_and_lifecycle_accepts_id_prefix() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
+    let outpost_display = common::displayed_path(&outpost);
 
     let list = common::run(fixture.gop().current_dir(&fixture.source).arg("list"));
     common::assert_success(&list, "gop list");
@@ -67,7 +68,7 @@ fn list_prints_id_column_and_lifecycle_accepts_id_prefix() {
     let id_prefix = columns[0];
     assert_eq!(id_prefix.len(), 5);
     assert!(id_prefix.chars().all(|ch| ch.is_ascii_hexdigit()));
-    assert_eq!(columns[1], outpost.display().to_string());
+    assert_eq!(columns[1], outpost_display);
 
     let lock = common::run(
         fixture
@@ -78,7 +79,7 @@ fn list_prints_id_column_and_lifecycle_accepts_id_prefix() {
     common::assert_success(&lock, "gop lock by id");
     assert_eq!(
         common::stdout(&lock),
-        format!("locked {}\n", outpost.display())
+        format!("locked {}\n", outpost_display)
     );
 
     let unlock = common::run(
@@ -90,7 +91,7 @@ fn list_prints_id_column_and_lifecycle_accepts_id_prefix() {
     common::assert_success(&unlock, "gop unlock by id");
     assert_eq!(
         common::stdout(&unlock),
-        format!("unlocked {}\n", outpost.display())
+        format!("unlocked {}\n", outpost_display)
     );
 
     let moved = fixture.outpost("D");
@@ -101,9 +102,10 @@ fn list_prints_id_column_and_lifecycle_accepts_id_prefix() {
             .args(["move", id_prefix, "../D"]),
     );
     common::assert_success(&move_out, "gop move by id");
+    let moved_display = common::displayed_path(&moved);
     assert_eq!(
         common::stdout(&move_out),
-        format!("moved {} -> {}\n", outpost.display(), moved.display())
+        format!("moved {} -> {}\n", outpost_display, moved_display)
     );
     assert!(!outpost.exists());
     assert!(moved.exists());
@@ -115,7 +117,7 @@ fn list_prints_id_column_and_lifecycle_accepts_id_prefix() {
     let columns = first_line.split('\t').collect::<Vec<_>>();
     let moved_id_prefix = columns[0];
     assert_ne!(moved_id_prefix, id_prefix);
-    assert_eq!(columns[1], moved.display().to_string());
+    assert_eq!(columns[1], moved_display);
 
     let remove = common::run(fixture.gop().current_dir(&fixture.source).args([
         "remove",
@@ -125,7 +127,7 @@ fn list_prints_id_column_and_lifecycle_accepts_id_prefix() {
     common::assert_success(&remove, "gop remove by id");
     assert_eq!(
         common::stdout(&remove),
-        format!("removed {}\n", moved.display())
+        format!("removed {}\n", moved_display)
     );
     assert!(!moved.exists());
 }
@@ -143,6 +145,7 @@ fn remove_noninteractive_skips_branch_cleanup() {
             .args(["add", "../C", "feat"]),
     );
     common::assert_success(&add, "gop add feat");
+    let outpost_display = common::displayed_path(&outpost);
 
     let remove = common::run(
         fixture
@@ -154,7 +157,7 @@ fn remove_noninteractive_skips_branch_cleanup() {
 
     assert_eq!(
         common::stdout(&remove),
-        format!("removed {}\n", outpost.display())
+        format!("removed {}\n", outpost_display)
     );
     let stderr = common::stderr(&remove);
     assert!(
@@ -183,6 +186,7 @@ fn remove_no_branch_cleanup_reports_disabled_cleanup() {
             .args(["add", "../C", "feat"]),
     );
     common::assert_success(&add, "gop add feat");
+    let outpost_display = common::displayed_path(&outpost);
 
     let remove = common::run(fixture.gop().current_dir(&fixture.source).args([
         "remove",
@@ -193,7 +197,7 @@ fn remove_no_branch_cleanup_reports_disabled_cleanup() {
 
     assert_eq!(
         common::stdout(&remove),
-        format!("removed {}\n", outpost.display())
+        format!("removed {}\n", outpost_display)
     );
     let stderr = common::stderr(&remove);
     assert!(
@@ -212,6 +216,8 @@ fn remove_no_branch_cleanup_reports_disabled_cleanup() {
 fn analyze_runs_from_source_with_selector_and_from_outpost_without_selector() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
+    let outpost_display = common::displayed_path(&outpost);
+    let source_display = common::displayed_path(&fixture.source);
 
     let from_source = common::run(
         fixture
@@ -223,8 +229,8 @@ fn analyze_runs_from_source_with_selector_and_from_outpost_without_selector() {
     let source_stdout = common::stdout(&from_source);
     let source_stderr = common::stderr(&from_source);
     assert!(
-        source_stdout.contains(&format!("outpost: {}", outpost.display()))
-            && source_stdout.contains(&format!("source: {}", fixture.source.display()))
+        source_stdout.contains(&format!("outpost: {outpost_display}"))
+            && source_stdout.contains(&format!("source: {source_display}"))
             && source_stdout.contains("upstream-remote:")
             && source_stdout.contains("upstream-url:")
             && source_stdout.contains("github:")

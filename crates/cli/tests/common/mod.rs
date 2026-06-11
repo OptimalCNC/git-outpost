@@ -188,6 +188,13 @@ pub fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
+pub fn displayed_path(path: &Path) -> String {
+    fs::canonicalize(path)
+        .unwrap_or_else(|_| path.to_path_buf())
+        .display()
+        .to_string()
+}
+
 pub fn assert_success(output: &Output, label: &str) {
     assert!(
         output.status.success(),
