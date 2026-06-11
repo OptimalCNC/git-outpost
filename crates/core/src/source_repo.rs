@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use crate::outpost::Outpost;
 use crate::registry::{Registry, RegistryMut};
-use crate::{BranchName, GitInvoker, OutpostError, OutpostResult, RefName, UpstreamRef};
+use crate::{
+    BranchName, GitInvoker, OutpostError, OutpostResult, RefName, RemoteName, UpstreamRef,
+};
 
 pub struct SourceRepo {
     work_tree: PathBuf,
@@ -145,6 +147,10 @@ impl SourceRepo {
         }))
     }
 
+    pub fn remote_url(&self, remote: &RemoteName) -> OutpostResult<String> {
+        self.git.run_capture(["remote", "get-url", remote.as_str()])
+    }
+
     pub fn branch_exists(&self, branch: &BranchName) -> OutpostResult<bool> {
         let branch_ref = format!("refs/heads/{}", branch.as_str());
         self.git
@@ -160,8 +166,18 @@ impl SourceRepo {
     }
 
     pub fn origin_branch_oid(&self, branch: &BranchName) -> OutpostResult<Option<String>> {
+        self.remote_branch_oid(&origin_remote(), branch)
+    }
+
+    pub fn remote_branch_oid(
+        &self,
+        remote: &RemoteName,
+        branch: &BranchName,
+    ) -> OutpostResult<Option<String>> {
         let remote_ref = source_branch_ref(branch);
-        let output = self.git.run_capture(["ls-remote", "origin", &remote_ref])?;
+        let output = self
+            .git
+            .run_capture(["ls-remote", remote.as_str(), &remote_ref])?;
         if output.is_empty() {
             return Ok(None);
         }
@@ -181,17 +197,23 @@ impl SourceRepo {
     }
 
     pub fn origin_default_branch(&self) -> OutpostResult<Option<BranchName>> {
+        self.remote_default_branch(&origin_remote())
+    }
+
+    pub fn remote_default_branch(&self, remote: &RemoteName) -> OutpostResult<Option<BranchName>> {
+        let head_ref = format!("refs/remotes/{}/HEAD", remote.as_str());
         if !self
             .git
-            .run_status(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])?
+            .run_status(["symbolic-ref", "--quiet", &head_ref])?
         {
             return Ok(None);
         }
 
-        let reference =
-            self.git
-                .run_capture(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])?;
-        let Some(branch) = reference.strip_prefix("refs/remotes/origin/") else {
+        let reference = self
+            .git
+            .run_capture(["symbolic-ref", "--quiet", &head_ref])?;
+        let remote_prefix = format!("refs/remotes/{}/", remote.as_str());
+        let Some(branch) = reference.strip_prefix(&remote_prefix) else {
             return Err(invalid_git_output(&self.git, &reference));
         };
 
@@ -199,16 +221,57 @@ impl SourceRepo {
     }
 
     pub fn fetch_origin_default_branch(&self) -> OutpostResult<Option<(BranchName, String)>> {
-        let Some(branch) = self.origin_default_branch()? else {
+        self.fetch_remote_default_branch(&origin_remote())
+    }
+
+    pub fn fetch_remote_default_branch(
+        &self,
+        remote: &RemoteName,
+    ) -> OutpostResult<Option<(BranchName, String)>> {
+        let branch = match self.remote_default_branch(remote)? {
+            Some(branch) => Some(branch),
+            None => self.remote_head_branch(remote)?,
+        };
+        let Some(branch) = branch else {
             return Ok(None);
         };
 
-        let remote_tracking_ref = format!("refs/remotes/origin/{}", branch.as_str());
+        let remote_tracking_ref = format!("refs/remotes/{}/{}", remote.as_str(), branch.as_str());
         let fetch_refspec = format!("+{}:{remote_tracking_ref}", source_branch_ref(&branch));
-        self.git.run_check(["fetch", "origin", &fetch_refspec])?;
+        self.git
+            .run_check(["fetch", remote.as_str(), &fetch_refspec])?;
         let oid = rev_parse(&self.git, &remote_tracking_ref)?;
 
         Ok(Some((branch, oid.trim().to_owned())))
+    }
+
+    fn remote_head_branch(&self, remote: &RemoteName) -> OutpostResult<Option<BranchName>> {
+        let output = self
+            .git
+            .run_capture(["ls-remote", "--symref", remote.as_str(), "HEAD"])?;
+        for line in output.lines() {
+            let Some(rest) = line.strip_prefix("ref: ") else {
+                continue;
+            };
+            let mut fields = rest.split_whitespace();
+            let Some(reference) = fields.next() else {
+                return Err(invalid_git_output(&self.git, &output));
+            };
+            let Some(name) = fields.next() else {
+                return Err(invalid_git_output(&self.git, &output));
+            };
+            if fields.next().is_some() {
+                return Err(invalid_git_output(&self.git, &output));
+            }
+            if name != "HEAD" {
+                continue;
+            }
+            let Some(branch) = reference.strip_prefix("refs/heads/") else {
+                return Err(invalid_git_output(&self.git, &output));
+            };
+            return BranchName::parse(branch.to_owned()).map(Some);
+        }
+        Ok(None)
     }
 
     pub fn is_ancestor_oid(&self, ancestor: &str, descendant: &str) -> OutpostResult<bool> {
@@ -234,13 +297,22 @@ impl SourceRepo {
         branch: &BranchName,
         expected_oid: &str,
     ) -> OutpostResult<()> {
+        self.delete_remote_branch_if_oid(&origin_remote(), branch, expected_oid)
+    }
+
+    pub fn delete_remote_branch_if_oid(
+        &self,
+        remote: &RemoteName,
+        branch: &BranchName,
+        expected_oid: &str,
+    ) -> OutpostResult<()> {
         let lease = format!(
             "--force-with-lease=refs/heads/{}:{expected_oid}",
             branch.as_str()
         );
         let delete_refspec = format!(":refs/heads/{}", branch.as_str());
         self.git
-            .run_check(["push", &lease, "origin", &delete_refspec])
+            .run_check(["push", &lease, remote.as_str(), &delete_refspec])
     }
 
     pub fn fast_forward_branch_from_origin(&self, branch: &BranchName) -> OutpostResult<()> {
@@ -383,6 +455,10 @@ fn map_discovery_error(err: OutpostError, path: &Path) -> OutpostError {
 
 fn source_branch_ref(branch: &BranchName) -> String {
     format!("refs/heads/{}", branch.as_str())
+}
+
+fn origin_remote() -> RemoteName {
+    RemoteName::parse("origin").expect("origin is a valid remote name")
 }
 
 fn invalid_git_output(git: &GitInvoker, output: &str) -> OutpostError {

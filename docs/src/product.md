@@ -28,7 +28,7 @@ GitHub clone.
 
 - Make adding another working checkout as simple as adding a Git worktree.
 - Support the essential outpost lifecycle: add, pull, source pull, merge,
-  rebase, push, list, lock, unlock, move, remove, prune, and status.
+  rebase, push, list, lock, unlock, move, remove, prune, status, and analyze.
 - Keep each outpost self-contained enough for devcontainers and editors.
 - Avoid `git clone --shared`, because its object alternates still point outside
   the clone and can recreate the same portability issue as worktrees.
@@ -104,7 +104,7 @@ must match, the branch must not be checked out or be the upstream default
 branch, and the branch must be proven merged by a merged pull request or by
 local ancestry to the fetched upstream default branch. The user is prompted
 before deleting the source branch, and prompted separately before deleting the
-matching upstream `origin/<branch>` branch.
+matching upstream `<remote>/<branch>` branch.
 
 Git Outpost also writes source-local setup state: a local ignore entry for
 `.outpost/` and `receive.denyCurrentBranch=updateInstead`. This setup state is
@@ -209,13 +209,15 @@ gop move [-f|--force] <outpost> <new-path>
 gop remove [-f|--force] [--no-branch-cleanup] <outpost>
 gop prune [-n|--dry-run] [-v|--verbose]
 gop status
+gop analyze [<outpost>]
 ```
 
-For `lock`, `unlock`, `move`, and `remove`, `<outpost>` is either a path or a
-unique outpost ID prefix from `gop list`. ID prefixes are scoped to the current
-source repository registry and are derived from each registered path. Prefixes
-must be at least 5 hex characters; if a prefix is missing or matches more than
-one registered outpost, the command fails instead of guessing.
+For `lock`, `unlock`, `move`, `remove`, and `analyze`, `<outpost>` is either a
+path or a unique outpost ID prefix from `gop list`. ID prefixes are scoped to
+the current source repository registry and are derived from each registered
+path. Prefixes must be at least 5 hex characters; if a prefix is missing or
+matches more than one registered outpost, the command fails instead of
+guessing.
 
 The MVP keeps only the options that are meaningful for clone-backed outposts.
 It does not mirror every `git worktree` option. Synchronization commands have
@@ -243,6 +245,7 @@ additional working-directory-specific behavior to explain.
 | `remove` | / | Disallowed |
 | `prune` | / | Disallowed |
 | `status` | Disallowed | / |
+| `analyze` | Requires `<outpost>` | May omit `<outpost>`; defaults to the current outpost |
 
 ## Commands
 
@@ -429,7 +432,7 @@ deletes the outpost directory.
 In interactive terminals, `remove` then analyzes the outpost's tracked source
 branch and prompts before branch cleanup when it can prove deletion is safe. It
 deletes the local source branch with an exact-OID guard, so a branch that moves
-during cleanup is left intact. If `origin/<branch>` exists at the analyzed OID,
+during cleanup is left intact. If `<remote>/<branch>` exists at the analyzed OID,
 the command prompts separately before deleting the upstream branch with
 `--force-with-lease`. If proof is missing, prompts are declined, the command is
 non-interactive, or cleanup fails after the outpost directory is removed,
@@ -481,6 +484,24 @@ Output should include:
 
 Status operates on the current directory. Use `gop -C <path> status` to
 inspect another outpost.
+
+### `analyze [<outpost>]`
+
+Analyze a managed outpost and its related source/upstream branch state. From a
+source repository, `<outpost>` is required and accepts the same path or unique
+ID prefix selectors as lifecycle commands. From a managed outpost, omitting
+`<outpost>` analyzes the current outpost.
+
+`analyze` is read-only with respect to working trees, source/outpost branches,
+registry state, and GitHub state. It may fetch remote-tracking refs and may use
+`gh` for best-effort pull request metadata. Probe failures are reported as
+`unknown` or `unavailable` fields rather than prompts or advice.
+
+Output includes the outpost path, source path, upstream remote name and URL,
+branch, dirty state, lock state, ahead/behind comparisons, upstream default and
+upstream branch identities with their remote names, source push hazard status,
+GitHub availability and matching pull requests, and whether the same proof used
+by `remove` would make source branch deletion safe.
 
 ## Synchronization
 

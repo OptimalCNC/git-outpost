@@ -1391,7 +1391,7 @@ diagnostics from `RemoveReport` are rendered to stderr.
    `refs/heads/BRANCH`; the matching source branch must exist; outpost
    `HEAD` must equal that source branch tip; the branch must not be checked
    out in the source repository or another source worktree; and the branch
-   must not equal the resolved `origin/HEAD` default branch.
+   must not equal the resolved default branch for the selected upstream remote.
 8. A cleanup candidate needs one proof: either the provider reports a merged
    pull request whose `headRefName` and `headRefOid` match the branch and
    source tip, or local Git proves the source branch tip is an ancestor of the
@@ -1402,9 +1402,9 @@ diagnostics from `RemoveReport` are rendered to stderr.
 10. `std::fs::remove_dir_all(path)`. Errors here surface as `IoAt`.
 11. After the outpost directory is removed, prompt to delete the source branch.
     Source deletion uses `git update-ref -d refs/heads/BRANCH EXPECTED_OID`.
-12. If `origin/BRANCH` existed at analysis time and still points at the same
+12. If `<remote>/BRANCH` existed at analysis time and still points at the same
     OID, prompt separately before upstream deletion. Upstream deletion uses
-    `git push --force-with-lease=refs/heads/BRANCH:EXPECTED_OID origin
+    `git push --force-with-lease=refs/heads/BRANCH:EXPECTED_OID <remote>
     :refs/heads/BRANCH`. Any branch cleanup failure becomes a warning in
     `RemoveReport`, not a rollback trigger.
 
@@ -1649,14 +1649,15 @@ sync/status commands (`pull`, `source pull`, `merge`, `rebase`, `push`,
 `status`) are rejected from source repositories. `list` keeps its
 documented dual-context behavior, opening the source directly from a
 source cwd or resolving it through outpost metadata from an outpost cwd.
-Contextual `lock` and `unlock` require an explicit `outpost_path` from a
-source cwd, but build `OutpostSelector::from_path(current_outpost)` when
-the argument is omitted from a managed outpost cwd. For provided `<outpost>`
-operands, the CLI passes the raw operand and effective cwd into
-`OutpostSelector::from_cli_arg`; core owns path-vs-ID resolution. `move`
-treats only its first operand this way; `<new-path>` is resolved as a path by
-the CLI. `status` has no positional target; its target is the effective cwd
-after global `-C` processing.
+Contextual commands (`lock`, `unlock`, and `analyze`) require an explicit
+`outpost_path` from a source cwd, but build
+`OutpostSelector::from_path(current_outpost)` when the argument is omitted
+from a managed outpost cwd. For provided `<outpost>` operands, the CLI
+passes the raw operand and effective cwd into `OutpostSelector::from_cli_arg`;
+core owns path-vs-ID resolution. `move` treats only its first operand this
+way; `<new-path>` is resolved as a path by the CLI. `status` has no
+positional target; its target is the effective cwd after global `-C`
+processing.
 
 ### 6.3 Two binaries from one CLI crate
 

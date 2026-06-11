@@ -1,4 +1,6 @@
 pub mod add;
+pub mod analyze;
+pub mod branch_analysis;
 pub mod list;
 pub mod lock;
 pub mod merge;

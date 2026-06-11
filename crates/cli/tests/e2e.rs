@@ -209,6 +209,119 @@ fn remove_no_branch_cleanup_reports_disabled_cleanup() {
 }
 
 #[test]
+fn analyze_runs_from_source_with_selector_and_from_outpost_without_selector() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+
+    let from_source = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["analyze", "../C"]),
+    );
+    common::assert_success(&from_source, "gop analyze from source");
+    let source_stdout = common::stdout(&from_source);
+    let source_stderr = common::stderr(&from_source);
+    assert!(
+        source_stdout.contains(&format!("outpost: {}", outpost.display()))
+            && source_stdout.contains(&format!("source: {}", fixture.source.display()))
+            && source_stdout.contains("upstream-remote:")
+            && source_stdout.contains("upstream-url:")
+            && source_stdout.contains("github:")
+            && source_stdout.contains("pull-requests:")
+            && source_stdout.contains("upstream-default-branch:")
+            && source_stdout.contains("source-vs-upstream-default:")
+            && source_stdout.contains("safe-delete:"),
+        "analyze output should include factual report labels:\n{source_stdout}"
+    );
+    assert!(
+        source_stderr.contains("analysis: resolving outpost ... ")
+            && source_stderr.contains("analysis: checking GitHub availability ... ")
+            && source_stderr.contains("analysis: discovering upstream default branch ... ")
+            && source_stderr.contains("analysis: comparing source and upstream default ... ")
+            && source_stderr.contains("analysis: checking GitHub metadata ... ")
+            && source_stderr.contains("analysis: checking safe branch deletion proof ... "),
+        "analyze should stream same-line progress and result messages to stderr:\n{source_stderr}"
+    );
+
+    let list = common::run(fixture.gop().current_dir(&fixture.source).arg("list"));
+    common::assert_success(&list, "gop list");
+    let id_prefix = common::stdout(&list)
+        .lines()
+        .next()
+        .expect("list line")
+        .split('\t')
+        .next()
+        .expect("id prefix")
+        .to_owned();
+    let from_id = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["analyze", &id_prefix]),
+    );
+    common::assert_success(&from_id, "gop analyze by id");
+    assert_eq!(common::stdout(&from_source), common::stdout(&from_id));
+
+    let from_outpost = common::run(fixture.gop().current_dir(&outpost).arg("analyze"));
+    common::assert_success(&from_outpost, "gop analyze from outpost");
+    assert_eq!(common::stdout(&from_source), common::stdout(&from_outpost));
+}
+
+#[test]
+fn analyze_reports_source_upstream_remote_when_not_origin() {
+    let fixture = common::CliFixture::new();
+    let rename = common::run(
+        fixture
+            .git(&fixture.source)
+            .args(["remote", "rename", "origin", "upstream"]),
+    );
+    common::assert_success(&rename, "rename source remote");
+    let track = common::run(fixture.git(&fixture.source).args([
+        "branch",
+        "--set-upstream-to",
+        "upstream/main",
+        "main",
+    ]));
+    common::assert_success(&track, "set source upstream");
+    let head = common::run(
+        fixture
+            .git(&fixture.source)
+            .args(["remote", "set-head", "upstream", "main"]),
+    );
+    common::assert_success(&head, "set upstream head");
+    let outpost = fixture.add_outpost("C");
+
+    let output = common::run(fixture.gop().current_dir(&outpost).arg("analyze"));
+
+    common::assert_success(&output, "gop analyze");
+    let stdout = common::stdout(&output);
+    assert!(
+        stdout.contains("upstream-remote: upstream")
+            && stdout.contains(&format!("upstream-url: {}", fixture.upstream.display()))
+            && stdout.contains("upstream-branch: upstream/main at ")
+            && stdout.contains("upstream-default-branch: upstream/main at ")
+            && stdout.contains("source-vs-upstream: ahead 0, behind 0"),
+        "analyze should report the configured source upstream remote:\n{stdout}"
+    );
+}
+
+#[test]
+fn analyze_from_source_requires_outpost_selector() {
+    let fixture = common::CliFixture::new();
+    fixture.add_outpost("C");
+
+    let output = common::run(fixture.gop().current_dir(&fixture.source).arg("analyze"));
+
+    common::assert_failure_code(&output, 2, "gop analyze without selector");
+    let stderr = common::stderr(&output);
+    assert!(
+        stderr.contains("analyze requires <outpost>"),
+        "missing-path stderr should explain source analyze usage:\n{stderr}"
+    );
+}
+
+#[test]
 fn dispatch_matrix_contextual_source_and_outpost_commands() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");

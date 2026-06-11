@@ -43,7 +43,7 @@ CLI crate/package with two binary targets sharing one `src/main.rs` entrypoint:
 The implementation should start with the core lifecycle commands:
 
 ```text
-add, pull, source pull, merge, rebase, push, list, lock, unlock, move, remove, prune, status
+add, pull, source pull, merge, rebase, push, list, lock, unlock, move, remove, prune, status, analyze
 ```
 
 The first version should prioritize predictable behavior and clear errors

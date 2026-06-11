@@ -32,7 +32,7 @@ fn e_03_help_lists_commands_and_long_flags() {
     let help = common::stdout(&output);
     for command in [
         "add", "pull", "source", "merge", "rebase", "push", "list", "lock", "unlock", "move",
-        "remove", "prune", "status",
+        "remove", "prune", "status", "analyze",
     ] {
         assert_eq!(
             count_command_line(&help, command),

@@ -6,6 +6,7 @@ pub trait Reporter {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepKind {
+    Analysis,
     SourceFetch,
     SourcePush,
     OutpostFetch,

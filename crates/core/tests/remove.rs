@@ -585,7 +585,10 @@ fn remove_with_cleanup_prompts_separately_for_upstream_branch() {
     assert_eq!(prompt.upstream_prompts, vec![branch.clone()]);
     assert!(report.branch_cleanup.iter().any(|outcome| matches!(
         outcome,
-        remove::BranchCleanupOutcome::DeclinedUpstreamBranch { branch: declined } if declined == &branch
+        remove::BranchCleanupOutcome::DeclinedUpstreamBranch {
+            remote,
+            branch: declined,
+        } if remote.as_str() == "origin" && declined == &branch
     )));
 }
 

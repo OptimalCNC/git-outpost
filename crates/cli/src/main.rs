@@ -11,7 +11,7 @@ use std::process::ExitCode;
 use cli::{Cli, Command, SourceCommand};
 use exit::CliResult;
 use outpost_core::selector::OutpostSelector;
-use outpost_core::{Outpost, OutpostError, SourceRepo, ops};
+use outpost_core::{Outpost, OutpostError, Reporter, SourceRepo, StepKind, ops};
 use reporter_impls::StderrReporter;
 
 fn main() -> ExitCode {
@@ -36,7 +36,7 @@ fn run() -> CliResult<()> {
 
 fn dispatch(cli: Cli) -> CliResult<()> {
     let cwd = effective_cwd(cli.cd)?;
-    let mut reporter = StderrReporter;
+    let mut reporter = StderrReporter::new();
 
     match cli.command {
         Command::Add(args) => {
@@ -163,6 +163,23 @@ fn dispatch(cli: Cli) -> CliResult<()> {
             let report = ops::status::run(&cwd)?;
             output::print_status(&report);
         }
+        Command::Analyze(args) => {
+            let (source, selector) =
+                contextual_outpost_selector("analyze", &cwd, args.outpost_path)?;
+            reporter.step(StepKind::Analysis, "checking GitHub availability");
+            let gh_status = gh::GhStatus::detect(&source);
+            reporter.step(StepKind::Analysis, &gh_status.progress_message());
+            let report = ops::analyze::run_with_reporter(
+                &source,
+                ops::analyze::AnalyzeOptions { selector },
+                gh_status.provider(),
+                &mut reporter,
+            )?;
+            reporter.step(StepKind::Analysis, "checking GitHub metadata");
+            let github = gh_status.analyze(report.branch.as_ref());
+            reporter.step(StepKind::Analysis, &github.progress_message());
+            output::print_analyze(&report, &github);
+        }
     }
 
     Ok(())
@@ -191,7 +208,8 @@ impl ops::remove::BranchCleanupPrompt for TerminalBranchCleanupPrompt {
         candidate: &ops::remove::BranchCleanupCandidate,
     ) -> bool {
         prompt_yes_no(&format!(
-            "Delete upstream branch 'origin/{}' at {}? [y/N] ",
+            "Delete upstream branch '{}/{}' at {}? [y/N] ",
+            candidate.upstream_remote.as_str(),
             candidate.branch.as_str(),
             candidate
                 .upstream_oid
@@ -225,11 +243,13 @@ fn proof_summary(proof: &ops::remove::BranchCleanupProof) -> String {
             format!("merged pull request {}", pr.id)
         }
         ops::remove::BranchCleanupProof::AncestorOfDefaultBranch {
+            remote,
             default_branch,
             default_oid,
         } => {
             format!(
-                "ancestor of origin/{} at {}",
+                "ancestor of {}/{} at {}",
+                remote.as_str(),
                 default_branch.as_str(),
                 short_oid(default_oid)
             )

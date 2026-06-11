@@ -86,6 +86,9 @@ pub enum Command {
 
     /// Summarize the current managed outpost.
     Status(StatusArgs),
+
+    /// Analyze a managed outpost and related branch state.
+    Analyze(AnalyzeArgs),
 }
 
 impl Command {
@@ -103,7 +106,8 @@ impl Command {
             | Command::Move(_)
             | Command::Remove(_)
             | Command::Prune(_)
-            | Command::Status(_) => Ok(()),
+            | Command::Status(_)
+            | Command::Analyze(_) => Ok(()),
         }
     }
 }
@@ -230,6 +234,12 @@ pub struct PruneArgs {
 
 #[derive(Debug, Args)]
 pub struct StatusArgs;
+
+#[derive(Debug, Args)]
+pub struct AnalyzeArgs {
+    #[arg(value_name = "OUTPOST")]
+    pub outpost_path: Option<PathBuf>,
+}
 
 #[derive(Debug, Args)]
 pub struct PullArgs;

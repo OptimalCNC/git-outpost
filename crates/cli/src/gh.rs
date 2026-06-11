@@ -4,11 +4,14 @@ use std::io::{self, ErrorKind};
 use std::path::PathBuf;
 use std::process::Command;
 
-use outpost_core::ops::remove::{BranchCleanupProvider, MergedPullRequest};
+use outpost_core::ops::analyze::Probe;
+use outpost_core::ops::branch_analysis::{BranchCleanupProvider, MergedPullRequest};
 use outpost_core::{BranchName, OutpostError, OutpostResult, SourceRepo};
 use serde::Deserialize;
 
 const PR_FIELDS: &str = "number,url,headRefName,headRefOid,mergedAt";
+const ANALYZE_PR_FIELDS: &str =
+    "number,url,state,isDraft,baseRefName,headRefName,headRefOid,reviewDecision,statusCheckRollup";
 
 pub struct GhProbe {
     program: OsString,
@@ -20,6 +23,27 @@ pub enum GhStatus {
     Available(GhProbe),
     NotInstalled,
     Unavailable { message: String },
+}
+
+pub struct GithubAnalysis {
+    pub availability: GithubAvailability,
+    pub pull_requests: Probe<Vec<PullRequestSummary>>,
+}
+
+pub enum GithubAvailability {
+    Available,
+    Unavailable(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullRequestSummary {
+    pub id: String,
+    pub state: String,
+    pub draft: bool,
+    pub base: String,
+    pub head: String,
+    pub review: String,
+    pub checks: String,
 }
 
 impl GhStatus {
@@ -63,6 +87,50 @@ impl GhStatus {
             Self::NotInstalled | Self::Unavailable { .. } => None,
         }
     }
+
+    pub fn progress_message(&self) -> String {
+        match self {
+            Self::Available(_) => "available".to_owned(),
+            Self::NotInstalled => "unavailable: gh not found".to_owned(),
+            Self::Unavailable { message } => format!("unavailable: {message}"),
+        }
+    }
+
+    pub fn analyze(&self, branch: Option<&BranchName>) -> GithubAnalysis {
+        match self {
+            Self::Available(probe) => {
+                let pull_requests = match branch {
+                    Some(branch) => match probe.pull_requests(branch) {
+                        Ok(prs) => Probe::Known(prs),
+                        Err(err) => Probe::Unavailable(err.to_string()),
+                    },
+                    None => Probe::Unknown("branch is unknown".to_owned()),
+                };
+                GithubAnalysis {
+                    availability: GithubAvailability::Available,
+                    pull_requests,
+                }
+            }
+            Self::NotInstalled => GithubAnalysis {
+                availability: GithubAvailability::Unavailable("gh not found".to_owned()),
+                pull_requests: Probe::Unavailable("gh not found".to_owned()),
+            },
+            Self::Unavailable { message } => GithubAnalysis {
+                availability: GithubAvailability::Unavailable(message.clone()),
+                pull_requests: Probe::Unavailable(message.clone()),
+            },
+        }
+    }
+}
+
+impl GithubAnalysis {
+    pub fn progress_message(&self) -> String {
+        match &self.pull_requests {
+            Probe::Known(prs) => format!("{} pull request(s)", prs.len()),
+            Probe::Unknown(reason) => format!("unknown: {reason}"),
+            Probe::Unavailable(reason) => format!("unavailable: {reason}"),
+        }
+    }
 }
 
 impl GhProbe {
@@ -104,6 +172,47 @@ impl GhProbe {
             path: self.cwd.clone(),
             source: io::Error::new(io::ErrorKind::InvalidData, source),
         })
+    }
+
+    fn pull_requests(&self, branch: &BranchName) -> OutpostResult<Vec<PullRequestSummary>> {
+        let output = Command::new(&self.program)
+            .current_dir(&self.cwd)
+            .envs(&self.env)
+            .args([
+                "pr",
+                "list",
+                "--state",
+                "all",
+                "--head",
+                branch.as_str(),
+                "--json",
+                ANALYZE_PR_FIELDS,
+                "--limit",
+                "100",
+            ])
+            .output()
+            .map_err(|source| OutpostError::IoAt {
+                path: self.cwd.clone(),
+                source,
+            })?;
+
+        if !output.status.success() {
+            return Err(OutpostError::IoAt {
+                path: self.cwd.clone(),
+                source: io::Error::other(format!(
+                    "gh pr list failed with status {:?}: {}",
+                    output.status.code(),
+                    command_stderr(&output.stderr)
+                )),
+            });
+        }
+
+        let prs: Vec<GhAnalyzePullRequest> =
+            serde_json::from_slice(&output.stdout).map_err(|source| OutpostError::IoAt {
+                path: self.cwd.clone(),
+                source: io::Error::new(io::ErrorKind::InvalidData, source),
+            })?;
+        prs.into_iter().map(PullRequestSummary::try_from).collect()
     }
 }
 
@@ -149,6 +258,41 @@ struct GhPullRequest {
     merged_at: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct GhAnalyzePullRequest {
+    number: Option<u64>,
+    url: Option<String>,
+    state: Option<String>,
+    #[serde(rename = "isDraft")]
+    is_draft: Option<bool>,
+    #[serde(rename = "baseRefName")]
+    base_ref_name: Option<String>,
+    #[serde(rename = "headRefName")]
+    head_ref_name: Option<String>,
+    #[serde(rename = "headRefOid")]
+    _head_ref_oid: Option<String>,
+    #[serde(rename = "reviewDecision")]
+    review_decision: Option<String>,
+    #[serde(rename = "statusCheckRollup")]
+    status_check_rollup: Option<serde_json::Value>,
+}
+
+impl TryFrom<GhAnalyzePullRequest> for PullRequestSummary {
+    type Error = OutpostError;
+
+    fn try_from(pr: GhAnalyzePullRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: pr_id_from_parts(pr.number, pr.url),
+            state: non_empty_or("unknown", pr.state),
+            draft: pr.is_draft.unwrap_or(false),
+            base: non_empty_or("unknown", pr.base_ref_name),
+            head: non_empty_or("unknown", pr.head_ref_name),
+            review: non_empty_or("none", pr.review_decision),
+            checks: check_summary(pr.status_check_rollup.as_ref()),
+        })
+    }
+}
+
 fn matching_merged_pr(
     prs: Vec<GhPullRequest>,
     branch: &BranchName,
@@ -183,6 +327,59 @@ fn pr_id(pr: &GhPullRequest) -> String {
         .clone()
         .or_else(|| pr.number.map(|number| format!("#{number}")))
         .unwrap_or_else(|| "merged pull request".to_owned())
+}
+
+fn pr_id_from_parts(number: Option<u64>, url: Option<String>) -> String {
+    number
+        .map(|number| format!("#{number}"))
+        .or(url)
+        .unwrap_or_else(|| "pull request".to_owned())
+}
+
+fn non_empty_or(fallback: &str, value: Option<String>) -> String {
+    value
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| fallback.to_owned())
+}
+
+fn check_summary(value: Option<&serde_json::Value>) -> String {
+    let Some(serde_json::Value::Array(items)) = value else {
+        return "unknown".to_owned();
+    };
+    if items.is_empty() {
+        return "unknown".to_owned();
+    }
+
+    let mut has_pending = false;
+    let mut has_success = false;
+    for item in items {
+        let status = item
+            .get("conclusion")
+            .or_else(|| item.get("status"))
+            .or_else(|| item.get("state"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        match status {
+            "FAILURE" | "ERROR" | "CANCELLED" | "TIMED_OUT" | "ACTION_REQUIRED" => {
+                return "failing".to_owned();
+            }
+            "PENDING" | "QUEUED" | "IN_PROGRESS" | "REQUESTED" | "WAITING" | "EXPECTED" => {
+                has_pending = true;
+            }
+            "SUCCESS" | "SKIPPED" | "NEUTRAL" => {
+                has_success = true;
+            }
+            _ => {}
+        }
+    }
+
+    if has_pending {
+        "pending".to_owned()
+    } else if has_success {
+        "passing".to_owned()
+    } else {
+        "unknown".to_owned()
+    }
 }
 
 fn command_stderr(stderr: &[u8]) -> String {
@@ -285,6 +482,24 @@ mod tests {
                 && message.contains("auth required"),
             "provider failure should include status and stderr: {message}"
         );
+    }
+
+    #[test]
+    fn analyze_pr_summary_normalizes_empty_review_decision() {
+        let summary = PullRequestSummary::try_from(GhAnalyzePullRequest {
+            number: Some(47),
+            url: None,
+            state: Some("OPEN".to_owned()),
+            is_draft: Some(false),
+            base_ref_name: Some("main".to_owned()),
+            head_ref_name: Some("feat".to_owned()),
+            _head_ref_oid: Some("abc123".to_owned()),
+            review_decision: Some(String::new()),
+            status_check_rollup: None,
+        })
+        .expect("summary");
+
+        assert_eq!(summary.review, "none");
     }
 
     fn test_source_repo() -> (tempfile::TempDir, SourceRepo) {

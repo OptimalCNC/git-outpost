@@ -2,6 +2,12 @@ use crate::gh;
 use outpost_core::AheadBehind;
 use outpost_core::BranchName;
 use outpost_core::ops;
+use outpost_core::ops::analyze::{
+    BranchDeleteSafety, Probe, RemoteBranchIdentity, SourcePushHazard, UpstreamRemote,
+};
+use outpost_core::ops::branch_analysis::{
+    BranchCleanupFinding, BranchCleanupProof, BranchCleanupSkipReason,
+};
 use outpost_core::ops::status::ConfigProblem;
 
 pub fn print_added(outpost: &outpost_core::Outpost) {
@@ -72,6 +78,58 @@ pub fn print_status(report: &ops::status::StatusReport) {
             println!("  - {}", format_problem(problem));
         }
     }
+}
+
+pub fn print_analyze(report: &ops::analyze::AnalyzeReport, github: &gh::GithubAnalysis) {
+    println!("outpost: {}", report.outpost_path.display());
+    println!("source: {}", report.source_path.display());
+    print_upstream_remote(&report.upstream_remote);
+    match &report.branch {
+        Some(branch) => println!("branch: {}", branch.as_str()),
+        None => println!("branch: detached"),
+    }
+    println!(
+        "state: {}",
+        if report.outpost_dirty {
+            "dirty"
+        } else {
+            "clean"
+        }
+    );
+    println!(
+        "lock: {}",
+        if report.locked { "locked" } else { "unlocked" }
+    );
+    println!(
+        "lock-reason: {}",
+        report.lock_reason.as_deref().unwrap_or("none")
+    );
+    println!();
+    println!(
+        "outpost-vs-source: {}",
+        format_probe_ahead_behind(&report.outpost_vs_source)
+    );
+    println!(
+        "source-vs-upstream: {}",
+        format_probe_ahead_behind(&report.source_vs_upstream)
+    );
+    println!(
+        "source-vs-upstream-default: {}",
+        format_probe_ahead_behind(&report.source_vs_upstream_default)
+    );
+    println!(
+        "upstream-default-branch: {}",
+        format_probe_identity(&report.upstream_default_branch)
+    );
+    println!(
+        "upstream-branch: {}",
+        format_probe_identity(&report.upstream_branch)
+    );
+    print_source_push_hazard(&report.source_push_hazard);
+    println!();
+    print_github_analysis(github);
+    println!();
+    print_safe_delete(report);
 }
 
 pub fn print_pull(report: &ops::pull::PullReport) {
@@ -176,6 +234,152 @@ fn format_ahead_behind(value: Option<AheadBehind>) -> String {
     }
 }
 
+fn format_probe_ahead_behind(value: &Probe<AheadBehind>) -> String {
+    match value {
+        Probe::Known(value) => format!("ahead {}, behind {}", value.ahead, value.behind),
+        Probe::Unknown(reason) => format!("unknown: {reason}"),
+        Probe::Unavailable(reason) => format!("unavailable: {reason}"),
+    }
+}
+
+fn format_probe_identity(value: &Probe<RemoteBranchIdentity>) -> String {
+    match value {
+        Probe::Known(identity) => {
+            format!(
+                "{}/{} at {}",
+                identity.remote.as_str(),
+                identity.branch.as_str(),
+                identity.oid
+            )
+        }
+        Probe::Unknown(reason) => format!("unknown: {reason}"),
+        Probe::Unavailable(reason) => format!("unavailable: {reason}"),
+    }
+}
+
+fn print_source_push_hazard(value: &Probe<SourcePushHazard>) {
+    match value {
+        Probe::Known(hazard) => {
+            println!("source-branch-checked-out: {}", yes_no(hazard.checked_out));
+            println!("push-hazard: {}", yes_no(hazard.push_would_fail));
+        }
+        Probe::Unknown(reason) => {
+            println!("source-branch-checked-out: unknown: {reason}");
+            println!("push-hazard: unknown: {reason}");
+        }
+        Probe::Unavailable(reason) => {
+            println!("source-branch-checked-out: unavailable: {reason}");
+            println!("push-hazard: unavailable: {reason}");
+        }
+    }
+}
+
+fn print_upstream_remote(value: &Probe<UpstreamRemote>) {
+    match value {
+        Probe::Known(upstream) => {
+            println!("upstream-remote: {}", upstream.remote.as_str());
+            println!("upstream-url: {}", upstream.url);
+        }
+        Probe::Unknown(reason) => {
+            println!("upstream-remote: unknown: {reason}");
+            println!("upstream-url: unknown: {reason}");
+        }
+        Probe::Unavailable(reason) => {
+            println!("upstream-remote: unavailable: {reason}");
+            println!("upstream-url: unavailable: {reason}");
+        }
+    }
+}
+
+fn print_github_analysis(github: &gh::GithubAnalysis) {
+    match &github.availability {
+        gh::GithubAvailability::Available => println!("github: available"),
+        gh::GithubAvailability::Unavailable(reason) => {
+            println!("github: unavailable: {reason}");
+        }
+    }
+
+    match &github.pull_requests {
+        Probe::Known(prs) => {
+            println!("pull-requests:");
+            if prs.is_empty() {
+                println!("  - none");
+            } else {
+                for pr in prs {
+                    println!(
+                        "  - {} {} draft={} base={} head={} review={} checks={}",
+                        pr.id,
+                        pr.state.to_ascii_lowercase(),
+                        pr.draft,
+                        pr.base,
+                        pr.head,
+                        pr.review,
+                        pr.checks
+                    );
+                }
+            }
+        }
+        Probe::Unknown(reason) => println!("pull-requests: unknown: {reason}"),
+        Probe::Unavailable(reason) => println!("pull-requests: unavailable: {reason}"),
+    }
+}
+
+fn print_safe_delete(report: &ops::analyze::AnalyzeReport) {
+    match &report.safe_delete {
+        BranchDeleteSafety::Yes(candidate) => {
+            println!("safe-delete: yes");
+            println!(
+                "safe-delete-proof: {}",
+                format_delete_proof(&candidate.proof)
+            );
+            println!("safe-delete-branch: {}", candidate.branch.as_str());
+            println!("safe-delete-source-oid: {}", candidate.source_oid);
+            println!(
+                "safe-delete-upstream-oid: {}",
+                candidate.upstream_oid.as_deref().unwrap_or("-")
+            );
+        }
+        BranchDeleteSafety::No { branch: _, reason } => {
+            println!("safe-delete: no");
+            println!(
+                "safe-delete-reason: {}",
+                branch_cleanup_reason_text(*reason)
+            );
+        }
+        BranchDeleteSafety::Unknown(reason) => {
+            println!("safe-delete: unknown");
+            println!("safe-delete-reason: {reason}");
+        }
+    }
+    for finding in &report.safe_delete_findings {
+        if let BranchCleanupFinding::Warning { message, .. } = finding {
+            println!("safe-delete-warning: {message}");
+        }
+    }
+}
+
+fn format_delete_proof(proof: &BranchCleanupProof) -> String {
+    match proof {
+        BranchCleanupProof::MergedPullRequest(pr) => format!("merged-pull-request {}", pr.id),
+        BranchCleanupProof::AncestorOfDefaultBranch {
+            remote,
+            default_branch,
+            default_oid,
+        } => {
+            format!(
+                "ancestor-of-upstream-default {}/{} at {}",
+                remote.as_str(),
+                default_branch.as_str(),
+                default_oid
+            )
+        }
+    }
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value { "yes" } else { "no" }
+}
+
 fn format_problem(problem: &ConfigProblem) -> String {
     match problem {
         ConfigProblem::MissingSourceRepoConfig => "missing source repo config".to_owned(),
@@ -226,15 +430,17 @@ fn format_branch_cleanup_outcome(outcome: &ops::remove::BranchCleanupOutcome) ->
         ops::remove::BranchCleanupOutcome::DeletedSourceBranch { branch } => {
             format!("cleanup: deleted source branch {}", branch.as_str())
         }
-        ops::remove::BranchCleanupOutcome::DeclinedUpstreamBranch { branch } => {
+        ops::remove::BranchCleanupOutcome::DeclinedUpstreamBranch { remote, branch } => {
             format!(
-                "branch-cleanup: kept upstream branch origin/{}",
+                "branch-cleanup: kept upstream branch {}/{}",
+                remote.as_str(),
                 branch.as_str()
             )
         }
-        ops::remove::BranchCleanupOutcome::DeletedUpstreamBranch { branch } => {
+        ops::remove::BranchCleanupOutcome::DeletedUpstreamBranch { remote, branch } => {
             format!(
-                "cleanup: deleted upstream branch origin/{}",
+                "cleanup: deleted upstream branch {}/{}",
+                remote.as_str(),
                 branch.as_str()
             )
         }
@@ -246,7 +452,7 @@ fn format_branch_cleanup_outcome(outcome: &ops::remove::BranchCleanupOutcome) ->
 
 fn format_branch_cleanup_skip(
     branch: Option<&BranchName>,
-    reason: ops::remove::BranchCleanupSkipReason,
+    reason: BranchCleanupSkipReason,
 ) -> String {
     let prefix = match branch {
         Some(branch) => format!(
@@ -255,36 +461,31 @@ fn format_branch_cleanup_skip(
         ),
         None => "branch-cleanup: skipped: ".to_owned(),
     };
-    let reason = match reason {
-        ops::remove::BranchCleanupSkipReason::CleanupDisabled => "cleanup disabled",
-        ops::remove::BranchCleanupSkipReason::NonInteractive => {
+    format!("{prefix}{}", branch_cleanup_reason_text(reason))
+}
+
+fn branch_cleanup_reason_text(reason: BranchCleanupSkipReason) -> &'static str {
+    match reason {
+        BranchCleanupSkipReason::CleanupDisabled => "cleanup disabled",
+        BranchCleanupSkipReason::NonInteractive => {
             "non-interactive terminal; branch cleanup requires prompts"
         }
-        ops::remove::BranchCleanupSkipReason::MissingOutpost => "outpost path was already missing",
-        ops::remove::BranchCleanupSkipReason::DetachedHead => "outpost HEAD is detached",
-        ops::remove::BranchCleanupSkipReason::NoUpstreamTracking => {
-            "outpost has no upstream tracking branch"
-        }
-        ops::remove::BranchCleanupSkipReason::UpstreamRemoteMismatch => {
+        BranchCleanupSkipReason::MissingOutpost => "outpost path was already missing",
+        BranchCleanupSkipReason::DetachedHead => "outpost HEAD is detached",
+        BranchCleanupSkipReason::NoUpstreamTracking => "outpost has no upstream tracking branch",
+        BranchCleanupSkipReason::UpstreamRemoteMismatch => {
             "outpost upstream remote does not match the configured source remote"
         }
-        ops::remove::BranchCleanupSkipReason::UpstreamNotBranch => {
-            "outpost upstream is not a branch"
-        }
-        ops::remove::BranchCleanupSkipReason::SourceBranchMissing => "source branch is missing",
-        ops::remove::BranchCleanupSkipReason::OutpostHeadMismatch => {
+        BranchCleanupSkipReason::UpstreamNotBranch => "outpost upstream is not a branch",
+        BranchCleanupSkipReason::SourceBranchMissing => "source branch is missing",
+        BranchCleanupSkipReason::OutpostHeadMismatch => {
             "outpost HEAD does not match source branch tip"
         }
-        ops::remove::BranchCleanupSkipReason::BranchCheckedOut => "branch is checked out",
-        ops::remove::BranchCleanupSkipReason::DefaultBranch => {
-            "branch is the upstream default branch"
-        }
-        ops::remove::BranchCleanupSkipReason::DefaultBranchUnknown => {
-            "upstream default branch is unknown"
-        }
-        ops::remove::BranchCleanupSkipReason::NoProof => "no safe deletion proof found",
-    };
-    format!("{prefix}{reason}")
+        BranchCleanupSkipReason::BranchCheckedOut => "branch is checked out",
+        BranchCleanupSkipReason::DefaultBranch => "branch is the upstream default branch",
+        BranchCleanupSkipReason::DefaultBranchUnknown => "upstream default branch is unknown",
+        BranchCleanupSkipReason::NoProof => "no safe deletion proof found",
+    }
 }
 
 #[cfg(test)]
@@ -354,7 +555,7 @@ mod tests {
             (
                 BranchCleanupSkipReason::DefaultBranchUnknown,
                 true,
-                "default branch is unknown",
+                "upstream default branch is unknown",
             ),
             (
                 BranchCleanupSkipReason::NoProof,
@@ -380,6 +581,21 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn default_ancestor_proof_names_upstream_default_branch() {
+        let branch = BranchName::parse("main".to_owned()).expect("branch");
+        let proof = BranchCleanupProof::AncestorOfDefaultBranch {
+            remote: outpost_core::RemoteName::parse("upstream").expect("remote"),
+            default_branch: branch,
+            default_oid: "abc123".to_owned(),
+        };
+
+        assert!(
+            format_delete_proof(&proof).contains("ancestor-of-upstream-default upstream/main"),
+            "default branch proof should name the upstream default branch"
+        );
     }
 
     #[test]
@@ -416,7 +632,10 @@ mod tests {
         );
         assert_eq!(
             format_branch_cleanup_outcome(
-                &ops::remove::BranchCleanupOutcome::DeclinedUpstreamBranch { branch }
+                &ops::remove::BranchCleanupOutcome::DeclinedUpstreamBranch {
+                    remote: outpost_core::RemoteName::parse("origin").expect("remote"),
+                    branch
+                }
             ),
             "branch-cleanup: kept upstream branch origin/feat"
         );
