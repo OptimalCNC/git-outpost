@@ -172,6 +172,22 @@ fn add_rejects_destination_inside_existing_repo() {
 }
 
 #[test]
+fn add_allows_ignored_destination_inside_existing_repo() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.source.join("C");
+    fs::write(fixture.source.join(".git/info/exclude"), "C/\n").expect("write exclude");
+
+    let outpost = add_existing(&source, &destination, None).expect("add ignored outpost");
+
+    assert_eq!(outpost.work_tree(), canonical(&destination));
+    assert_eq!(
+        source.registry().expect("registry").entries()[0].path,
+        canonical(&destination)
+    );
+}
+
+#[test]
 fn add_rejects_relative_destination_inside_source_repo() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");

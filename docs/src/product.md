@@ -269,10 +269,12 @@ Default checkout behavior:
   checkout. The outpost checks out `<new-branch>` and tracks
   `<remote-name>/<new-branch>`.
 
-The destination must be absent or empty; no add option overrides this rule.
-Uncommitted source working tree changes are not copied into the outpost. An
-omitted target branch requires the source repository's `HEAD` to be attached to
-a branch. An unborn source `HEAD` is rejected in the MVP.
+The destination must be absent or empty; no add option overrides this rule. If
+the destination is inside an existing Git work tree, that containing repository
+must ignore the destination directory. Uncommitted source working tree changes
+are not copied into the outpost. An omitted target branch requires the source
+repository's `HEAD` to be attached to a branch. An unborn source `HEAD` is
+rejected in the MVP.
 
 `--remote-name <name>` uses `<name>` for the source repository remote inside
 the outpost. Defaults to `local`.
@@ -407,7 +409,9 @@ gop unlock abc12
 Safely move a managed outpost directory. `<outpost>` must identify a registered
 outpost of the current source repository by path or unique ID prefix; the
 command does not move arbitrary unregistered paths. `<new-path>` is always a
-path, never an ID selector. The destination must be absent or empty.
+path, never an ID selector. The destination must be absent or empty. If it is
+inside an existing Git work tree, that containing repository must ignore the
+destination directory.
 
 By default, `move` refuses dirty or locked outposts. `-f`/`--force` allows the
 move despite dirty state or a lock. After the filesystem move succeeds, Git

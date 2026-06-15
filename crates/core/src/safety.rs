@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -90,7 +91,10 @@ pub fn check_destination_clean(parent: &Path, dest: &Path) -> OutpostResult<()> 
     }
 
     if let Some(repo) = containing_repo(parent)? {
-        if dest_path.starts_with(&repo) && dest_path != repo {
+        let unignored_repo_descendant = dest_path.starts_with(&repo)
+            && dest_path != repo
+            && !destination_is_ignored(&repo, &dest_path)?;
+        if unignored_repo_descendant {
             return Err(OutpostError::DestinationInsideRepo(dest.to_path_buf()));
         }
     }
@@ -105,6 +109,19 @@ fn containing_repo(parent: &Path) -> OutpostResult<Option<PathBuf>> {
         Err(OutpostError::GitFailed { .. }) => Ok(None),
         Err(err) => Err(err),
     }
+}
+
+fn destination_is_ignored(repo: &Path, dest_path: &Path) -> OutpostResult<bool> {
+    let relative = dest_path
+        .strip_prefix(repo)
+        .expect("destination checked to be inside repo");
+    let directory_marker = relative.join(".");
+    GitInvoker::at(repo).run_status([
+        OsString::from("check-ignore"),
+        OsString::from("--quiet"),
+        OsString::from("--"),
+        directory_marker.into_os_string(),
+    ])
 }
 
 fn has_entries(path: &Path) -> OutpostResult<bool> {
@@ -430,6 +447,32 @@ mod tests {
     fn destination_clean_rejects_target_inside_existing_repo() {
         let temp = init_repo();
         let dest = temp.path().join("nested").join("outpost");
+
+        assert!(matches!(
+            check_destination_clean(temp.path(), &dest),
+            Err(OutpostError::DestinationInsideRepo(path)) if path == dest
+        ));
+    }
+
+    #[test]
+    fn destination_clean_allows_ignored_target_inside_existing_repo() {
+        let temp = init_repo();
+        let dest = temp.path().join("ignored-outpost");
+        fs::write(temp.path().join(".git/info/exclude"), "ignored-outpost/\n")
+            .expect("write exclude");
+
+        check_destination_clean(temp.path(), &dest).expect("ignored destination");
+    }
+
+    #[test]
+    fn destination_clean_rejects_target_when_only_child_path_is_ignored() {
+        let temp = init_repo();
+        let dest = temp.path().join("nested").join("outpost");
+        fs::write(
+            temp.path().join(".git/info/exclude"),
+            "nested/outpost/child\n",
+        )
+        .expect("write exclude");
 
         assert!(matches!(
             check_destination_clean(temp.path(), &dest),

@@ -249,6 +249,54 @@ fn move_refuses_non_empty_destination() {
 }
 
 #[test]
+fn move_refuses_destination_inside_unignored_source_repo() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+    let destination = fixture.source.join("D");
+    let source = fixture.source_repo().expect("source repo");
+
+    let err = expect_error(
+        move_op::run(
+            &source,
+            move_op::MoveOptions {
+                selector: OutpostSelector::from_path(outpost.clone()),
+                new_path: destination.clone(),
+                force: false,
+            },
+        ),
+        "unignored in-repo destination should fail",
+    );
+
+    assert!(matches!(err, OutpostError::DestinationInsideRepo(path) if path == destination));
+    assert!(outpost.exists());
+    assert!(!destination.exists());
+    assert_eq!(single_entry(&source).path, canonical(&outpost));
+}
+
+#[test]
+fn move_allows_destination_inside_ignored_source_repo_path() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+    let destination = fixture.source.join("D");
+    fs::write(fixture.source.join(".git/info/exclude"), "D/\n").expect("write exclude");
+    let source = fixture.source_repo().expect("source repo");
+
+    move_op::run(
+        &source,
+        move_op::MoveOptions {
+            selector: OutpostSelector::from_path(outpost.clone()),
+            new_path: destination.clone(),
+            force: false,
+        },
+    )
+    .expect("move to ignored source path");
+
+    assert!(!outpost.exists());
+    assert!(destination.join(".git").exists());
+    assert_eq!(single_entry(&source).path, canonical(&destination));
+}
+
+#[test]
 fn lock_move_unlock_reject_unregistered_paths() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");

@@ -843,11 +843,14 @@ outposts to report source-missing state, but missing-path deregistration
 does not require this path deletion gate.
 
 **`check_destination_clean`** ensures the add/move target path either does
-not exist or is an empty directory **and** is not inside another Git
-repository's working tree. The "inside another repo" check uses
-`git -C <parent> rev-parse --show-toplevel` — if it succeeds and the
-returned toplevel is a strict prefix of the target, we refuse with
-`DestinationInsideRepo`.
+not exist or is an empty directory. If the destination is a strict descendant
+of a containing Git work tree, the containing repository must ignore the
+destination directory. The "inside another repo" check uses
+`git -C <parent> rev-parse --show-toplevel`; if it succeeds and the returned
+toplevel is a strict prefix of the target, run
+`git -C <toplevel> check-ignore --quiet -- <repo-relative-destination>/.`.
+Exit 0 allows the destination, exit 1 returns `DestinationInsideRepo`, and
+other Git failures propagate.
 
 ### 5.9 `ops/` — one module per command
 
@@ -941,8 +944,8 @@ pub fn run(
 
 `run` performs (in order):
 
-1. Validate destination is empty/absent **and** not inside another Git
-   repo (`safety::check_destination_clean`).
+1. Validate destination is empty/absent and, when it is inside another Git
+   work tree, ignored by that containing repo (`safety::check_destination_clean`).
 2. Resolve and validate the target branch before creating C. If absent,
    read `source.current_branch()`. A detached or unborn source `HEAD`
    makes omitted targets return `BranchNotFound { branch: "HEAD" }`.
@@ -1967,6 +1970,7 @@ test.
 | U-11 | `git.rs` | `GitInvoker::run_capture` with an argv element starting with `-` does not parse as a flag (verified by passing it after `--`). |
 | U-12 | `refname.rs` | `BranchName::parse("-evil")` returns `InvalidRefName`. `BranchName::parse("feature/foo")` succeeds. `RemoteName::parse("origin --upload-pack=evil")` returns `InvalidRefName`. |
 | U-13 | `safety.rs` | `check_path_is_managed_outpost_of` rejects (a) paths with no `.git`, (b) `.git` with `outpost.managed=false`, (c) outpost pointing at a different source. |
+| U-16 | `safety.rs` | `check_destination_clean` rejects unignored in-repo destinations, allows ignored in-repo destinations, does not allow a destination merely because a child path is ignored, and still allows sibling destinations outside the repo. |
 
 ### 11.2 Integration: `add` (`crates/core/tests/add.rs`)
 
@@ -1979,7 +1983,8 @@ test.
 | C-05 | `add C` when C exists as a non-empty directory returns `DestinationExists`. |
 | C-06 | `add C` when C exists as a file returns `DestinationExists`. |
 | C-07 | `add C` outside any Git repo returns `NotARepo`. |
-| C-08 | `add C` with destination inside an existing repo returns `DestinationInsideRepo`. |
+| C-08 | `add C` with destination inside an existing repo returns `DestinationInsideRepo` when C is not ignored by that repo. |
+| C-08a | `add C` with destination inside an existing repo succeeds when C is ignored by that repo. |
 | C-09 | `add C bogus-branch` returns `BranchNotFound`. |
 | C-10 | C contains all three `outpost.*` config keys with correct values, with `sourceRepo` canonicalized. |
 | C-11a | C's `<remote_name>` remote URL equals B's canonicalized path. |
@@ -2022,6 +2027,8 @@ test.
 | LMU-05 | `move --force C D` moves a locked C and preserves its lock state at D. |
 | LMU-06 | `move C D` refuses a dirty C; `move --force C D` succeeds. |
 | LMU-07 | `move C D` refuses when D is a non-empty directory. |
+| LMU-07a | `move C D` refuses when D is inside the source repo and is not ignored there. |
+| LMU-07b | `move C D` succeeds and updates the registry path when D is inside the source repo and is ignored there. |
 | LMU-08 | `lock`, `move`, and `unlock` all reject paths not registered to the current source. |
 
 ### 11.5 Integration: `status` (`crates/core/tests/status.rs`)
