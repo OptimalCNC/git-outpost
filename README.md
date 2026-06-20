@@ -1,9 +1,12 @@
 # Git Outpost
 
+Documentation: [GitHub Pages](https://optimalcnc.github.io/git-outpost/)
+
 [![CI](https://github.com/OptimalCNC/git-outpost/actions/workflows/ci.yml/badge.svg)](https://github.com/OptimalCNC/git-outpost/actions/workflows/ci.yml)
 [![Development](https://github.com/OptimalCNC/git-outpost/actions/workflows/dev.yml/badge.svg)](https://github.com/OptimalCNC/git-outpost/actions/workflows/dev.yml)
 [![Integration](https://github.com/OptimalCNC/git-outpost/actions/workflows/integration.yml/badge.svg)](https://github.com/OptimalCNC/git-outpost/actions/workflows/integration.yml)
 [![Release](https://github.com/OptimalCNC/git-outpost/actions/workflows/release.yml/badge.svg)](https://github.com/OptimalCNC/git-outpost/actions/workflows/release.yml)
+[![Publish Docs](https://github.com/OptimalCNC/git-outpost/actions/workflows/docs.yml/badge.svg)](https://github.com/OptimalCNC/git-outpost/actions/workflows/docs.yml)
 [![crates.io: git-outpost](https://img.shields.io/crates/v/git-outpost.svg?label=git-outpost)](https://crates.io/crates/git-outpost)
 [![crates.io: outpost-core](https://img.shields.io/crates/v/outpost-core.svg?label=outpost-core)](https://crates.io/crates/outpost-core)
 
@@ -12,7 +15,8 @@ checkouts from an existing local repository. It gives you a `git worktree`-like
 workflow, but each outpost is a normal clone with its own `.git` directory, so
 editors and devcontainers can open it without extra repository metadata mounts.
 
-Detailed user documentation lives in [docs/src/product.md](docs/src/product.md).
+Detailed user documentation is published on [GitHub Pages](https://optimalcnc.github.io/git-outpost/)
+and maintained in [docs/src/product.md](docs/src/product.md).
 
 ## Usage
 
