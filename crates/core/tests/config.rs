@@ -71,7 +71,9 @@ fn set_get_list_show_and_unset_round_trip() {
     let file: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(store.storage_path()).expect("config file"))
             .expect("config json");
-    assert_eq!(file, serde_json::json!({ "version": 1 }));
+    let expected: serde_json::Value =
+        serde_json::from_str(r#"{"version":1}"#).expect("expected config json");
+    assert_eq!(file, expected);
 }
 
 #[test]

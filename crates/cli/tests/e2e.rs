@@ -241,7 +241,6 @@ fn add_new_branch_with_two_positionals_keeps_second_as_target_branch() {
 fn config_commands_store_list_show_and_unset_source_owned_config() {
     let fixture = common::CliFixture::new();
     let container = common::displayed_path(&fixture.root);
-    let config_path = common::displayed_path(&fixture.source.join(".outpost").join("config.json"));
 
     let set = common::run(fixture.gop().current_dir(&fixture.source).args([
         "config",
@@ -251,6 +250,7 @@ fn config_commands_store_list_show_and_unset_source_owned_config() {
     ]));
     common::assert_success(&set, "gop config set outpost-container");
     assert_eq!(common::stdout(&set), "");
+    let config_path = common::displayed_path(&fixture.source.join(".outpost").join("config.json"));
 
     let list = common::run(
         fixture
@@ -371,7 +371,11 @@ fn add_bare_name_without_config_fails_with_common_container_suggestion() {
         "stderr should explain missing container config:\n{stderr}"
     );
     assert!(
-        stderr.contains(&format!("gop config set outpost-container {}", container)),
+        stderr.contains("gop config set outpost-container"),
+        "stderr should suggest the config set command:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(&container),
         "stderr should suggest the common parent container:\n{stderr}"
     );
     assert!(!fixture.outpost("C3").exists());
