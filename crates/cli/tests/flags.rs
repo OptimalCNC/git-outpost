@@ -37,6 +37,13 @@ fn e_08_outpost_errors_map_to_documented_exit_codes() {
             },
             2,
         ),
+        (
+            OutpostError::OutpostContainerNotConfigured {
+                name: "C".to_owned(),
+                suggestion: Some(path("/outposts")),
+            },
+            2,
+        ),
         (OutpostError::DestinationExists(path("/dest")), 3),
         (OutpostError::DestinationInsideRepo(path("/dest")), 3),
         (
@@ -240,7 +247,7 @@ fn e_08_cli_errors_return_documented_exit_codes() {
     let fixture = common::CliFixture::new();
     let destination_inside_repo = common::run(fixture.gop().current_dir(&fixture.source).args([
         "add",
-        "inside-source",
+        "./inside-source",
         "main",
     ]));
     assert_failure_code_contains(

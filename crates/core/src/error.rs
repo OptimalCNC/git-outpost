@@ -25,6 +25,15 @@ pub enum OutpostError {
     #[error("{command} requires <outpost> when run from source repository {}", .cwd.display())]
     MissingOutpostPath { command: &'static str, cwd: PathBuf },
 
+    #[error(
+        "outpost container is not configured for bare outpost name {name}{hint}",
+        hint = outpost_container_hint(.suggestion)
+    )]
+    OutpostContainerNotConfigured {
+        name: String,
+        suggestion: Option<PathBuf>,
+    },
+
     #[error("unknown config key: {key}")]
     UnknownConfigKey { key: String },
 
@@ -133,6 +142,7 @@ impl OutpostError {
             | SourceMissing(_)
             | WrongContext { .. }
             | MissingOutpostPath { .. }
+            | OutpostContainerNotConfigured { .. }
             | UnknownConfigKey { .. }
             | ConfigKeyUnset { .. } => 2,
             DestinationExists(_)
@@ -161,6 +171,28 @@ impl OutpostError {
             IoAt { .. } => 70,
         }
     }
+}
+
+fn outpost_container_hint(suggestion: &Option<PathBuf>) -> String {
+    match suggestion {
+        Some(path) => format!(
+            "; run `gop config set outpost-container {}`",
+            shell_arg(path)
+        ),
+        None => "; run `gop config set outpost-container <path>`".to_owned(),
+    }
+}
+
+fn shell_arg(path: &std::path::Path) -> String {
+    let value = path.display().to_string();
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '/' | '.' | '_' | '-' | '+' | ':'))
+    {
+        return value;
+    }
+
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 #[cfg(test)]
@@ -200,6 +232,20 @@ mod tests {
                     cwd: path("/source"),
                 },
                 "lock requires <outpost> when run from source repository /source",
+            ),
+            (
+                OutpostError::OutpostContainerNotConfigured {
+                    name: "C".to_owned(),
+                    suggestion: Some(path("/outposts")),
+                },
+                "outpost container is not configured for bare outpost name C; run `gop config set outpost-container /outposts`",
+            ),
+            (
+                OutpostError::OutpostContainerNotConfigured {
+                    name: "C".to_owned(),
+                    suggestion: Some(path("/out posts")),
+                },
+                "outpost container is not configured for bare outpost name C; run `gop config set outpost-container '/out posts'`",
             ),
             (
                 OutpostError::UnknownConfigKey {
@@ -383,6 +429,13 @@ mod tests {
                 OutpostError::MissingOutpostPath {
                     command: "lock",
                     cwd: path("/source"),
+                },
+                2,
+            ),
+            (
+                OutpostError::OutpostContainerNotConfigured {
+                    name: "C".to_owned(),
+                    suggestion: Some(path("/outposts")),
                 },
                 2,
             ),

@@ -1748,14 +1748,18 @@ it records no branch ownership provenance.
 
 ---
 
-## 8. Worked Example: `gop add C`
+## 8. Worked Example: `gop add ../C`
 
 1. `main.rs` parses argv into `AddArgs` and constructs a
    `StderrReporter`.
 2. `dispatch` reads the optional `-C` value, then constructs
    `SourceRepo::discover(cwd)` to locate B.
 3. CLI converts `AddArgs` to `AddOptions`, validating
-   user-supplied branch names via `BranchName::parse`.
+   user-supplied branch names via `BranchName::parse`. Explicit path
+   syntax such as `../C` resolves from the effective cwd. A bare name
+   resolves through `SourceRepo::resolve_outpost_destination`, which reads the
+   source repo's configured `outpost-container` from `.outpost/config.json`,
+   or fails before cloning if that config is absent.
 4. `ops::add::run(&source, opts, &mut reporter)` is called.
 5. `run` validates destination via `safety::check_destination_clean`.
 6. It resolves and validates the target branch before creating C:
@@ -1998,16 +2002,16 @@ test.
 
 | ID | Scenario |
 |---|---|
-| C-01 | `add C` (no branch arg) clones B's current branch into C with its own `.git/` directory. |
-| C-02 | `add C <branch>` checks out an existing source branch named `<branch>` in C and tracks `local/<branch>`. |
-| C-03 | `add -b new C <target>` creates branch `new` in B from `<target>` without switching B, then checks out `new` in C tracking `local/new`. |
-| C-04 | `add -b new C` creates branch `new` in B from B's current branch without switching B. |
-| C-05 | `add C` when C exists as a non-empty directory returns `DestinationExists`. |
-| C-06 | `add C` when C exists as a file returns `DestinationExists`. |
-| C-07 | `add C` outside any Git repo returns `NotARepo`. |
-| C-08 | `add C` with destination inside an existing repo returns `DestinationInsideRepo` when C is not ignored by that repo. |
-| C-08a | `add C` with destination inside an existing repo succeeds when C is ignored by that repo. |
-| C-09 | `add C bogus-branch` returns `BranchNotFound`. |
+| C-01 | `add ../C` (no branch arg) clones B's current branch into C with its own `.git/` directory. |
+| C-02 | `add ../C <branch>` checks out an existing source branch named `<branch>` in C and tracks `local/<branch>`. |
+| C-03 | `add -b new ../C <target>` creates branch `new` in B from `<target>` without switching B, then checks out `new` in C tracking `local/new`. |
+| C-04 | `add -b new ../C` creates branch `new` in B from B's current branch without switching B. |
+| C-05 | `add ../C` when C exists as a non-empty directory returns `DestinationExists`. |
+| C-06 | `add ../C` when C exists as a file returns `DestinationExists`. |
+| C-07 | `add ../C` outside any Git repo returns `NotARepo`. |
+| C-08 | `add ./C` with destination inside an existing repo returns `DestinationInsideRepo` when C is not ignored by that repo. |
+| C-08a | `add ./C` with destination inside an existing repo succeeds when C is ignored by that repo. |
+| C-09 | `add ../C bogus-branch` returns `BranchNotFound`. |
 | C-10 | C contains all three `outpost.*` config keys with correct values, with `sourceRepo` canonicalized. |
 | C-11a | C's `<remote_name>` remote URL equals B's canonicalized path. |
 | C-11b | C's `.git` is a real directory, not a `.git` file pointer. |
@@ -2018,10 +2022,12 @@ test.
 | C-14 | After default `add`, B's `receive.denyCurrentBranch` is `updateInstead`. |
 | C-15 | `add` reports the source-side `receive.denyCurrentBranch=updateInstead` config write. |
 | C-16 | The `git clone` argv contains `-c protocol.file.allow=user`. |
-| C-17 | `add C` when B has no commits is rejected before creating an outpost. |
-| C-18 | `add -b feat C missing` returns `BranchNotFound`. |
-| C-19 | `add -b feat C main` leaves B's current checkout unchanged when B is on a different branch. |
+| C-17 | `add ../C` when B has no commits is rejected before creating an outpost. |
+| C-18 | `add -b feat ../C missing` returns `BranchNotFound`. |
+| C-19 | `add -b feat ../C main` leaves B's current checkout unchanged when B is on a different branch. |
 | C-20 | After `add`, B's local exclude ignores `.outpost/`, and `git -C B status --porcelain` does not report the registry directory. |
+| C-21 | With `outpost-container` configured, `add C main` resolves C under that container. |
+| C-22 | With `outpost-container` configured, `add ../C main` still treats `../C` as an explicit path. |
 
 ### 11.3 Integration: `list` (`crates/core/tests/list.rs`)
 
@@ -2161,19 +2167,20 @@ in §11.13.
 | E-01 | `cargo build -p git-outpost` creates both `target/debug/git-outpost[.exe]` and `target/debug/gop[.exe]`. |
 | E-02 | `git outpost status`, `git-outpost status`, and `gop status` produce identical stdout for the same C. |
 | E-03 | `gop --help` lists every subcommand exactly once and includes every long flag from the §6 surface. |
-| E-04 | `gop add C`, then outpost-only commands via `gop -C C status` and `gop -C C push`, then source-scoped commands via `gop list` and `gop remove C`, exit 0 at every step. |
+| E-04 | `gop add ../C`, then outpost-only commands via `gop -C ../C status` and `gop -C ../C push`, then source-scoped commands via `gop list` and `gop remove ../C`, exit 0 at every step. |
 | E-05 | `gop push` from C results in a commit visible in A (full A↔B↔C round trip). |
 | E-06 | Two parallel outposts (`C1`, `C2`): commit in C1, push, pull in C2 — change visible in C2 via B (round trip via the source). |
 | E-07 | Outpost independence: copy C with `fs_extra::dir::copy` or equivalent (not shell `tar`/`xcopy`), delete B, then `git status`, `git log`, `git diff HEAD~1`, and `git checkout -b new-branch` succeed in the copy; `gop status` reports degraded status, including `source_present = false` and `ConfigProblem::SourceMissing`. |
 | E-08 | Every §5.1 error variant maps to its §9 exit code, using one crafted broken state per variant for traceability. |
 | E-09 | `gop --no-color status` output contains no ANSI escapes (matched via `strip-ansi-escapes`). `NO_COLOR=1 gop status` likewise. |
-| E-10 | Story flow exits 0: `gop add -b feat C main`, commit in C, then `gop -C C source pull main`, `gop -C C rebase local/main`, and `gop -C C push`. |
+| E-10 | Story flow exits 0: `gop add -b feat ../C main`, commit in C, then `gop -C ../C source pull main`, `gop -C ../C rebase local/main`, and `gop -C ../C push`. |
 | E-11 | `gop merge local/main` and `gop rebase local/main` both accept the source-ref form used in the Story. |
 | E-12 | `gop -C <other-dir> status` runs as if the user were in `<other-dir>` rather than the actual cwd. |
-| E-13 | `gop add --detach C main` returns a clap usage error; `--detach` is not in the MVP surface. |
-| E-14 | `gop add C -- -evil` returns `InvalidRefName`, not `GitFailed`. |
+| E-13 | `gop add --detach ../C main` returns a clap usage error; `--detach` is not in the MVP surface. |
+| E-14 | `gop add ../C -- -evil` returns `InvalidRefName`, not `GitFailed`. |
 | E-15 | Representative deferred or removed CLI surfaces are rejected with clap usage errors, including `--json`, `--quiet`, `list --all`, `prune --expire`, and pull strategy flags. |
 | E-16 | `gop config set/get/list/show/unset outpost-container` uses `.outpost/config.json`, prints the documented stdout formats, rejects non-directory values, and never writes source `git config outpost.container`. |
+| E-17 | `gop add <name>` resolves through `.outpost/config.json`; explicit `gop add <path>` remains path-based. |
 | H-01 | `git-outpost --help` renders `git-outpost` as the program name. |
 | H-02 | `gop --help` renders `gop` as the program name. |
 | H-03 | `git outpost -h` renders `git outpost` (or `git-outpost`) as the program name — pin whichever clap produces, but assert it does **not** say `gop`. Git itself intercepts `git outpost --help` as a manpage request before external command dispatch. |

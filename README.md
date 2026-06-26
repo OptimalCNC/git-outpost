@@ -30,7 +30,8 @@ Create a new outpost from a source repository:
 
 ```bash
 cd /path/to/source-repo
-gop add -b feature/my-change ../my-change main
+gop config set outpost-container ..
+gop add -b feature/my-change my-change main
 cd ../my-change
 git status
 ```

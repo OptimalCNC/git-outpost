@@ -83,7 +83,9 @@ The source repository may also keep source-owned Git Outpost settings:
 .outpost/config.json
 ```
 
-The only supported config key is `outpost-container`.
+The only supported config key is `outpost-container`. When set,
+`gop add <name>` treats a bare name as `<outpost-container>/<name>`; explicit
+paths remain paths.
 
 `gop add` creates or updates the registry, and `gop config set` creates or
 updates the config file. Both locally ignore `.outpost/` in the source
@@ -149,9 +151,9 @@ flowchart TD
 
     A --> B{"`Am I starting a new branch?`"}
 
-    B -->|yes| C["`<code>gop add -b &lt;branch-name&gt; &lt;outpost-path&gt; [&lt;target-branch&gt;]</code> creates &lt;branch-name&gt; in the source repo from &lt;target-branch&gt; without changing branch there. Omit &lt;target-branch&gt; to use the source repo's current branch. The outpost checks out &lt;branch-name&gt; and tracks <code>local/&lt;branch-name&gt;</code>.`"]
+    B -->|yes| C["`<code>gop add -b &lt;branch-name&gt; &lt;path-or-name&gt; [&lt;target-branch&gt;]</code> creates &lt;branch-name&gt; in the source repo from &lt;target-branch&gt; without changing branch there. Omit &lt;target-branch&gt; to use the source repo's current branch. The outpost checks out &lt;branch-name&gt; and tracks <code>local/&lt;branch-name&gt;</code>.`"]
 
-    B -->|no| O["`<code>gop add &lt;outpost-path&gt; [&lt;target-branch&gt;]</code> checks out an existing source-repo branch in the outpost. The outpost branch has the same name and tracks the matching <code>local</code> branch.`"]
+    B -->|no| O["`<code>gop add &lt;path-or-name&gt; [&lt;target-branch&gt;]</code> checks out an existing source-repo branch in the outpost. The outpost branch has the same name and tracks the matching <code>local</code> branch.`"]
 
     C --> D{"`What do I need next?`"}
 
@@ -205,7 +207,7 @@ The remainder of this document uses `gop` because it keeps examples short.
 gop [<global-options>] <command> [<args>...]
 
 gop add [-b <new-branch>] [--remote-name <name>]
-        <path> [<target-branch>]
+        <path-or-name> [<target-branch>]
 gop config set outpost-container <path>
 gop config get outpost-container
 gop config unset outpost-container
@@ -264,11 +266,25 @@ additional working-directory-specific behavior to explain.
 
 ## Commands
 
-### `add <path> [<target-branch>]`
+### `add <path-or-name> [<target-branch>]`
 
-Create a self-contained outpost at `<path>` from the current repository. The
-outpost is a normal local clone with its own `.git` directory; the current
-repository is configured as the outpost's local source remote.
+Create a self-contained outpost from the current repository. The outpost is a
+normal local clone with its own `.git` directory; the current repository is
+configured as the outpost's local source remote.
+
+`<path-or-name>` may be an explicit path or a bare outpost name. Explicit paths
+include absolute paths, `./name`, `../name`, and nested paths such as
+`group/name`; they resolve from the effective working directory as before. A
+bare name such as `my-change` resolves to
+`<outpost-container>/my-change`. Configure the container with:
+
+```bash
+gop config set outpost-container <path-to-outpost-container>
+```
+
+If a bare name is used before the container is configured, `add` fails instead
+of guessing. When registered outposts already exist, the error suggests a
+container path from their common parent.
 
 `<target-branch>` names a branch in the source repository. When it is omitted,
 `add` uses the source repository's current branch. The command does not switch

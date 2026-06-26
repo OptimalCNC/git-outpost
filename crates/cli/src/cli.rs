@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use outpost_core::ops;
-use outpost_core::{BranchName, ConfigKey, OutpostResult, RemoteName, SourceRemoteRef};
+use outpost_core::{BranchName, ConfigKey, OutpostResult, RemoteName, SourceRemoteRef, SourceRepo};
 
 const ROOT_AFTER_HELP: &str = "Command-specific long flags: --remote-name, --reason, --verbose, --force, --no-branch-cleanup, --dry-run";
 
@@ -118,7 +118,7 @@ impl Command {
 
 #[derive(Debug, Args)]
 pub struct AddArgs {
-    #[arg(value_name = "PATH")]
+    #[arg(value_name = "PATH|NAME")]
     pub path: PathBuf,
 
     /// Optional existing source branch or -b target branch.
@@ -146,7 +146,11 @@ impl AddArgs {
         Ok(())
     }
 
-    pub fn to_options(&self, cwd: &Path) -> OutpostResult<ops::add::AddOptions> {
+    pub fn to_options(
+        &self,
+        cwd: &Path,
+        source: &SourceRepo,
+    ) -> OutpostResult<ops::add::AddOptions> {
         let target_branch = self
             .target_branch
             .clone()
@@ -161,18 +165,10 @@ impl AddArgs {
         };
 
         Ok(ops::add::AddOptions {
-            destination: resolve_path_arg(cwd, self.path.clone()),
+            destination: source.resolve_outpost_destination(cwd, &self.path)?,
             checkout,
             remote_name: RemoteName::parse(self.remote_name.clone())?,
         })
-    }
-}
-
-fn resolve_path_arg(cwd: &Path, path: PathBuf) -> PathBuf {
-    if path.is_absolute() {
-        path
-    } else {
-        cwd.join(path)
     }
 }
 

@@ -51,6 +51,73 @@ fn e_04_basic_cli_lifecycle_round_trip_exits_zero() {
 }
 
 #[test]
+fn add_bare_name_uses_configured_outpost_container() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.outpost("C");
+    let container = common::displayed_path(&fixture.root);
+
+    let set = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "config",
+        "set",
+        "outpost-container",
+        "..",
+    ]));
+    common::assert_success(&set, "gop config set outpost-container");
+    assert_eq!(common::stdout(&set), "");
+
+    let get = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "config",
+        "get",
+        "outpost-container",
+    ]));
+    common::assert_success(&get, "gop config get outpost-container");
+    assert_eq!(common::stdout(&get), format!("{container}\n"));
+
+    let add = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["add", "C", "main"]),
+    );
+    common::assert_success(&add, "gop add bare name");
+
+    assert!(outpost.join(".git").is_dir());
+    assert_eq!(
+        common::stdout(&add),
+        format!("added {}\n", common::displayed_path(&outpost))
+    );
+}
+
+#[test]
+fn add_explicit_path_ignores_configured_outpost_container() {
+    let fixture = common::CliFixture::new();
+    let configured_container = fixture.root.join("configured-container");
+    std::fs::create_dir(&configured_container).expect("configured container");
+
+    let set = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .arg("config")
+            .arg("set")
+            .arg("outpost-container")
+            .arg(&configured_container),
+    );
+    common::assert_success(&set, "gop config set outpost-container");
+
+    let add = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["add", "../C", "main"]),
+    );
+    common::assert_success(&add, "gop add explicit path");
+
+    assert!(fixture.outpost("C").join(".git").is_dir());
+    assert!(!configured_container.join("C").exists());
+}
+
+#[test]
 fn config_commands_store_list_show_and_unset_source_owned_config() {
     let fixture = common::CliFixture::new();
     let container = common::displayed_path(&fixture.root);
@@ -161,6 +228,33 @@ fn config_set_rejects_non_directory_and_does_not_write_source_git_config() {
         None,
         "source-owned config must not write source repo git config"
     );
+}
+
+#[test]
+fn add_bare_name_without_config_fails_with_common_container_suggestion() {
+    let fixture = common::CliFixture::new();
+    fixture.add_outpost("C1");
+    fixture.add_outpost("C2");
+    let container = common::displayed_path(&fixture.root);
+
+    let add = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["add", "C3", "main"]),
+    );
+
+    common::assert_failure_code(&add, 2, "gop add bare name without container");
+    let stderr = common::stderr(&add);
+    assert!(
+        stderr.contains("outpost container is not configured for bare outpost name C3"),
+        "stderr should explain missing container config:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("gop config set outpost-container {}", container)),
+        "stderr should suggest the common parent container:\n{stderr}"
+    );
+    assert!(!fixture.outpost("C3").exists());
 }
 
 #[test]

@@ -43,7 +43,7 @@ fn dispatch(cli: Cli) -> CliResult<()> {
     match cli.command {
         Command::Add(args) => {
             let source = require_source("add", &cwd)?;
-            let outpost = ops::add::run(&source, args.to_options(&cwd)?, &mut reporter)?;
+            let outpost = ops::add::run(&source, args.to_options(&cwd, &source)?, &mut reporter)?;
             output::print_added(&outpost);
         }
         Command::Pull(_) => {

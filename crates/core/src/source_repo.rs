@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::config::{ConfigKey, ConfigStore, ConfigValue};
 use crate::outpost::Outpost;
@@ -104,6 +104,42 @@ impl SourceRepo {
 
     pub fn unset_outpost_container(&self) -> OutpostResult<()> {
         self.config().unset(ConfigKey::OutpostContainer)
+    }
+
+    pub fn resolve_outpost_destination(&self, cwd: &Path, path: &Path) -> OutpostResult<PathBuf> {
+        if bare_outpost_name(path) {
+            let Some(container) = self.outpost_container()? else {
+                return Err(OutpostError::OutpostContainerNotConfigured {
+                    name: path.to_string_lossy().into_owned(),
+                    suggestion: self.suggest_outpost_container().ok().flatten(),
+                });
+            };
+            Ok(container.join(path))
+        } else if path.is_absolute() {
+            Ok(path.to_path_buf())
+        } else {
+            Ok(cwd.join(path))
+        }
+    }
+
+    pub fn suggest_outpost_container(&self) -> OutpostResult<Option<PathBuf>> {
+        let registry = self.registry()?;
+        let mut parents = registry
+            .entries()
+            .iter()
+            .filter_map(|entry| entry.path.parent().map(Path::to_path_buf));
+        let Some(mut common) = parents.next() else {
+            return Ok(None);
+        };
+
+        for parent in parents {
+            common = common_path_prefix(&common, &parent);
+            if common.as_os_str().is_empty() {
+                return Ok(None);
+            }
+        }
+
+        Ok(Some(common))
     }
 
     pub fn env(&self) -> &BTreeMap<OsString, OsString> {
@@ -491,6 +527,32 @@ fn source_branch_ref(branch: &BranchName) -> String {
     format!("refs/heads/{}", branch.as_str())
 }
 
+fn common_path_prefix(left: &Path, right: &Path) -> PathBuf {
+    let mut prefix = PathBuf::new();
+    for (left, right) in left.components().zip(right.components()) {
+        if left != right {
+            break;
+        }
+        push_component(&mut prefix, left);
+    }
+    prefix
+}
+
+fn push_component(path: &mut PathBuf, component: Component<'_>) {
+    path.push(component.as_os_str());
+}
+
+fn bare_outpost_name(path: &Path) -> bool {
+    if path.is_absolute() || path.to_str().is_none() {
+        return false;
+    }
+    let mut components = path.components();
+    matches!(
+        (components.next(), components.next()),
+        (Some(Component::Normal(_)), None)
+    )
+}
+
 fn origin_remote() -> RemoteName {
     RemoteName::parse("origin").expect("origin is a valid remote name")
 }
@@ -577,6 +639,65 @@ mod tests {
                 .expect("configured container"),
             expected
         );
+    }
+
+    #[test]
+    fn suggested_outpost_container_uses_common_registered_parent() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let container = temp.path().join("outposts");
+        let one = container.join("one");
+        let two = container.join("two");
+        fs::create_dir(&container).expect("container dir");
+        fs::create_dir(&one).expect("one outpost dir");
+        fs::create_dir(&two).expect("two outpost dir");
+        GitInvoker::at(temp.path())
+            .run_check(["init", "--initial-branch=main"])
+            .expect("init");
+        let source = SourceRepo::at(temp.path()).expect("source repo");
+        let mut registry = source.registry_mut().expect("registry mut");
+        registry
+            .add(
+                crate::RegistryEntry::new(one, RemoteName::parse("local").expect("remote"))
+                    .expect("entry one"),
+            )
+            .expect("add one");
+        registry
+            .add(
+                crate::RegistryEntry::new(two, RemoteName::parse("local").expect("remote"))
+                    .expect("entry two"),
+            )
+            .expect("add two");
+        registry.save().expect("save registry");
+
+        assert_eq!(
+            source
+                .suggest_outpost_container()
+                .expect("suggest outpost container"),
+            Some(fs::canonicalize(&container).expect("canonical container"))
+        );
+    }
+
+    #[test]
+    fn missing_outpost_container_error_does_not_require_readable_registry_for_suggestion() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        GitInvoker::at(temp.path())
+            .run_check(["init", "--initial-branch=main"])
+            .expect("init");
+        let source = SourceRepo::at(temp.path()).expect("source repo");
+        fs::create_dir_all(source.registry_path().parent().unwrap()).expect("registry dir");
+        fs::write(source.registry_path(), "{not json").expect("bad registry");
+
+        let err = source
+            .resolve_outpost_destination(temp.path(), Path::new("C"))
+            .expect_err("missing container should fail before add");
+
+        assert!(matches!(
+            err,
+            OutpostError::OutpostContainerNotConfigured {
+                name,
+                suggestion: None,
+            } if name == "C"
+        ));
     }
 
     #[test]
