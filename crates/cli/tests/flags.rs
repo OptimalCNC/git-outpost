@@ -569,6 +569,12 @@ fn e_13_add_detach_is_rejected_by_clap() {
 }
 
 #[test]
+fn add_without_new_branch_still_requires_path_or_name() {
+    let output = common::run(common::gop_command().arg("add"));
+    common::assert_usage_error(&output, "PATH|NAME");
+}
+
+#[test]
 fn e_14_add_target_branch_starting_with_dash_returns_invalid_ref() {
     let fixture = common::CliFixture::new();
     let output = common::run(

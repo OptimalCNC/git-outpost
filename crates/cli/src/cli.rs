@@ -118,8 +118,8 @@ impl Command {
 
 #[derive(Debug, Args)]
 pub struct AddArgs {
-    #[arg(value_name = "PATH|NAME")]
-    pub path: PathBuf,
+    #[arg(value_name = "PATH|NAME", required_unless_present = "new_branch")]
+    pub path: Option<PathBuf>,
 
     /// Optional existing source branch or -b target branch.
     #[arg(value_name = "TARGET-BRANCH")]
@@ -151,24 +151,59 @@ impl AddArgs {
         cwd: &Path,
         source: &SourceRepo,
     ) -> OutpostResult<ops::add::AddOptions> {
+        let new_branch = self.new_branch.clone().map(BranchName::parse).transpose()?;
         let target_branch = self
             .target_branch
             .clone()
             .map(BranchName::parse)
             .transpose()?;
-        let checkout = match &self.new_branch {
-            Some(new_branch) => ops::add::AddCheckout::NewBranch {
-                name: BranchName::parse(new_branch.clone())?,
+        let destination_arg = match (&self.path, &new_branch) {
+            (Some(path), _) => path.clone(),
+            (None, Some(new_branch)) => derived_outpost_name(new_branch),
+            (None, None) => unreachable!("clap requires <path-or-name> when -b is absent"),
+        };
+        let checkout = match new_branch {
+            Some(name) => ops::add::AddCheckout::NewBranch {
+                name,
                 target_branch,
             },
             None => ops::add::AddCheckout::CheckoutExisting { target_branch },
         };
 
         Ok(ops::add::AddOptions {
-            destination: source.resolve_outpost_destination(cwd, &self.path)?,
+            destination: source.resolve_outpost_destination(cwd, &destination_arg)?,
             checkout,
             remote_name: RemoteName::parse(self.remote_name.clone())?,
         })
+    }
+}
+
+fn derived_outpost_name(branch: &BranchName) -> PathBuf {
+    PathBuf::from(
+        branch
+            .as_str()
+            .rsplit('/')
+            .next()
+            .expect("branch names are non-empty"),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn derived_outpost_name_uses_final_slash_component() {
+        let cases = [
+            ("feature/foo", "foo"),
+            ("users/alice/fix-1", "fix-1"),
+            ("foo", "foo"),
+        ];
+
+        for (branch, expected) in cases {
+            let branch = BranchName::parse(branch).expect("valid branch");
+            assert_eq!(derived_outpost_name(&branch), PathBuf::from(expected));
+        }
     }
 }
 

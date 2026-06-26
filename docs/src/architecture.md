@@ -1532,14 +1532,15 @@ pub enum Command {
 }
 ```
 
-Each `Args` struct is fully spelled out. In `AddArgs`, `target_branch`
-is the optional source branch used by the Story; when absent, the add
-default from §5.9.1 applies.
+Each `Args` struct is fully spelled out. In `AddArgs`, `path` is optional only
+when `new_branch` is present. `target_branch` is the optional source branch
+used by the Story; when absent, the add default from §5.9.1 applies.
 
 ```rust
 #[derive(Args)]
 pub struct AddArgs {
-    pub path: PathBuf,
+    #[arg(required_unless_present = "new_branch")]
+    pub path: Option<PathBuf>,
 
     /// Optional existing source branch or -b target branch.
     pub target_branch: Option<String>,
@@ -1759,7 +1760,9 @@ it records no branch ownership provenance.
    syntax such as `../C` resolves from the effective cwd. A bare name
    resolves through `SourceRepo::resolve_outpost_destination`, which reads the
    source repo's configured `outpost-container` from `.outpost/config.json`,
-   or fails before cloning if that config is absent.
+   or fails before cloning if that config is absent. For `gop add -b
+   feature/foo` with no path argument, the CLI derives the bare name `foo`
+   before calling the same destination resolver.
 4. `ops::add::run(&source, opts, &mut reporter)` is called.
 5. `run` validates destination via `safety::check_destination_clean`.
 6. It resolves and validates the target branch before creating C:

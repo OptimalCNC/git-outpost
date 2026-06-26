@@ -151,7 +151,7 @@ flowchart TD
 
     A --> B{"`Am I starting a new branch?`"}
 
-    B -->|yes| C["`<code>gop add -b &lt;branch-name&gt; &lt;path-or-name&gt; [&lt;target-branch&gt;]</code> creates &lt;branch-name&gt; in the source repo from &lt;target-branch&gt; without changing branch there. Omit &lt;target-branch&gt; to use the source repo's current branch. The outpost checks out &lt;branch-name&gt; and tracks <code>local/&lt;branch-name&gt;</code>.`"]
+    B -->|yes| C["`<code>gop add -b &lt;branch-name&gt; [&lt;path-or-name&gt; [&lt;target-branch&gt;]]</code> creates &lt;branch-name&gt; in the source repo from &lt;target-branch&gt; without changing branch there. Omit &lt;path-or-name&gt; to derive the outpost name from the final branch component. Omit &lt;target-branch&gt; to use the source repo's current branch. The outpost checks out &lt;branch-name&gt; and tracks <code>local/&lt;branch-name&gt;</code>.`"]
 
     B -->|no| O["`<code>gop add &lt;path-or-name&gt; [&lt;target-branch&gt;]</code> checks out an existing source-repo branch in the outpost. The outpost branch has the same name and tracks the matching <code>local</code> branch.`"]
 
@@ -206,8 +206,9 @@ The remainder of this document uses `gop` because it keeps examples short.
 ```text
 gop [<global-options>] <command> [<args>...]
 
-gop add [-b <new-branch>] [--remote-name <name>]
-        <path-or-name> [<target-branch>]
+gop add [--remote-name <name>] <path-or-name> [<target-branch>]
+gop add -b <new-branch> [--remote-name <name>]
+        [<path-or-name> [<target-branch>]]
 gop config set outpost-container <path>
 gop config get outpost-container
 gop config unset outpost-container
@@ -266,7 +267,12 @@ additional working-directory-specific behavior to explain.
 
 ## Commands
 
-### `add <path-or-name> [<target-branch>]`
+### `add`
+
+Forms:
+
+- `gop add [--remote-name <name>] <path-or-name> [<target-branch>]`
+- `gop add -b <new-branch> [--remote-name <name>] [<path-or-name> [<target-branch>]]`
 
 Create a self-contained outpost from the current repository. The outpost is a
 normal local clone with its own `.git` directory; the current repository is
@@ -285,6 +291,13 @@ gop config set outpost-container <path-to-outpost-container>
 If a bare name is used before the container is configured, `add` fails instead
 of guessing. When registered outposts already exist, the error suggests a
 container path from their common parent.
+
+When `-b <new-branch>` is present, `<path-or-name>` may be omitted. In that
+case, `add` derives the outpost name from the final slash-separated component
+of `<new-branch>`: `feature/my-change` derives `my-change`. The derived name
+is a bare outpost name, so it requires a configured `outpost-container` and is
+resolved the same way as an explicit bare name. If one positional is supplied
+with `-b`, it is always `<path-or-name>`, not `<target-branch>`.
 
 `<target-branch>` names a branch in the source repository. When it is omitted,
 `add` uses the source repository's current branch. The command does not switch

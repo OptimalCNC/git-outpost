@@ -118,6 +118,126 @@ fn add_explicit_path_ignores_configured_outpost_container() {
 }
 
 #[test]
+fn add_new_branch_without_path_derives_outpost_name_from_branch_leaf() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.outpost("foo");
+
+    let set = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "config",
+        "set",
+        "outpost-container",
+        "..",
+    ]));
+    common::assert_success(&set, "gop config set outpost-container");
+
+    let add =
+        common::run(
+            fixture
+                .gop()
+                .current_dir(&fixture.source)
+                .args(["add", "-b", "feature/foo"]),
+        );
+    common::assert_success(&add, "gop add -b feature/foo");
+
+    assert!(outpost.join(".git").is_dir());
+    assert_eq!(
+        common::stdout(&add),
+        format!("added {}\n", common::displayed_path(&outpost))
+    );
+    assert_eq!(
+        fixture.git_capture(&outpost, ["branch", "--show-current"]),
+        "feature/foo"
+    );
+}
+
+#[test]
+fn add_new_branch_with_one_positional_treats_it_as_path_not_target_branch() {
+    let fixture = common::CliFixture::new();
+    let target_outpost = fixture.outpost("main");
+    let derived_outpost = fixture.outpost("foo");
+
+    let switch = common::run(
+        fixture
+            .git(&fixture.source)
+            .args(["switch", "-c", "working"]),
+    );
+    common::assert_success(&switch, "git switch -c working");
+    fixture.commit_file(
+        &fixture.source,
+        "working change",
+        "working.txt",
+        "from working\n",
+    );
+
+    let set = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "config",
+        "set",
+        "outpost-container",
+        "..",
+    ]));
+    common::assert_success(&set, "gop config set outpost-container");
+
+    let add = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "add",
+        "-b",
+        "feature/foo",
+        "main",
+    ]));
+    common::assert_success(&add, "gop add -b feature/foo main");
+
+    assert!(target_outpost.join(".git").is_dir());
+    assert!(!derived_outpost.exists());
+    assert!(target_outpost.join("working.txt").is_file());
+    assert_eq!(
+        fixture.git_capture(&target_outpost, ["branch", "--show-current"]),
+        "feature/foo"
+    );
+}
+
+#[test]
+fn add_new_branch_with_two_positionals_keeps_second_as_target_branch() {
+    let fixture = common::CliFixture::new();
+    let target_outpost = fixture.outpost("main");
+
+    let switch = common::run(
+        fixture
+            .git(&fixture.source)
+            .args(["switch", "-c", "working"]),
+    );
+    common::assert_success(&switch, "git switch -c working");
+    fixture.commit_file(
+        &fixture.source,
+        "working change",
+        "working.txt",
+        "from working\n",
+    );
+
+    let set = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "config",
+        "set",
+        "outpost-container",
+        "..",
+    ]));
+    common::assert_success(&set, "gop config set outpost-container");
+
+    let add = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "add",
+        "-b",
+        "feature/foo",
+        "main",
+        "main",
+    ]));
+    common::assert_success(&add, "gop add -b feature/foo main main");
+
+    assert!(target_outpost.join(".git").is_dir());
+    assert!(!target_outpost.join("working.txt").exists());
+    assert_eq!(
+        fixture.git_capture(&target_outpost, ["branch", "--show-current"]),
+        "feature/foo"
+    );
+}
+
+#[test]
 fn config_commands_store_list_show_and_unset_source_owned_config() {
     let fixture = common::CliFixture::new();
     let container = common::displayed_path(&fixture.root);
