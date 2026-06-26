@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::config::{ConfigKey, ConfigStore, ConfigValue};
 use crate::outpost::Outpost;
 use crate::registry::{Registry, RegistryMut};
 use crate::{
@@ -79,6 +80,30 @@ impl SourceRepo {
 
     pub fn outpost_at(&self, path: &Path) -> OutpostResult<Outpost> {
         Outpost::at_with(path, &self.env)
+    }
+
+    pub fn config(&self) -> ConfigStore<'_> {
+        ConfigStore::new(self)
+    }
+
+    pub fn outpost_container(&self) -> OutpostResult<Option<PathBuf>> {
+        match self.config().get(ConfigKey::OutpostContainer)? {
+            Some(ConfigValue::OutpostContainer(path)) => Ok(Some(path)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn set_outpost_container(&self, path: &Path) -> OutpostResult<PathBuf> {
+        match self.config().set(
+            ConfigKey::OutpostContainer,
+            ConfigValue::OutpostContainer(path.to_path_buf()),
+        )? {
+            ConfigValue::OutpostContainer(path) => Ok(path),
+        }
+    }
+
+    pub fn unset_outpost_container(&self) -> OutpostResult<()> {
+        self.config().unset(ConfigKey::OutpostContainer)
     }
 
     pub fn env(&self) -> &BTreeMap<OsString, OsString> {
@@ -354,6 +379,10 @@ impl SourceRepo {
         self.work_tree.join(".outpost").join("registry.json")
     }
 
+    pub fn config_path(&self) -> PathBuf {
+        self.work_tree.join(".outpost").join("config.json")
+    }
+
     pub fn registry(&self) -> OutpostResult<Registry> {
         Registry::load(self)
     }
@@ -364,6 +393,11 @@ impl SourceRepo {
 
     pub(crate) fn local_exclude_path(&self) -> PathBuf {
         self.git_dir.join("info").join("exclude")
+    }
+
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub fn local_exclude_path_for_tests(&self) -> PathBuf {
+        self.local_exclude_path()
     }
 
     pub(crate) fn git(&self) -> &GitInvoker {
@@ -518,6 +552,31 @@ mod tests {
 
         let source = SourceRepo::at(temp.path()).expect("source repo");
         assert!(source.is_dirty().unwrap());
+    }
+
+    #[test]
+    fn outpost_container_config_set_and_read_canonical_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let container = temp.path().join("outposts");
+        fs::create_dir(&container).expect("container dir");
+        GitInvoker::at(temp.path())
+            .run_check(["init", "--initial-branch=main"])
+            .expect("init");
+        let source = SourceRepo::at(temp.path()).expect("source repo");
+
+        let configured = source
+            .set_outpost_container(&container)
+            .expect("set outpost container");
+
+        let expected = fs::canonicalize(&container).expect("canonical container");
+        assert_eq!(configured, expected);
+        assert_eq!(
+            source
+                .outpost_container()
+                .expect("read outpost container")
+                .expect("configured container"),
+            expected
+        );
     }
 
     #[test]

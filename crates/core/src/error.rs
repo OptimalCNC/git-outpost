@@ -25,6 +25,19 @@ pub enum OutpostError {
     #[error("{command} requires <outpost> when run from source repository {}", .cwd.display())]
     MissingOutpostPath { command: &'static str, cwd: PathBuf },
 
+    #[error("unknown config key: {key}")]
+    UnknownConfigKey { key: String },
+
+    #[error("config key is unset: {key}")]
+    ConfigKeyUnset { key: String },
+
+    #[error("invalid config value for {key}: {} ({reason})", .value.display())]
+    InvalidConfigValue {
+        key: String,
+        value: PathBuf,
+        reason: String,
+    },
+
     #[error("destination already exists: {}", .0.display())]
     DestinationExists(PathBuf),
 
@@ -88,6 +101,9 @@ pub enum OutpostError {
     #[error("invalid registry file at {}: {reason}", .path.display())]
     BadRegistry { path: PathBuf, reason: String },
 
+    #[error("invalid config file at {}: {reason}", .path.display())]
+    BadConfig { path: PathBuf, reason: String },
+
     #[error("invalid outpost metadata at {}: {reason}", .outpost.display())]
     BadMetadata { outpost: PathBuf, reason: String },
 
@@ -116,7 +132,9 @@ impl OutpostError {
             | NotAnOutpost(_)
             | SourceMissing(_)
             | WrongContext { .. }
-            | MissingOutpostPath { .. } => 2,
+            | MissingOutpostPath { .. }
+            | UnknownConfigKey { .. }
+            | ConfigKeyUnset { .. } => 2,
             DestinationExists(_)
             | DestinationInsideRepo(_)
             | DirtyTree { .. }
@@ -131,6 +149,8 @@ impl OutpostError {
             | UpstreamNotABranch { .. } => 5,
             BadRegistry { .. }
             | BadMetadata { .. }
+            | BadConfig { .. }
+            | InvalidConfigValue { .. }
             | OutpostIdPrefixNotFound(_)
             | OutpostIdPrefixAmbiguous(_)
             | OutpostSelectorAmbiguous(_)
@@ -180,6 +200,26 @@ mod tests {
                     cwd: path("/source"),
                 },
                 "lock requires <outpost> when run from source repository /source",
+            ),
+            (
+                OutpostError::UnknownConfigKey {
+                    key: "unknown".to_owned(),
+                },
+                "unknown config key: unknown",
+            ),
+            (
+                OutpostError::ConfigKeyUnset {
+                    key: "outpost-container".to_owned(),
+                },
+                "config key is unset: outpost-container",
+            ),
+            (
+                OutpostError::InvalidConfigValue {
+                    key: "outpost-container".to_owned(),
+                    value: path("/file"),
+                    reason: "path is not an existing directory".to_owned(),
+                },
+                "invalid config value for outpost-container: /file (path is not an existing directory)",
             ),
             (
                 OutpostError::DestinationExists(path("/dest")),
@@ -283,6 +323,13 @@ mod tests {
                 "invalid registry file at /repo/.outpost/registry.json: invalid json",
             ),
             (
+                OutpostError::BadConfig {
+                    path: path("/repo/.outpost/config.json"),
+                    reason: "invalid json".to_owned(),
+                },
+                "invalid config file at /repo/.outpost/config.json: invalid json",
+            ),
+            (
                 OutpostError::BadMetadata {
                     outpost: path("/outpost"),
                     reason: "missing source".to_owned(),
@@ -336,6 +383,18 @@ mod tests {
                 OutpostError::MissingOutpostPath {
                     command: "lock",
                     cwd: path("/source"),
+                },
+                2,
+            ),
+            (
+                OutpostError::UnknownConfigKey {
+                    key: "unknown".to_owned(),
+                },
+                2,
+            ),
+            (
+                OutpostError::ConfigKeyUnset {
+                    key: "outpost-container".to_owned(),
                 },
                 2,
             ),
@@ -422,6 +481,21 @@ mod tests {
                 OutpostError::BadRegistry {
                     path: path("/repo/.outpost/registry.json"),
                     reason: "invalid json".to_owned(),
+                },
+                6,
+            ),
+            (
+                OutpostError::BadConfig {
+                    path: path("/repo/.outpost/config.json"),
+                    reason: "invalid json".to_owned(),
+                },
+                6,
+            ),
+            (
+                OutpostError::InvalidConfigValue {
+                    key: "outpost-container".to_owned(),
+                    value: path("/file"),
+                    reason: "path is not an existing directory".to_owned(),
                 },
                 6,
             ),

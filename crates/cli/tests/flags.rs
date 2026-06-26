@@ -624,6 +624,23 @@ fn e_15_deferred_and_removed_surfaces_are_rejected_by_clap() {
     }
 }
 
+#[test]
+fn config_unknown_keys_are_rejected_by_clap() {
+    for args in [
+        vec!["config", "get", "unknown-key"],
+        vec!["config", "set", "unknown-key", "."],
+        vec!["config", "unset", "unknown-key"],
+    ] {
+        let output = common::run(common::gop_command().args(args));
+        common::assert_failure_code(&output, 2, "config unknown key");
+        let stderr = common::stderr(&output);
+        assert!(
+            stderr.contains("unknown config key: unknown-key"),
+            "stderr should explain unknown config key:\n{stderr}"
+        );
+    }
+}
+
 fn path(value: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(value)
 }

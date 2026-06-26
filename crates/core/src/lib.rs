@@ -1,3 +1,4 @@
+pub mod config;
 pub mod error;
 pub mod git;
 pub mod metadata;
@@ -12,6 +13,7 @@ pub mod safety;
 pub mod selector;
 pub mod source_repo;
 
+pub use config::{ConfigEntry, ConfigKey, ConfigShow, ConfigShowEntry, ConfigStore, ConfigValue};
 pub use error::{OutpostError, OutpostResult};
 pub use git::GitInvoker;
 pub use metadata::{Metadata, RawMetadata};

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use outpost_core::ops;
-use outpost_core::{BranchName, OutpostResult, RemoteName, SourceRemoteRef};
+use outpost_core::{BranchName, ConfigKey, OutpostResult, RemoteName, SourceRemoteRef};
 
 const ROOT_AFTER_HELP: &str = "Command-specific long flags: --remote-name, --reason, --verbose, --force, --no-branch-cleanup, --dry-run";
 
@@ -89,6 +89,9 @@ pub enum Command {
 
     /// Analyze a managed outpost and related branch state.
     Analyze(AnalyzeArgs),
+
+    /// Read and write source repository configuration.
+    Config(ConfigArgs),
 }
 
 impl Command {
@@ -107,7 +110,8 @@ impl Command {
             | Command::Remove(_)
             | Command::Prune(_)
             | Command::Status(_)
-            | Command::Analyze(_) => Ok(()),
+            | Command::Analyze(_)
+            | Command::Config(_) => Ok(()),
         }
     }
 }
@@ -239,6 +243,56 @@ pub struct StatusArgs;
 pub struct AnalyzeArgs {
     #[arg(value_name = "OUTPOST")]
     pub outpost_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = "Config keys: outpost-container")]
+pub struct ConfigArgs {
+    #[command(subcommand)]
+    pub command: ConfigCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ConfigCommand {
+    /// Store a source repository config value.
+    Set(ConfigSetArgs),
+
+    /// Print a source repository config value.
+    Get(ConfigGetArgs),
+
+    /// Remove a source repository config value.
+    Unset(ConfigUnsetArgs),
+
+    /// Print set source repository config values.
+    List,
+
+    /// Print source repository config storage and all known keys.
+    Show,
+}
+
+#[derive(Debug, Args)]
+pub struct ConfigSetArgs {
+    #[arg(value_parser = parse_config_key)]
+    pub key: ConfigKey,
+
+    #[arg(value_name = "PATH")]
+    pub value: PathBuf,
+}
+
+#[derive(Debug, Args)]
+pub struct ConfigGetArgs {
+    #[arg(value_parser = parse_config_key)]
+    pub key: ConfigKey,
+}
+
+#[derive(Debug, Args)]
+pub struct ConfigUnsetArgs {
+    #[arg(value_parser = parse_config_key)]
+    pub key: ConfigKey,
+}
+
+fn parse_config_key(value: &str) -> Result<ConfigKey, String> {
+    ConfigKey::parse(value).map_err(|err| err.to_string())
 }
 
 #[derive(Debug, Args)]

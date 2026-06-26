@@ -32,7 +32,7 @@ fn e_03_help_lists_commands_and_long_flags() {
     let help = common::stdout(&output);
     for command in [
         "add", "pull", "source", "merge", "rebase", "push", "list", "lock", "unlock", "move",
-        "remove", "prune", "status", "analyze",
+        "remove", "prune", "status", "analyze", "config",
     ] {
         assert_eq!(
             count_command_line(&help, command),
@@ -71,6 +71,14 @@ fn e_03_help_lists_commands_and_long_flags() {
                 "expected {flag} in help for {args:?}:\n{subcommand_help}"
             );
         }
+    }
+
+    let config_help = help_for(&["config", "--help"]);
+    for token in ["set", "get", "unset", "list", "show", "outpost-container"] {
+        assert!(
+            config_help.contains(token),
+            "expected {token} in config help:\n{config_help}"
+        );
     }
 }
 

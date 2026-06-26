@@ -82,6 +82,7 @@ git-outpost/                       # repo root
 │   │   │   ├── reporter.rs          # Reporter trait + StepKind
 │   │   │   ├── source_repo.rs       # SourceRepo type + helpers
 │   │   │   ├── outpost.rs           # Outpost type + helpers
+│   │   │   ├── config.rs            # source-owned .outpost config JSON store
 │   │   │   ├── metadata.rs          # outpost.* git config keys (always --local)
 │   │   │   ├── outpost_id.rs        # derived registry-scoped outpost ID aliases
 │   │   │   ├── registry.rs          # source .outpost registry JSON store
@@ -1692,6 +1693,7 @@ from `argv[0]` at runtime (§6.1).
 |---|---|---|---|
 | Outpost metadata (`managed`, `sourceRepo`, `remoteName`) | `<outpost>/.git/config` under `outpost.*` | `git config --local --get outpost.<key>` | `git config --local outpost.<key> <value>` |
 | Source-repo registry of outposts | `<source.work_tree>/.outpost/registry.json` | direct file read | create `.outpost/`, ensure local ignore, then `tempfile::NamedTempFile::persist` (atomic rename) |
+| Source-owned Git Outpost config (`outpost-container`) | `<source.work_tree>/.outpost/config.json` | `core::config::ConfigStore` direct file read | create `.outpost/`, ensure local ignore, then `tempfile::NamedTempFile::persist` (atomic rename) |
 | Per-outpost remote pointing at source | `<outpost>/.git/config` `remote.<remote_name>.url` | `git remote get-url <remote_name>` | created by `git clone` as `origin`, then `git remote rename origin <remote_name>` when needed |
 | `receive.denyCurrentBranch=updateInstead` on source | `<source>/.git/config` | `git config --local --get receive.denyCurrentBranch` | `git config --local receive.denyCurrentBranch updateInstead` |
 
@@ -1702,27 +1704,47 @@ managed, and a user's global `receive.denyCurrentBranch=refuse` could
 unexpectedly override what `gop add` configured. U-14 pins the
 managed-key behavior.
 
-All paths stored in any config or registry are canonicalized before
-storage and canonicalized again on lookup — so case-insensitive
+All paths stored in source-owned config or registry files are canonicalized
+before storage and canonicalized again on lookup — so case-insensitive
 filesystems (macOS APFS) and symlink prefixes don't cause spurious
 "not in registry" failures.
 
-The source registry is stored inside the source working tree at
-`.outpost/registry.json`, and `.outpost/` must be locally ignored so it
-does not become tracked project content. There is no global
-`~/.config/gop/` file in MVP. A `--all` listing across multiple source
-repositories is post-MVP (§14).
+The source registry and source-owned Git Outpost config are stored inside the
+source working tree at `.outpost/registry.json` and `.outpost/config.json`.
+The `.outpost/` directory must be locally ignored so it does not become
+tracked project content. There is no global `~/.config/gop/` file in MVP. A
+`--all` listing across multiple source repositories is post-MVP (§14).
+
+`core::config` owns the source config schema, supported-key allowlist, and
+load/save policy. The current schema is strict and versioned:
+
+```json
+{
+  "version": 1,
+  "outpost_container": "/absolute/path/to/container"
+}
+```
+
+Missing `.outpost/config.json` means empty config. Unknown fields,
+unsupported versions, malformed JSON, unknown config keys, relative stored
+paths, and non-directory `outpost_container` values fail as config errors.
+`set outpost-container` accepts an existing directory and stores its canonical
+absolute path. `unset outpost-container` removes the value while leaving a
+valid versioned config file. Source-owned config never reads from or writes to
+the source repository's `.git/config`; per-outpost metadata remains in each
+outpost repo's local Git config because it describes that outpost Git
+repository.
 
 Cleanup boundary: per-outpost registry entries are managed lifecycle
 state: `remove` deletes the entry for the removed outpost, and `prune`
 removes entries when their registered outpost path is missing.
 `outpost.*` metadata is removed only as part of deleting the outpost
-directory. Source-local setup state is not cleaned up by `remove` or
-`prune`: the `.outpost/` container and its local ignore entry,
-`receive.denyCurrentBranch=updateInstead`, and unproven or declined branches
-are left in place. `remove` may delete source and upstream branches only through
-the prompt-and-proof cleanup path described in §5.9.12; it records no branch
-ownership provenance.
+directory. Source-local setup and policy state is not cleaned up by `remove`
+or `prune`: the `.outpost/` container, its registry and config files, its local
+ignore entry, `receive.denyCurrentBranch=updateInstead`, and unproven or
+declined branches are left in place. `remove` may delete source and upstream
+branches only through the prompt-and-proof cleanup path described in §5.9.12;
+it records no branch ownership provenance.
 
 ---
 
@@ -2151,6 +2173,7 @@ in §11.13.
 | E-13 | `gop add --detach C main` returns a clap usage error; `--detach` is not in the MVP surface. |
 | E-14 | `gop add C -- -evil` returns `InvalidRefName`, not `GitFailed`. |
 | E-15 | Representative deferred or removed CLI surfaces are rejected with clap usage errors, including `--json`, `--quiet`, `list --all`, `prune --expire`, and pull strategy flags. |
+| E-16 | `gop config set/get/list/show/unset outpost-container` uses `.outpost/config.json`, prints the documented stdout formats, rejects non-directory values, and never writes source `git config outpost.container`. |
 | H-01 | `git-outpost --help` renders `git-outpost` as the program name. |
 | H-02 | `gop --help` renders `gop` as the program name. |
 | H-03 | `git outpost -h` renders `git outpost` (or `git-outpost`) as the program name — pin whichever clap produces, but assert it does **not** say `gop`. Git itself intercepts `git outpost --help` as a manpage request before external command dispatch. |

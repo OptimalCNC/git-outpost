@@ -51,6 +51,119 @@ fn e_04_basic_cli_lifecycle_round_trip_exits_zero() {
 }
 
 #[test]
+fn config_commands_store_list_show_and_unset_source_owned_config() {
+    let fixture = common::CliFixture::new();
+    let container = common::displayed_path(&fixture.root);
+    let config_path = common::displayed_path(&fixture.source.join(".outpost").join("config.json"));
+
+    let set = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "config",
+        "set",
+        "outpost-container",
+        "..",
+    ]));
+    common::assert_success(&set, "gop config set outpost-container");
+    assert_eq!(common::stdout(&set), "");
+
+    let list = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["config", "list"]),
+    );
+    common::assert_success(&list, "gop config list");
+    assert_eq!(
+        common::stdout(&list),
+        format!("outpost-container\t{container}\n")
+    );
+
+    let show = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["config", "show"]),
+    );
+    common::assert_success(&show, "gop config show");
+    assert_eq!(
+        common::stdout(&show),
+        format!("storage\t{config_path}\noutpost-container\t{container}\n")
+    );
+
+    let unset = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "config",
+        "unset",
+        "outpost-container",
+    ]));
+    common::assert_success(&unset, "gop config unset outpost-container");
+    assert_eq!(common::stdout(&unset), "");
+
+    let list = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["config", "list"]),
+    );
+    common::assert_success(&list, "gop config list after unset");
+    assert_eq!(common::stdout(&list), "");
+
+    let show = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["config", "show"]),
+    );
+    common::assert_success(&show, "gop config show after unset");
+    assert_eq!(
+        common::stdout(&show),
+        format!("storage\t{config_path}\noutpost-container\t<unset>\n")
+    );
+
+    let get = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "config",
+        "get",
+        "outpost-container",
+    ]));
+    common::assert_failure_code(&get, 2, "gop config get unset outpost-container");
+    assert!(
+        common::stderr(&get).contains("config key is unset: outpost-container"),
+        "stderr should explain unset config key:\n{}",
+        common::stderr(&get)
+    );
+}
+
+#[test]
+fn config_set_rejects_non_directory_and_does_not_write_source_git_config() {
+    let fixture = common::CliFixture::new();
+    let file = fixture.root.join("not-a-directory");
+    std::fs::write(&file, "file").expect("write file");
+
+    let rejected = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .arg("config")
+            .arg("set")
+            .arg("outpost-container")
+            .arg(&file),
+    );
+    common::assert_failure_code(&rejected, 6, "gop config set non-directory");
+
+    let set = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "config",
+        "set",
+        "outpost-container",
+        "..",
+    ]));
+    common::assert_success(&set, "gop config set outpost-container");
+
+    assert_eq!(
+        fixture.local_config(&fixture.source, "outpost.container"),
+        None,
+        "source-owned config must not write source repo git config"
+    );
+}
+
+#[test]
 fn list_prints_id_column_and_lifecycle_accepts_id_prefix() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");

@@ -8,10 +8,12 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use cli::{Cli, Command, SourceCommand};
+use cli::{Cli, Command, ConfigCommand, SourceCommand};
 use exit::CliResult;
 use outpost_core::selector::OutpostSelector;
-use outpost_core::{Outpost, OutpostError, Reporter, SourceRepo, StepKind, ops};
+use outpost_core::{
+    ConfigKey, ConfigValue, Outpost, OutpostError, Reporter, SourceRepo, StepKind, ops,
+};
 use reporter_impls::StderrReporter;
 
 fn main() -> ExitCode {
@@ -179,6 +181,44 @@ fn dispatch(cli: Cli) -> CliResult<()> {
             let github = gh_status.analyze(report.branch.as_ref());
             reporter.step(StepKind::Analysis, &github.progress_message());
             output::print_analyze(&report, &github);
+        }
+        Command::Config(args) => {
+            let source = require_source("config", &cwd)?;
+            match args.command {
+                ConfigCommand::Set(args) => {
+                    let path = resolve_path_arg(&cwd, args.value);
+                    let value = match args.key {
+                        ConfigKey::OutpostContainer => ConfigValue::OutpostContainer(path),
+                    };
+                    source.config().set(args.key, value)?;
+                }
+                ConfigCommand::Get(args) => {
+                    let Some(value) = source.config().get(args.key)? else {
+                        return Err(OutpostError::ConfigKeyUnset {
+                            key: args.key.as_str().to_owned(),
+                        });
+                    };
+                    println!("{value}");
+                }
+                ConfigCommand::Unset(args) => {
+                    source.config().unset(args.key)?;
+                }
+                ConfigCommand::List => {
+                    for entry in source.config().list()? {
+                        println!("{}\t{}", entry.key, entry.value);
+                    }
+                }
+                ConfigCommand::Show => {
+                    let show = source.config().show()?;
+                    println!("storage\t{}", show.storage_path.display());
+                    for entry in show.entries {
+                        match entry.value {
+                            Some(value) => println!("{}\t{}", entry.key, value),
+                            None => println!("{}\t<unset>", entry.key),
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -77,10 +77,19 @@ deletion:
 .outpost/registry.json
 ```
 
-`gop add` creates or updates this file and locally ignores `.outpost/` in the
-source repository so the registry is neither tracked project content nor copied
-into outposts. This is Git Outpost's source-owned analogue to Git's
-`.git/worktrees` registry.
+The source repository may also keep source-owned Git Outpost settings:
+
+```text
+.outpost/config.json
+```
+
+The only supported config key is `outpost-container`.
+
+`gop add` creates or updates the registry, and `gop config set` creates or
+updates the config file. Both locally ignore `.outpost/` in the source
+repository so source-owned Git Outpost metadata is neither tracked project
+content nor copied into outposts. This is Git Outpost's source-owned analogue
+to Git's `.git/worktrees` registry.
 
 Each registered outpost has a derived ID alias for human selection. The alias
 is computed from the source repository path and the outpost path. It is not
@@ -197,6 +206,11 @@ gop [<global-options>] <command> [<args>...]
 
 gop add [-b <new-branch>] [--remote-name <name>]
         <path> [<target-branch>]
+gop config set outpost-container <path>
+gop config get outpost-container
+gop config unset outpost-container
+gop config list
+gop config show
 gop pull
 gop source pull <source-branch>
 gop merge <source-ref>
@@ -233,6 +247,7 @@ additional working-directory-specific behavior to explain.
 | Subcommand | Source repo | Outpost |
 | --- | --- | --- |
 | `add` | / | Disallowed |
+| `config` | / | Disallowed |
 | `pull` | Disallowed | / |
 | `source pull` | Disallowed | / |
 | `merge` | Disallowed | / |
@@ -286,6 +301,50 @@ repository with `receive.denyCurrentBranch=updateInstead` so ordinary
 source repository. This source-side config write must be visible in command
 output. There is no MVP flag to disable it; users who need a different policy
 can change the Git config directly.
+
+### `config set outpost-container <path>`
+
+Store the source repository's shared outpost container in
+`<source.work_tree>/.outpost/config.json`. `<path>` is resolved from the
+effective working directory, must name an existing directory, and is stored as
+a canonical absolute path. The command prints no stdout on success.
+
+The config file uses a strict versioned schema:
+
+```json
+{
+  "version": 1,
+  "outpost_container": "/absolute/path/to/container"
+}
+```
+
+Missing `.outpost/config.json` means empty config. Unknown JSON fields,
+unsupported versions, malformed JSON, relative paths, and non-directory values
+fail as config errors. Unknown CLI keys are rejected; `outpost-container` is
+the only supported key.
+
+### `config get outpost-container`
+
+Print only the configured outpost container value. The command fails if the
+key is unset.
+
+### `config unset outpost-container`
+
+Remove the configured outpost container. The command leaves a valid versioned
+config file and prints no stdout on success.
+
+### `config list`
+
+Print only set keys as `key<TAB>value`. With no set keys, stdout is empty.
+
+### `config show`
+
+Print the config storage path and all known keys, including unset keys:
+
+```text
+storage	/path/to/source/.outpost/config.json
+outpost-container	<unset>
+```
 
 ### `pull`
 

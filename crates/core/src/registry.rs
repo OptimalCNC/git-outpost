@@ -318,7 +318,7 @@ impl RegistryEntryFile {
     }
 }
 
-fn ensure_local_ignore(exclude_path: &Path) -> OutpostResult<()> {
+pub(crate) fn ensure_local_ignore(exclude_path: &Path) -> OutpostResult<()> {
     let parent = exclude_path.parent().ok_or_else(|| OutpostError::IoAt {
         path: exclude_path.to_path_buf(),
         source: std::io::Error::new(
