@@ -40,6 +40,28 @@ jobs:
       - name: Build docs
         run: mdbook build docs
 
+      - name: Verify deployable Mermaid assets
+        run: |
+          if grep -R 'src="\.assets/' docs/book/*.html; then
+            echo "Generated docs reference hidden .assets paths that GitHub Pages upload excludes" >&2
+            exit 1
+          fi
+          mermaid_assets="$(grep -Roh 'src="assets/mermaid[^"]*"' docs/book/*.html || true)"
+          if [ -z "$mermaid_assets" ]; then
+            echo "Generated docs do not reference deployable Mermaid assets" >&2
+            exit 1
+          fi
+          missing=0
+          for src in $(printf '%s\n' "$mermaid_assets" | sed 's/src="//;s/"//'); do
+            if [ ! -f "docs/book/$src" ]; then
+              echo "Generated docs reference missing Mermaid asset: $src" >&2
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:

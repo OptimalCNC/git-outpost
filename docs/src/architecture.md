@@ -66,7 +66,7 @@ git-outpost/                       # repo root
 ├── README.md                        # links to docs
 ├── docs/                             # mdbook source tree
 │   ├── book.toml                     # mdbook configuration
-│   ├── .assets/                      # mdbook-mermaid assets
+│   ├── assets/                       # mdbook-mermaid assets
 │   └── src/
 │       ├── SUMMARY.md                # mdbook table of contents
 │       ├── product.md                # the product spec
