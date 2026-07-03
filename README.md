@@ -36,6 +36,13 @@ cd ../my-change
 git status
 ```
 
+Print paths for shell navigation:
+
+```bash
+gop path src
+gop path ../my-change
+```
+
 Publish the current outpost branch through the source repository:
 
 ```bash
