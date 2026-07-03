@@ -5,6 +5,7 @@ pub mod list;
 pub mod lock;
 pub mod merge;
 pub mod r#move;
+pub mod path;
 pub mod prune;
 pub mod pull;
 pub mod push;
