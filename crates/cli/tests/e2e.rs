@@ -319,6 +319,95 @@ fn config_commands_store_list_show_and_unset_source_owned_config() {
 }
 
 #[test]
+fn path_src_prints_source_from_source_and_outpost() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    let source_display = common::displayed_path(&fixture.source);
+
+    let from_source = common::run(fixture.gop().current_dir(&fixture.source).args(["path", "src"]));
+    common::assert_success(&from_source, "gop path src from source");
+    assert_eq!(common::stdout(&from_source), format!("{source_display}\n"));
+
+    let from_outpost = common::run(fixture.gop().current_dir(&outpost).args(["path", "src"]));
+    common::assert_success(&from_outpost, "gop path src from outpost");
+    assert_eq!(common::stdout(&from_outpost), format!("{source_display}\n"));
+}
+
+#[test]
+fn path_outpost_prints_resolved_outpost_path_by_path_and_id() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    let outpost_display = common::displayed_path(&outpost);
+
+    let by_path = common::run(fixture.gop().current_dir(&fixture.source).args(["path", "../C"]));
+    common::assert_success(&by_path, "gop path ../C");
+    assert_eq!(common::stdout(&by_path), format!("{outpost_display}\n"));
+
+    let list = common::run(fixture.gop().current_dir(&fixture.source).arg("list"));
+    common::assert_success(&list, "gop list");
+    let id_prefix = common::stdout(&list)
+        .lines()
+        .next()
+        .expect("list line")
+        .split('\t')
+        .next()
+        .expect("id prefix")
+        .to_owned();
+
+    let by_id = common::run(fixture.gop().current_dir(&fixture.source).args(["path", &id_prefix]));
+    common::assert_success(&by_id, "gop path id");
+    assert_eq!(common::stdout(&by_id), format!("{outpost_display}\n"));
+}
+
+#[test]
+fn path_outpost_allows_explicit_path_to_outpost_named_src() {
+    let fixture = common::CliFixture::new();
+    let src_outpost = fixture.add_outpost("src");
+    let source_display = common::displayed_path(&fixture.source);
+    let outpost_display = common::displayed_path(&src_outpost);
+
+    let reserved = common::run(fixture.gop().current_dir(&fixture.source).args(["path", "src"]));
+    common::assert_success(&reserved, "gop path src");
+    assert_eq!(common::stdout(&reserved), format!("{source_display}\n"));
+
+    let explicit =
+        common::run(fixture.gop().current_dir(&fixture.source).args(["path", "../src"]));
+    common::assert_success(&explicit, "gop path ../src");
+    assert_eq!(common::stdout(&explicit), format!("{outpost_display}\n"));
+}
+
+#[test]
+fn path_outpost_requires_managed_live_outpost() {
+    let fixture = common::CliFixture::new();
+    fixture.add_outpost("C");
+
+    let missing = common::run(fixture.gop().current_dir(&fixture.source).args(["path", "../missing"]));
+
+    common::assert_failure_code(&missing, 6, "gop path missing outpost");
+    let stderr = common::stderr(&missing);
+    assert!(
+        stderr.contains("registry entry not found"),
+        "missing outpost path should use selector error:\n{stderr}"
+    );
+}
+
+#[test]
+fn path_outpost_rejects_stale_registered_outpost() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    std::fs::remove_dir_all(&outpost).expect("remove outpost directory");
+
+    let stale = common::run(fixture.gop().current_dir(&fixture.source).args(["path", "../C"]));
+
+    assert!(
+        !stale.status.success(),
+        "stale registered outpost path should fail instead of printing a dead cd target\nstdout:\n{}\nstderr:\n{}",
+        common::stdout(&stale),
+        common::stderr(&stale)
+    );
+}
+
+#[test]
 fn config_set_rejects_non_directory_and_does_not_write_source_git_config() {
     let fixture = common::CliFixture::new();
     let file = fixture.root.join("not-a-directory");

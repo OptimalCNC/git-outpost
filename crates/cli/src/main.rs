@@ -8,7 +8,7 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use cli::{Cli, Command, ConfigCommand, SourceCommand};
+use cli::{Cli, Command, ConfigCommand, PathTargetArg, SourceCommand};
 use exit::CliResult;
 use outpost_core::selector::OutpostSelector;
 use outpost_core::{
@@ -72,6 +72,17 @@ fn dispatch(cli: Cli) -> CliResult<()> {
             let outpost = require_outpost("push", &cwd)?;
             let report = ops::push::run(&outpost, ops::push::PushOptions, &mut reporter)?;
             output::print_push(&report);
+        }
+        Command::Path(args) => {
+            let source = list_source(&cwd)?;
+            let target = match args.target {
+                PathTargetArg::Source => ops::path::PathTarget::Source,
+                PathTargetArg::Outpost(path) => {
+                    ops::path::PathTarget::Outpost(OutpostSelector::from_cli_arg(&cwd, path))
+                }
+            };
+            let report = ops::path::run(&source, target)?;
+            output::print_path(&report.path);
         }
         Command::List(args) => {
             let source = list_source(&cwd)?;

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::gh;
 use outpost_core::AheadBehind;
 use outpost_core::BranchName;
@@ -36,6 +38,10 @@ pub fn print_list(summaries: &[ops::list::OutpostSummary], verbose: bool) {
             }
         }
     }
+}
+
+pub fn print_path(path: &Path) {
+    println!("{}", path.display());
 }
 
 pub fn print_status(report: &ops::status::StatusReport) {

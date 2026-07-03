@@ -66,6 +66,9 @@ pub enum Command {
     /// Push the current outpost branch through the source repository.
     Push(PushArgs),
 
+    /// Print a source or outpost path.
+    Path(PathArgs),
+
     /// List registered outposts.
     List(ListArgs),
 
@@ -103,6 +106,7 @@ impl Command {
             Command::Rebase(args) => args.validate_refs(),
             Command::Pull(_)
             | Command::Push(_)
+            | Command::Path(_)
             | Command::List(_)
             | Command::Lock(_)
             | Command::Unlock(_)
@@ -212,6 +216,26 @@ pub struct ListArgs {
     /// Include lock reasons and extended annotations.
     #[arg(short = 'v', long)]
     pub verbose: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PathArgs {
+    #[arg(value_name = "src|OUTPOST", value_parser = parse_path_target)]
+    pub target: PathTargetArg,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathTargetArg {
+    Source,
+    Outpost(PathBuf),
+}
+
+fn parse_path_target(value: &str) -> Result<PathTargetArg, String> {
+    if value == "src" {
+        Ok(PathTargetArg::Source)
+    } else {
+        Ok(PathTargetArg::Outpost(PathBuf::from(value)))
+    }
 }
 
 #[derive(Debug, Args)]
