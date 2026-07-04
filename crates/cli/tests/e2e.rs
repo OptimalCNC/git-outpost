@@ -1062,6 +1062,291 @@ fn cd_with_outpost_arg_prints_setup_guidance_without_resolving_target() {
 }
 
 #[cfg(unix)]
+#[test]
+fn shell_install_writes_script_and_managed_rc_block() {
+    let fixture = common::CliFixture::new();
+    let rc_file = fixture.root.join("home/.bashrc");
+    let script_file = fixture.root.join("config/git-outpost/shell.bash");
+
+    let output = common::run(
+        fixture
+            .gop()
+            .args(["shell", "install", "bash", "--rc-file"])
+            .arg(&rc_file)
+            .arg("--script-file")
+            .arg(&script_file),
+    );
+
+    common::assert_success(&output, "gop shell install bash");
+    let stdout = common::stdout(&output);
+    let rc = std::fs::read_to_string(&rc_file).expect("read rc");
+    let script = std::fs::read_to_string(&script_file).expect("read script");
+
+    assert!(stdout.contains("installed bash shell integration"), "{stdout}");
+    assert!(stdout.contains(&common::displayed_path(&rc_file)), "{stdout}");
+    assert!(
+        stdout.contains(&common::displayed_path(&script_file)),
+        "{stdout}"
+    );
+    assert!(rc.contains("# >>> git-outpost shell install >>>"), "{rc}");
+    assert!(rc.contains("# <<< git-outpost shell install <<<"), "{rc}");
+    assert!(rc.contains("gop shell uninstall bash"), "{rc}");
+    assert!(
+        script.contains("# >>> git-outpost shell integration >>>"),
+        "{script}"
+    );
+    assert!(script.contains("command gop \"$@\""), "{script}");
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_install_replaces_existing_managed_block() {
+    let fixture = common::CliFixture::new();
+    let rc_file = fixture.root.join("home/.bashrc");
+    let script_file = fixture.root.join("config/git-outpost/shell.bash");
+
+    for _ in 0..2 {
+        let output = common::run(
+            fixture
+                .gop()
+                .args(["shell", "install", "bash", "--rc-file"])
+                .arg(&rc_file)
+                .arg("--script-file")
+                .arg(&script_file),
+        );
+        common::assert_success(&output, "gop shell install bash");
+    }
+
+    let rc = std::fs::read_to_string(&rc_file).expect("read rc");
+    assert_eq!(
+        rc.matches("# >>> git-outpost shell install >>>").count(),
+        1,
+        "{rc}"
+    );
+    assert_eq!(
+        rc.matches("# <<< git-outpost shell install <<<").count(),
+        1,
+        "{rc}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_uninstall_removes_managed_block_and_script_only() {
+    let fixture = common::CliFixture::new();
+    let rc_file = fixture.root.join("home/.bashrc");
+    let script_file = fixture.root.join("config/git-outpost/shell.bash");
+    std::fs::create_dir_all(rc_file.parent().expect("rc parent")).expect("create rc parent");
+    std::fs::write(
+        &rc_file,
+        "# manual line\n# >>> git-outpost shell integration >>>\nmanual init\n# <<< git-outpost shell integration <<<\n",
+    )
+    .expect("write rc");
+    common::assert_success(
+        &common::run(
+            fixture
+                .gop()
+                .args(["shell", "install", "bash", "--rc-file"])
+                .arg(&rc_file)
+                .arg("--script-file")
+                .arg(&script_file),
+        ),
+        "gop shell install bash",
+    );
+
+    let output = common::run(
+        fixture
+            .gop()
+            .args(["shell", "uninstall", "bash", "--rc-file"])
+            .arg(&rc_file)
+            .arg("--script-file")
+            .arg(&script_file),
+    );
+
+    common::assert_success(&output, "gop shell uninstall bash");
+    let stdout = common::stdout(&output);
+    let rc = std::fs::read_to_string(&rc_file).expect("read rc");
+
+    assert!(
+        stdout.contains("uninstalled bash shell integration"),
+        "{stdout}"
+    );
+    assert!(!script_file.exists());
+    assert!(!rc.contains("# >>> git-outpost shell install >>>"), "{rc}");
+    assert!(rc.contains("# manual line"), "{rc}");
+    assert!(rc.contains("# >>> git-outpost shell integration >>>"), "{rc}");
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_uninstall_is_idempotent() {
+    let fixture = common::CliFixture::new();
+    let rc_file = fixture.root.join("home/.bashrc");
+    let script_file = fixture.root.join("config/git-outpost/shell.bash");
+
+    let output = common::run(
+        fixture
+            .gop()
+            .args(["shell", "uninstall", "bash", "--rc-file"])
+            .arg(&rc_file)
+            .arg("--script-file")
+            .arg(&script_file),
+    );
+
+    common::assert_success(&output, "gop shell uninstall bash absent");
+    assert!(
+        common::stdout(&output).contains("not installed"),
+        "{}",
+        common::stdout(&output)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_install_rejects_malformed_managed_block_without_editing() {
+    let fixture = common::CliFixture::new();
+    let rc_file = fixture.root.join("home/.bashrc");
+    let script_file = fixture.root.join("config/git-outpost/shell.bash");
+    std::fs::create_dir_all(rc_file.parent().expect("rc parent")).expect("create rc parent");
+    let original = "# before\n# >>> git-outpost shell install >>>\nmissing end\n";
+    std::fs::write(&rc_file, original).expect("write rc");
+
+    let output = common::run(
+        fixture
+            .gop()
+            .args(["shell", "install", "bash", "--rc-file"])
+            .arg(&rc_file)
+            .arg("--script-file")
+            .arg(&script_file),
+    );
+
+    assert!(
+        !output.status.success(),
+        "malformed install unexpectedly succeeded"
+    );
+    assert_eq!(common::stdout(&output), "");
+    assert!(
+        common::stderr(&output).contains("missing git-outpost shell install end marker"),
+        "{}",
+        common::stderr(&output)
+    );
+    assert_eq!(std::fs::read_to_string(&rc_file).expect("read rc"), original);
+    assert!(!script_file.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_install_relative_paths_use_effective_cwd() {
+    let fixture = common::CliFixture::new();
+    let work = fixture.root.join("shell-work");
+    std::fs::create_dir_all(&work).expect("create work");
+
+    let output = common::run(
+        fixture
+            .gop()
+            .arg("-C")
+            .arg(&work)
+            .args([
+                "shell",
+                "install",
+                "zsh",
+                "--rc-file",
+                "home/.zshrc",
+                "--script-file",
+                "config/git-outpost/shell.zsh",
+            ]),
+    );
+
+    common::assert_success(&output, "gop shell install zsh relative");
+    assert!(work.join("home/.zshrc").exists());
+    assert!(work.join("config/git-outpost/shell.zsh").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_install_uses_home_and_xdg_config_home_defaults() {
+    let fixture = common::CliFixture::new();
+    let home = fixture.root.join("home");
+    let config_home = fixture.root.join("xdg-config");
+
+    let output = common::run(
+        fixture
+            .gop()
+            .args(["shell", "install", "bash"])
+            .env("HOME", &home)
+            .env("XDG_CONFIG_HOME", &config_home),
+    );
+
+    common::assert_success(&output, "gop shell install bash defaults");
+    assert!(home.join(".bashrc").exists());
+    assert!(config_home.join("git-outpost/shell.bash").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_install_requires_home_for_default_paths() {
+    let fixture = common::CliFixture::new();
+
+    let output = common::run(
+        fixture
+            .gop()
+            .args(["shell", "install", "bash"])
+            .env_remove("HOME")
+            .env_remove("XDG_CONFIG_HOME"),
+    );
+
+    assert!(
+        !output.status.success(),
+        "install without HOME unexpectedly succeeded"
+    );
+    assert_eq!(common::stdout(&output), "");
+    assert!(
+        common::stderr(&output).contains("HOME is not set"),
+        "{}",
+        common::stderr(&output)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_installed_rc_enables_gop_cd() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    let rc_file = fixture.root.join("home/.bashrc");
+    let script_file = fixture.root.join("config/git-outpost/shell.bash");
+    let source_display = common::displayed_path(&fixture.source);
+
+    common::assert_success(
+        &common::run(
+            fixture
+                .gop()
+                .args(["shell", "install", "bash", "--rc-file"])
+                .arg(&rc_file)
+                .arg("--script-file")
+                .arg(&script_file),
+        ),
+        "gop shell install bash",
+    );
+
+    let script = format!(
+        r#"
+set -eu
+. "{}"
+cd "{}"
+gop cd
+pwd
+"#,
+        rc_file.display(),
+        outpost.display()
+    );
+
+    let output = bash_script(&script, &fixture);
+
+    common::assert_success(&output, "installed bash rc gop cd");
+    assert_eq!(common::stdout(&output), format!("{source_display}\n"));
+}
+
+#[cfg(unix)]
 fn shell_path() -> std::ffi::OsString {
     let bin_dir = common::binary_path("gop")
         .parent()

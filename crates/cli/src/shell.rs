@@ -4,8 +4,10 @@ mod install;
 
 pub use install::{
     InstallOptions, ShellInstallReport, default_rc_file, default_script_file, install,
-    managed_source_block, uninstall,
+    uninstall,
 };
+#[allow(unused_imports)]
+pub use install::managed_source_block;
 
 pub fn init_script(shell: Option<ShellKind>) -> &'static str {
     match shell {

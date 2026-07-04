@@ -371,4 +371,23 @@ mod operation_tests {
         assert_eq!(after, original);
         assert!(!options.script_file.exists());
     }
+
+    #[test]
+    fn duplicate_markers_fail_without_modifying_rc() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let options = paths(tmp.path());
+        let original = format!(
+            "# before\n{INSTALL_START}\none\n{INSTALL_END}\n{INSTALL_START}\ntwo\n{INSTALL_END}\n"
+        );
+        std::fs::write(&options.rc_file, &original).expect("write rc");
+
+        let err = uninstall(options.clone()).expect_err("duplicate markers should fail");
+        let after = std::fs::read_to_string(&options.rc_file).expect("read rc");
+
+        assert!(
+            err.to_string()
+                .contains("multiple git-outpost shell install blocks found")
+        );
+        assert_eq!(after, original);
+    }
 }
