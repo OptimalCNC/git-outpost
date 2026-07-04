@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use outpost_core::ops;
 use outpost_core::{BranchName, ConfigKey, OutpostResult, RemoteName, SourceRemoteRef, SourceRepo};
 
@@ -95,6 +95,9 @@ pub enum Command {
 
     /// Read and write source repository configuration.
     Config(ConfigArgs),
+
+    /// Print shell integration helpers.
+    Shell(ShellArgs),
 }
 
 impl Command {
@@ -106,6 +109,7 @@ impl Command {
             Command::Rebase(args) => args.validate_refs(),
             Command::Pull(_)
             | Command::Push(_)
+            | Command::Shell(_)
             | Command::Path(_)
             | Command::List(_)
             | Command::Lock(_)
@@ -344,6 +348,29 @@ pub struct ConfigGetArgs {
 pub struct ConfigUnsetArgs {
     #[arg(value_parser = parse_config_key)]
     pub key: ConfigKey,
+}
+
+#[derive(Debug, Args)]
+#[command(about = "Print shell integration helpers.")]
+pub struct ShellArgs {
+    #[command(subcommand)]
+    pub command: ShellCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ShellCommand {
+    /// Print shell integration for `gop cd`.
+    Init {
+        /// Shell syntax to print.
+        #[arg(value_enum, value_name = "SHELL")]
+        shell: Option<ShellKind>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum ShellKind {
+    Bash,
+    Zsh,
 }
 
 fn parse_config_key(value: &str) -> Result<ConfigKey, String> {

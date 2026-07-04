@@ -3,12 +3,13 @@ mod exit;
 mod gh;
 mod output;
 mod reporter_impls;
+mod shell;
 
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use cli::{Cli, Command, ConfigCommand, PathTargetArg, SourceCommand};
+use cli::{Cli, Command, ConfigCommand, PathTargetArg, ShellCommand, SourceCommand};
 use exit::CliResult;
 use outpost_core::selector::OutpostSelector;
 use outpost_core::{
@@ -231,6 +232,11 @@ fn dispatch(cli: Cli) -> CliResult<()> {
                 }
             }
         }
+        Command::Shell(args) => match args.command {
+            ShellCommand::Init { shell: shell_kind } => {
+                print!("{}", shell::init_script(shell_kind));
+            }
+        },
     }
 
     Ok(())
