@@ -28,7 +28,7 @@ GitHub clone.
 
 - Make adding another working checkout as simple as adding a Git worktree.
 - Support the essential outpost lifecycle: add, pull, source pull, merge,
-  rebase, push, list, lock, unlock, move, remove, prune, status, and analyze.
+  rebase, push, list, path, lock, unlock, move, remove, prune, status, and analyze.
 - Keep each outpost self-contained enough for devcontainers and editors.
 - Avoid `git clone --shared`, because its object alternates still point outside
   the clone and can recreate the same portability issue as worktrees.
@@ -144,6 +144,13 @@ This creates a two-step flow:
 outpost <-> source repository <-> upstream remote
 ```
 
+For shell navigation, `gop path src` prints the associated source repository
+path from either the source repo or a managed outpost. `gop path <outpost>`
+prints a managed outpost path selected by the same path-or-ID selector style
+used by lifecycle commands. The exact token `src` is reserved for the source
+repository; use explicit path syntax such as `./src` or `../src` for an outpost
+whose directory is named `src`.
+
 ```mermaid
 %%{init: {"flowchart": {"wrappingWidth": 300}}}%%
 flowchart TD
@@ -220,6 +227,7 @@ gop merge <source-ref>
 gop rebase <source-ref>
 gop push
 gop list [-v|--verbose]
+gop path <src|outpost>
 gop lock [--reason <string>] [<outpost>]
 gop unlock [<outpost>]
 gop move [-f|--force] <outpost> <new-path>
@@ -229,12 +237,12 @@ gop status
 gop analyze [<outpost>]
 ```
 
-For `lock`, `unlock`, `move`, `remove`, and `analyze`, `<outpost>` is either a
-path or a unique outpost ID prefix from `gop list`. ID prefixes are scoped to
-the current source repository registry and are derived from each registered
-path. Prefixes must be at least 5 hex characters; if a prefix is missing or
-matches more than one registered outpost, the command fails instead of
-guessing.
+For `path`, `lock`, `unlock`, `move`, `remove`, and `analyze`, `<outpost>` is
+either a path or a unique outpost ID prefix from `gop list`. ID prefixes are
+scoped to the current source repository registry and are derived from each
+registered path. Prefixes must be at least 5 hex characters; if a prefix is
+missing or matches more than one registered outpost, the command fails instead
+of guessing.
 
 The MVP keeps only the options that are meaningful for clone-backed outposts.
 It does not mirror every `git worktree` option. Synchronization commands have
@@ -257,6 +265,7 @@ additional working-directory-specific behavior to explain.
 | `rebase` | Disallowed | / |
 | `push` | Disallowed | / |
 | `list` | / | Auto-resolves the source repo |
+| `path` | `src` prints the source repo; `<outpost>` resolves from the source registry | `src` prints the associated source repo; `<outpost>` resolves from that source registry |
 | `lock` | Requires `<outpost>` | May omit `<outpost>`; defaults to the current outpost |
 | `unlock` | Requires `<outpost>` | May omit `<outpost>`; defaults to the current outpost |
 | `move` | / | Disallowed |
@@ -454,6 +463,16 @@ abc12	/path/to/outpost	main	clean	ahead 0, behind 0	locked
 When run in a managed outpost, `list` resolves the source repository from
 outpost metadata and produces the same output as running `list` in that source
 repository.
+
+### `path <src|outpost>`
+
+Print one absolute path for shell navigation. `gop path src` prints the
+associated source repository path. `gop path <outpost>` prints a managed
+outpost path selected by explicit path or unique ID prefix. The outpost must be
+registered, present on disk, and managed by the current source repository.
+
+The token `src` is reserved for the source repository. To select an outpost
+directory named `src`, use explicit path syntax such as `./src` or `../src`.
 
 ### `lock [--reason <string>] [<outpost>]`
 
