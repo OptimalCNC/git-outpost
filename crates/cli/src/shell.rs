@@ -3,7 +3,8 @@ use crate::cli::ShellKind;
 mod install;
 
 pub use install::{
-    InstallOptions, ShellInstallReport, default_rc_file, default_script_file, managed_source_block,
+    InstallOptions, ShellInstallReport, default_rc_file, default_script_file, install,
+    managed_source_block, uninstall,
 };
 
 pub fn init_script(shell: Option<ShellKind>) -> &'static str {
