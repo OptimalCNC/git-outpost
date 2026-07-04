@@ -1,5 +1,11 @@
 use crate::cli::ShellKind;
 
+mod install;
+
+pub use install::{
+    InstallOptions, ShellInstallReport, default_rc_file, default_script_file, managed_source_block,
+};
+
 pub fn init_script(shell: Option<ShellKind>) -> &'static str {
     match shell {
         Some(ShellKind::Bash) | Some(ShellKind::Zsh) | None => BASH_ZSH_INIT_SCRIPT,
