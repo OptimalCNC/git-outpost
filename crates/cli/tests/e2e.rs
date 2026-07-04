@@ -1017,6 +1017,50 @@ fn e_11_merge_and_rebase_accept_story_source_ref() {
     common::assert_success(&rebase, "gop rebase local/main");
 }
 
+#[test]
+fn cd_without_shell_integration_prints_setup_guidance() {
+    let fixture = common::CliFixture::new();
+
+    let output = common::run(fixture.gop().current_dir(&fixture.root).arg("cd"));
+
+    common::assert_failure_code(&output, 2, "gop cd without shell integration");
+    assert_eq!(common::stdout(&output), "");
+    let stderr = common::stderr(&output);
+    for token in [
+        "`gop cd` is provided by shell integration",
+        "gop shell install bash",
+        "gop shell install zsh",
+        "gop shell init bash",
+        "gop shell init zsh",
+    ] {
+        assert!(
+            stderr.contains(token),
+            "expected {token} in stderr:\n{stderr}"
+        );
+    }
+}
+
+#[test]
+fn cd_with_outpost_arg_prints_setup_guidance_without_resolving_target() {
+    let fixture = common::CliFixture::new();
+
+    let output = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.root)
+            .args(["cd", "../does-not-need-to-exist"]),
+    );
+
+    common::assert_failure_code(&output, 2, "gop cd target without shell integration");
+    assert_eq!(common::stdout(&output), "");
+    let stderr = common::stderr(&output);
+    assert!(
+        stderr.contains("Requested target: ../does-not-need-to-exist"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("gop shell install bash"), "{stderr}");
+}
+
 #[cfg(unix)]
 fn shell_path() -> std::ffi::OsString {
     let bin_dir = common::binary_path("gop")

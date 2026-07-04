@@ -74,6 +74,11 @@ fn dispatch(cli: Cli) -> CliResult<()> {
             let report = ops::push::run(&outpost, ops::push::PushOptions, &mut reporter)?;
             output::print_push(&report);
         }
+        Command::Cd(args) => {
+            return Err(exit::CliError::ShellCdRequiresIntegration {
+                outpost: args.outpost,
+            });
+        }
         Command::Path(args) => {
             let source = list_source(&cwd)?;
             let target = match args.target {
@@ -208,7 +213,8 @@ fn dispatch(cli: Cli) -> CliResult<()> {
                     let Some(value) = source.config().get(args.key)? else {
                         return Err(OutpostError::ConfigKeyUnset {
                             key: args.key.as_str().to_owned(),
-                        });
+                        }
+                        .into());
                     };
                     println!("{value}");
                 }
@@ -235,6 +241,16 @@ fn dispatch(cli: Cli) -> CliResult<()> {
         Command::Shell(args) => match args.command {
             ShellCommand::Init { shell: shell_kind } => {
                 print!("{}", shell::init_script(shell_kind));
+            }
+            ShellCommand::Install(_) | ShellCommand::Uninstall(_) => {
+                return Err(OutpostError::IoAt {
+                    path: PathBuf::from("gop shell"),
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "shell install dispatch is not wired",
+                    ),
+                }
+                .into());
             }
         },
     }
@@ -349,7 +365,7 @@ fn classify(cwd: &Path) -> CliResult<Context> {
     match Outpost::at(source.work_tree()) {
         Ok(outpost) => Ok(Context::Outpost(outpost)),
         Err(OutpostError::NotAnOutpost(_)) => Ok(Context::Source(source)),
-        Err(err) => Err(err),
+        Err(err) => Err(err.into()),
     }
 }
 
@@ -360,7 +376,8 @@ fn require_source(command: &'static str, cwd: &Path) -> CliResult<SourceRepo> {
             command,
             expected: "a source repository",
             cwd: cwd.to_path_buf(),
-        }),
+        }
+        .into()),
     }
 }
 
@@ -371,7 +388,8 @@ fn require_outpost(command: &'static str, cwd: &Path) -> CliResult<Outpost> {
             command,
             expected: "a managed outpost",
             cwd: cwd.to_path_buf(),
-        }),
+        }
+        .into()),
     }
 }
 
@@ -393,7 +411,8 @@ fn contextual_outpost_selector(
             None => Err(OutpostError::MissingOutpostPath {
                 command,
                 cwd: cwd.to_path_buf(),
-            }),
+            }
+            .into()),
         },
         Context::Outpost(outpost) => {
             let path = path
