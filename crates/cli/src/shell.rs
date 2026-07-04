@@ -25,6 +25,7 @@ gop() {
 
         if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
             printf '%s\n' 'Usage: gop cd [OUTPOST]'
+            printf '%s\n' 'Run `eval "$(gop shell init bash)"` or `eval "$(gop shell init zsh)"` first.'
             printf '%s\n' 'With no OUTPOST, change to the associated source repository.'
             printf '%s\n' 'With OUTPOST, change to the path printed by: gop path OUTPOST'
             return 0
@@ -40,3 +41,22 @@ gop() {
 }
 # <<< git-outpost shell integration <<<
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::init_script;
+
+    #[test]
+    fn gop_cd_help_mentions_shell_init_setup() {
+        let script = init_script(None);
+        assert!(
+            script.contains("eval \"$(gop shell init bash)\"")
+                || script.contains("eval \"$(gop shell init zsh)\""),
+            "expected setup command in script:\n{script}"
+        );
+        assert!(
+            script.contains("Run `eval \"$(gop shell init bash)\"` or `eval \"$(gop shell init zsh)\"` first."),
+            "expected gop cd help to mention shell init setup:\n{script}"
+        );
+    }
+}
