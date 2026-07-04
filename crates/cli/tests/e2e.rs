@@ -1086,12 +1086,9 @@ fn shell_install_writes_script_and_managed_rc_block() {
         stdout.contains("installed bash shell integration"),
         "{stdout}"
     );
+    assert!(stdout.contains(&rc_file.display().to_string()), "{stdout}");
     assert!(
-        stdout.contains(&common::displayed_path(&rc_file)),
-        "{stdout}"
-    );
-    assert!(
-        stdout.contains(&common::displayed_path(&script_file)),
+        stdout.contains(&script_file.display().to_string()),
         "{stdout}"
     );
     assert!(rc.contains("# >>> git-outpost shell install >>>"), "{rc}");
