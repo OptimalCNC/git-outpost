@@ -32,7 +32,7 @@ fn e_03_help_lists_commands_and_long_flags() {
     let help = common::stdout(&output);
     for command in [
         "add", "pull", "source", "merge", "rebase", "push", "list", "lock", "unlock", "move",
-        "remove", "prune", "status", "analyze", "config", "path",
+        "remove", "prune", "status", "analyze", "config", "path", "shell",
     ] {
         assert_eq!(
             count_command_line(&help, command),
@@ -78,6 +78,22 @@ fn e_03_help_lists_commands_and_long_flags() {
         assert!(
             config_help.contains(token),
             "expected {token} in config help:\n{config_help}"
+        );
+    }
+
+    let shell_help = help_for(&["shell", "--help"]);
+    for token in ["init", "shell integration"] {
+        assert!(
+            shell_help.contains(token),
+            "expected {token} in shell help:\n{shell_help}"
+        );
+    }
+
+    let shell_init_help = help_for(&["shell", "init", "--help"]);
+    for token in ["Print shell integration", "gop cd", "SHELL", "bash", "zsh"] {
+        assert!(
+            shell_init_help.contains(token),
+            "expected {token} in shell init help:\n{shell_init_help}"
         );
     }
 }

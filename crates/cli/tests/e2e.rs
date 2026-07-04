@@ -1016,3 +1016,232 @@ fn e_11_merge_and_rebase_accept_story_source_ref() {
     );
     common::assert_success(&rebase, "gop rebase local/main");
 }
+
+#[cfg(unix)]
+fn shell_path() -> std::ffi::OsString {
+    let bin_dir = common::binary_path("gop")
+        .parent()
+        .expect("binary directory")
+        .to_path_buf();
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let paths = std::iter::once(bin_dir).chain(std::env::split_paths(&existing));
+
+    std::env::join_paths(paths).expect("join PATH")
+}
+
+#[cfg(unix)]
+fn bash_script(script: &str, fixture: &common::CliFixture) -> std::process::Output {
+    let mut command = std::process::Command::new("bash");
+    command
+        .arg("--noprofile")
+        .arg("--norc")
+        .arg("-c")
+        .arg(script)
+        .env("GOP_BIN", common::binary_path("gop"))
+        .env("PATH", shell_path())
+        .env("SOURCE_DIR", &fixture.source)
+        .env("ROOT_DIR", &fixture.root);
+    common::run(&mut command)
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_init_accepts_supported_shells_and_prints_removable_block() {
+    let fixture = common::CliFixture::new();
+
+    for shell in ["bash", "zsh"] {
+        let output = common::run(fixture.gop().args(["shell", "init", shell]));
+        common::assert_success(&output, "gop shell init");
+        let stdout = common::stdout(&output);
+        assert!(
+            stdout.contains("# >>> git-outpost shell integration >>>")
+                && stdout.contains("# <<< git-outpost shell integration <<<")
+                && stdout.contains("Remove this marked block")
+                && stdout.contains("command gop \"$@\""),
+            "generated integration should be marker-wrapped and delegate to command gop:\n{stdout}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_init_rejects_unsupported_shell() {
+    let fixture = common::CliFixture::new();
+
+    let output = common::run(fixture.gop().args(["shell", "init", "fish"]));
+
+    assert!(
+        !output.status.success(),
+        "unsupported shell should fail before shell code is printed"
+    );
+    assert_eq!(common::stdout(&output), "");
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_gop_cd_changes_directory_in_current_shell() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    let source_display = common::displayed_path(&fixture.source);
+    let outpost_display = common::displayed_path(&outpost);
+
+    let script = r#"
+set -eu
+eval "$("$GOP_BIN" shell init bash)"
+cd "$ROOT_DIR/C"
+gop cd
+pwd
+gop cd "$ROOT_DIR/C"
+pwd
+gop status >/dev/null
+"#;
+
+    let output = bash_script(script, &fixture);
+
+    common::assert_success(&output, "bash gop cd");
+    let stdout = common::stdout(&output);
+    assert_eq!(stdout, format!("{source_display}\n{outpost_display}\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_gop_cd_removes_existing_gop_alias() {
+    let fixture = common::CliFixture::new();
+    fixture.add_outpost("C");
+    let source_display = common::displayed_path(&fixture.source);
+
+    let script = r#"
+set -eu
+shopt -s expand_aliases
+alias gop='printf alias-was-used\n'
+eval "$("$GOP_BIN" shell init bash)"
+cd "$ROOT_DIR/C"
+gop cd
+pwd
+"#;
+
+    let output = bash_script(script, &fixture);
+
+    common::assert_success(&output, "bash gop alias shadowing");
+    assert_eq!(common::stdout(&output), format!("{source_display}\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_gop_delegates_non_cd_commands_to_binary() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+
+    let script = r#"
+set -eu
+eval "$("$GOP_BIN" shell init bash)"
+cd "$ROOT_DIR/C"
+gop status | sed -n '1p'
+"#;
+
+    let output = bash_script(script, &fixture);
+
+    common::assert_success(&output, "bash gop status delegation");
+    let stdout = common::stdout(&output);
+    assert!(
+        stdout.starts_with(&format!("outpost: {}", common::displayed_path(&outpost))),
+        "delegated status should print outpost status:\n{stdout}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_gop_passes_through_when_first_arg_is_not_cd() {
+    let fixture = common::CliFixture::new();
+
+    let script = r#"
+set -eu
+eval "$("$GOP_BIN" shell init bash)"
+gop --help | sed -n '1p'
+"#;
+
+    let output = bash_script(script, &fixture);
+
+    common::assert_success(&output, "bash gop --help passthrough");
+    let stdout = common::stdout(&output);
+    assert!(
+        stdout.contains("Manage self-contained Git outposts"),
+        "non-cd calls should pass through to the binary:\n{stdout}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_gop_cd_handles_paths_with_spaces() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C space");
+    let outpost_display = common::displayed_path(&outpost);
+
+    let script = r#"
+set -eu
+eval "$("$GOP_BIN" shell init bash)"
+cd "$SOURCE_DIR"
+gop cd "$ROOT_DIR/C space"
+pwd
+"#;
+
+    let output = bash_script(script, &fixture);
+
+    common::assert_success(&output, "bash gop cd path with spaces");
+    assert_eq!(common::stdout(&output), format!("{outpost_display}\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_gop_cd_help_is_handled_by_function() {
+    let fixture = common::CliFixture::new();
+
+    let script = r#"
+set -eu
+eval "$("$GOP_BIN" shell init bash)"
+gop cd --help
+"#;
+
+    let output = bash_script(script, &fixture);
+
+    common::assert_success(&output, "bash gop cd --help");
+    let stdout = common::stdout(&output);
+    assert!(
+        stdout.contains("Usage: gop cd [OUTPOST]") && stdout.contains("With no OUTPOST"),
+        "gop cd --help should describe the shell function:\n{stdout}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_gop_cd_smoke_test_zsh_when_available() {
+    let fixture = common::CliFixture::new();
+    fixture.add_outpost("C");
+    let source_display = common::displayed_path(&fixture.source);
+
+    let mut command = std::process::Command::new("zsh");
+    command
+        .arg("-f")
+        .arg("-c")
+        .arg(
+            r#"
+set -eu
+eval "$("$GOP_BIN" shell init zsh)"
+cd "$ROOT_DIR/C"
+gop cd
+pwd
+"#,
+        )
+        .env("GOP_BIN", common::binary_path("gop"))
+        .env("PATH", shell_path())
+        .env("ROOT_DIR", &fixture.root);
+
+    let output = match command.output() {
+        Ok(output) => output,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return,
+        Err(err) => panic!("run zsh: {err}"),
+    };
+
+    common::assert_success(&output, "zsh gop cd");
+    assert_eq!(common::stdout(&output), format!("{source_display}\n"));
+}

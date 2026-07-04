@@ -151,6 +151,15 @@ used by lifecycle commands. The exact token `src` is reserved for the source
 repository; use explicit path syntax such as `./src` or `../src` for an outpost
 whose directory is named `src`.
 
+Because a child process cannot change its parent shell's current directory,
+`gop cd` is provided by shell integration rather than by the binary itself.
+After evaluating `gop shell init bash` or `gop shell init zsh`, the generated
+function shadows `gop` in that shell, intercepts only invocations whose first
+argument is exactly `cd`, and delegates every other `gop ...` invocation to the
+installed binary with `command gop "$@"`. `gop cd` changes to the associated
+source repository, and `gop cd <outpost>` changes to the path resolved by
+`gop path <outpost>`.
+
 ```mermaid
 %%{init: {"flowchart": {"wrappingWidth": 300}}}%%
 flowchart TD
@@ -228,6 +237,8 @@ gop rebase <source-ref>
 gop push
 gop list [-v|--verbose]
 gop path <src|outpost>
+gop shell init [bash|zsh]
+gop cd [<outpost>]   # after evaluating gop shell init
 gop lock [--reason <string>] [<outpost>]
 gop unlock [<outpost>]
 gop move [-f|--force] <outpost> <new-path>
@@ -259,6 +270,7 @@ additional working-directory-specific behavior to explain.
 | --- | --- | --- |
 | `add` | / | Disallowed |
 | `config` | / | Disallowed |
+| `shell init [bash\|zsh]` | Prints shell integration; does not inspect repo state | Prints shell integration; does not inspect repo state |
 | `pull` | Disallowed | / |
 | `source pull` | Disallowed | / |
 | `merge` | Disallowed | / |
@@ -473,6 +485,28 @@ registered, present on disk, and managed by the current source repository.
 
 The token `src` is reserved for the source repository. To select an outpost
 directory named `src`, use explicit path syntax such as `./src` or `../src`.
+
+### `shell init [bash|zsh]`
+
+Print Bash/Zsh shell integration. Pass `bash` or `zsh` to select the generated
+shell syntax. Evaluate it in the current shell to define a `gop` function that
+intercepts only invocations whose first argument is exactly `cd` and delegates
+every other `gop ...` invocation to the binary with `command gop "$@"`.
+
+```bash
+eval "$(gop shell init bash)"
+eval "$(gop shell init zsh)"
+```
+
+For one-time setup, add the matching line to `~/.bashrc` or `~/.zshrc`. The
+generated shell block is wrapped in marker comments and says how to remove the
+marked block if it is manually pasted into a startup file. `gop shell install`
+and `gop shell uninstall` are not part of this milestone.
+
+After setup, `gop cd` changes to the associated source repository. `gop cd
+<outpost>` changes to the path resolved by `gop path <outpost>`. Existing
+aliases named `gop` are removed by the generated integration in the shell that
+evaluates it.
 
 ### `lock [--reason <string>] [<outpost>]`
 

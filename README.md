@@ -36,11 +36,24 @@ cd ../my-change
 git status
 ```
 
-Print paths for shell navigation:
+Enable shell navigation in Bash or Zsh for the current shell:
 
 ```bash
-gop path src
-gop path ../my-change
+eval "$(gop shell init bash)"   # Bash
+eval "$(gop shell init zsh)"    # Zsh
+```
+
+For one-time setup, manually add the matching line to `~/.bashrc` or
+`~/.zshrc`. The generated shell block is wrapped in `git-outpost shell
+integration` comments, so removing that marked block or line removes the
+integration from future shells. `gop shell install` and `gop shell uninstall`
+are not part of this milestone.
+
+Then:
+
+```bash
+gop cd        # from an outpost, cd to its source repository
+gop cd ../my-change
 ```
 
 Publish the current outpost branch through the source repository:
