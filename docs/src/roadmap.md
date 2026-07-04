@@ -61,6 +61,7 @@ service, daemon, database, API server, or provider-specific integration.
 | `git-outpost` crate/package | Present | End-user package installed with `cargo install git-outpost`; installs both `git-outpost` and `gop`. |
 | `git-outpost` binary | Present | Canonical binary; Git dispatches `git outpost ...` to it. |
 | `gop` binary | Present | Short alias for everyday use; same CLI entrypoint as `git-outpost`. |
+| `gop shell init [bash\|zsh]` | Present | Prints marker-wrapped Bash/Zsh shell integration that shadows `gop` only to implement `gop cd`; calls whose first argument is not exactly `cd` delegate to the binary. It does not install or uninstall shell startup configuration. Bash behavior is covered in CI; Zsh is smoke-tested when available. |
 | GitHub CI / release workflows | Present | Validate formatting, clippy, tests, docs, packaging, cross-platform integration, and crates.io publishing on release paths. |
 
 ## Implementation Phases
