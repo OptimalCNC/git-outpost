@@ -55,7 +55,9 @@ mod tests {
             "expected setup command in script:\n{script}"
         );
         assert!(
-            script.contains("Run `eval \"$(gop shell init bash)\"` or `eval \"$(gop shell init zsh)\"` first."),
+            script.contains(
+                "Run `eval \"$(gop shell init bash)\"` or `eval \"$(gop shell init zsh)\"` first."
+            ),
             "expected gop cd help to mention shell init setup:\n{script}"
         );
     }
