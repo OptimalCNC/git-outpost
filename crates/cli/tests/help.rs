@@ -74,7 +74,12 @@ fn e_03_help_lists_commands_and_long_flags() {
     }
 
     let cd_help = help_for(&["cd", "--help"]);
-    for token in ["shell integration", "gop shell install", "gop shell init", "OUTPOST"] {
+    for token in [
+        "shell integration",
+        "gop shell install",
+        "gop shell init",
+        "OUTPOST",
+    ] {
         assert!(
             cd_help.contains(token),
             "expected {token} in cd help:\n{cd_help}"

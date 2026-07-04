@@ -268,7 +268,10 @@ fn print_shell_install_report(report: shell::ShellInstallReport, action: ShellIn
             println!("installed {} shell integration", report.shell.as_str());
         }
         (ShellInstallAction::Install, false) => {
-            println!("{} shell integration already installed", report.shell.as_str());
+            println!(
+                "{} shell integration already installed",
+                report.shell.as_str()
+            );
         }
         (ShellInstallAction::Uninstall, true) => {
             println!("uninstalled {} shell integration", report.shell.as_str());

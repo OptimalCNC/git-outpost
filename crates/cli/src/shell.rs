@@ -2,12 +2,11 @@ use crate::cli::ShellKind;
 
 mod install;
 
-pub use install::{
-    InstallOptions, ShellInstallReport, default_rc_file, default_script_file, install,
-    uninstall,
-};
 #[allow(unused_imports)]
 pub use install::managed_source_block;
+pub use install::{
+    InstallOptions, ShellInstallReport, default_rc_file, default_script_file, install, uninstall,
+};
 
 pub fn init_script(shell: Option<ShellKind>) -> &'static str {
     match shell {

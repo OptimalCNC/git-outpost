@@ -208,10 +208,11 @@ fn write_text(path: &Path, contents: &str) -> OutpostResult<()> {
         path: parent.to_path_buf(),
         source,
     })?;
-    let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|source| OutpostError::IoAt {
-        path: parent.to_path_buf(),
-        source,
-    })?;
+    let mut temp =
+        tempfile::NamedTempFile::new_in(parent).map_err(|source| OutpostError::IoAt {
+            path: parent.to_path_buf(),
+            source,
+        })?;
     temp.write_all(contents.as_bytes())
         .map_err(|source| OutpostError::IoAt {
             path: path.to_path_buf(),
@@ -279,7 +280,10 @@ mod tests {
         assert!(block.contains(INSTALL_START), "{block}");
         assert!(block.contains(INSTALL_END), "{block}");
         assert!(block.contains("gop shell uninstall bash"), "{block}");
-        assert!(block.contains("'/tmp/a dir/it'\"'\"'s/gop.bash'"), "{block}");
+        assert!(
+            block.contains("'/tmp/a dir/it'\"'\"'s/gop.bash'"),
+            "{block}"
+        );
     }
 }
 
@@ -340,7 +344,10 @@ mod operation_tests {
         assert!(!options.script_file.exists());
         assert!(!rc.contains(INSTALL_START), "{rc}");
         assert!(rc.contains("# manual init remains"), "{rc}");
-        assert!(rc.contains("# >>> git-outpost shell integration >>>"), "{rc}");
+        assert!(
+            rc.contains("# >>> git-outpost shell integration >>>"),
+            "{rc}"
+        );
         assert!(rc.contains("# after"), "{rc}");
     }
 

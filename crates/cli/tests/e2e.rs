@@ -1082,8 +1082,14 @@ fn shell_install_writes_script_and_managed_rc_block() {
     let rc = std::fs::read_to_string(&rc_file).expect("read rc");
     let script = std::fs::read_to_string(&script_file).expect("read script");
 
-    assert!(stdout.contains("installed bash shell integration"), "{stdout}");
-    assert!(stdout.contains(&common::displayed_path(&rc_file)), "{stdout}");
+    assert!(
+        stdout.contains("installed bash shell integration"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&common::displayed_path(&rc_file)),
+        "{stdout}"
+    );
     assert!(
         stdout.contains(&common::displayed_path(&script_file)),
         "{stdout}"
@@ -1174,7 +1180,10 @@ fn shell_uninstall_removes_managed_block_and_script_only() {
     assert!(!script_file.exists());
     assert!(!rc.contains("# >>> git-outpost shell install >>>"), "{rc}");
     assert!(rc.contains("# manual line"), "{rc}");
-    assert!(rc.contains("# >>> git-outpost shell integration >>>"), "{rc}");
+    assert!(
+        rc.contains("# >>> git-outpost shell integration >>>"),
+        "{rc}"
+    );
 }
 
 #[cfg(unix)]
@@ -1230,7 +1239,10 @@ fn shell_install_rejects_malformed_managed_block_without_editing() {
         "{}",
         common::stderr(&output)
     );
-    assert_eq!(std::fs::read_to_string(&rc_file).expect("read rc"), original);
+    assert_eq!(
+        std::fs::read_to_string(&rc_file).expect("read rc"),
+        original
+    );
     assert!(!script_file.exists());
 }
 
@@ -1241,21 +1253,15 @@ fn shell_install_relative_paths_use_effective_cwd() {
     let work = fixture.root.join("shell-work");
     std::fs::create_dir_all(&work).expect("create work");
 
-    let output = common::run(
-        fixture
-            .gop()
-            .arg("-C")
-            .arg(&work)
-            .args([
-                "shell",
-                "install",
-                "zsh",
-                "--rc-file",
-                "home/.zshrc",
-                "--script-file",
-                "config/git-outpost/shell.zsh",
-            ]),
-    );
+    let output = common::run(fixture.gop().arg("-C").arg(&work).args([
+        "shell",
+        "install",
+        "zsh",
+        "--rc-file",
+        "home/.zshrc",
+        "--script-file",
+        "config/git-outpost/shell.zsh",
+    ]));
 
     common::assert_success(&output, "gop shell install zsh relative");
     assert!(work.join("home/.zshrc").exists());
