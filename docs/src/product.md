@@ -153,12 +153,14 @@ whose directory is named `src`.
 
 Because a child process cannot change its parent shell's current directory,
 `gop cd` is provided by shell integration rather than by the binary itself.
-After evaluating `gop shell init bash` or `gop shell init zsh`, the generated
-function shadows `gop` in that shell, intercepts only invocations whose first
-argument is exactly `cd`, and delegates every other `gop ...` invocation to the
-installed binary with `command gop "$@"`. `gop cd` changes to the associated
-source repository, and `gop cd <outpost>` changes to the path resolved by
-`gop path <outpost>`.
+`gop shell init bash` and `gop shell init zsh` print integration code for the
+current shell. `gop shell install bash` and `gop shell install zsh` persist that
+integration by writing a generated script and a small managed source block in
+the shell startup file. The generated function shadows `gop` in that shell,
+intercepts only invocations whose first argument is exactly `cd`, and delegates
+every other `gop ...` invocation to the installed binary with `command gop "$@"`.
+The binary also exposes a dummy `gop cd [<outpost>]` command so root help can
+show the feature and so users without shell integration get setup guidance.
 
 ```mermaid
 %%{init: {"flowchart": {"wrappingWidth": 300}}}%%
@@ -238,7 +240,9 @@ gop push
 gop list [-v|--verbose]
 gop path <src|outpost>
 gop shell init [bash|zsh]
-gop cd [<outpost>]   # after evaluating gop shell init
+gop shell install <bash|zsh>
+gop shell uninstall <bash|zsh>
+gop cd [<outpost>]   # shell function after setup; binary fallback prints setup guidance
 gop lock [--reason <string>] [<outpost>]
 gop unlock [<outpost>]
 gop move [-f|--force] <outpost> <new-path>
@@ -271,6 +275,9 @@ additional working-directory-specific behavior to explain.
 | `add` | / | Disallowed |
 | `config` | / | Disallowed |
 | `shell init [bash\|zsh]` | Prints shell integration; does not inspect repo state | Prints shell integration; does not inspect repo state |
+| `shell install <bash\|zsh>` | Installs shell integration; does not inspect repo state | Installs shell integration; does not inspect repo state |
+| `shell uninstall <bash\|zsh>` | Uninstalls shell integration; does not inspect repo state | Uninstalls shell integration; does not inspect repo state |
+| `cd [<outpost>]` | Binary fallback prints shell setup guidance; shell function changes directory after setup | Binary fallback prints shell setup guidance; shell function changes directory after setup |
 | `pull` | Disallowed | / |
 | `source pull` | Disallowed | / |
 | `merge` | Disallowed | / |
@@ -498,15 +505,45 @@ eval "$(gop shell init bash)"
 eval "$(gop shell init zsh)"
 ```
 
-For one-time setup, add the matching line to `~/.bashrc` or `~/.zshrc`. The
-generated shell block is wrapped in marker comments and says how to remove the
-marked block if it is manually pasted into a startup file. `gop shell install`
-and `gop shell uninstall` are not part of this milestone.
+For persistent setup, use `install`:
+
+```bash
+gop shell install bash
+gop shell install zsh
+```
+
+`install` writes the generated integration script under the Git Outpost config
+directory and adds a marker-wrapped source block to `~/.bashrc` or `~/.zshrc`.
+Run `install` again after upgrading Git Outpost to refresh the generated script.
+
+Remove the managed source block and generated script with:
+
+```bash
+gop shell uninstall bash
+gop shell uninstall zsh
+```
+
+`uninstall` removes only Git Outpost's managed source block and generated
+script. It does not remove manually pasted `gop shell init` snippets.
 
 After setup, `gop cd` changes to the associated source repository. `gop cd
 <outpost>` changes to the path resolved by `gop path <outpost>`. Existing
 aliases named `gop` are removed by the generated integration in the shell that
 evaluates it.
+
+### `cd [<outpost>]`
+
+After shell integration is active, `gop cd` is a shell function that changes the
+current shell directory. The binary still exposes `gop cd [<outpost>]` for help
+and setup guidance.
+
+If the binary receives `gop cd`, shell integration is not active in the current
+shell. It prints setup instructions and exits without changing directories:
+
+```bash
+gop shell install bash
+gop shell install zsh
+```
 
 ### `lock [--reason <string>] [<outpost>]`
 

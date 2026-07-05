@@ -36,18 +36,31 @@ cd ../my-change
 git status
 ```
 
-Enable shell navigation in Bash or Zsh for the current shell:
+Enable shell navigation in the current shell:
 
 ```bash
 eval "$(gop shell init bash)"   # Bash
 eval "$(gop shell init zsh)"    # Zsh
 ```
 
-For one-time setup, manually add the matching line to `~/.bashrc` or
-`~/.zshrc`. The generated shell block is wrapped in `git-outpost shell
-integration` comments, so removing that marked block or line removes the
-integration from future shells. `gop shell install` and `gop shell uninstall`
-are not part of this milestone.
+For persistent setup, let Git Outpost manage a small source block in your shell
+startup file:
+
+```bash
+gop shell install bash          # writes ~/.bashrc + ~/.config/git-outpost/shell.bash
+gop shell install zsh           # writes ~/.zshrc + ~/.config/git-outpost/shell.zsh
+```
+
+Run the install command again after upgrading Git Outpost to refresh the
+generated shell integration. Remove the managed block and generated file with:
+
+```bash
+gop shell uninstall bash
+gop shell uninstall zsh
+```
+
+If you run `gop cd` before enabling shell integration, the binary prints setup
+instructions and exits without changing directories.
 
 Then:
 

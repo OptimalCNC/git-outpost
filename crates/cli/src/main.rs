@@ -74,6 +74,11 @@ fn dispatch(cli: Cli) -> CliResult<()> {
             let report = ops::push::run(&outpost, ops::push::PushOptions, &mut reporter)?;
             output::print_push(&report);
         }
+        Command::Cd(args) => {
+            return Err(exit::CliError::ShellCdRequiresIntegration {
+                outpost: args.outpost,
+            });
+        }
         Command::Path(args) => {
             let source = list_source(&cwd)?;
             let target = match args.target {
@@ -208,7 +213,8 @@ fn dispatch(cli: Cli) -> CliResult<()> {
                     let Some(value) = source.config().get(args.key)? else {
                         return Err(OutpostError::ConfigKeyUnset {
                             key: args.key.as_str().to_owned(),
-                        });
+                        }
+                        .into());
                     };
                     println!("{value}");
                 }
@@ -236,10 +242,49 @@ fn dispatch(cli: Cli) -> CliResult<()> {
             ShellCommand::Init { shell: shell_kind } => {
                 print!("{}", shell::init_script(shell_kind));
             }
+            ShellCommand::Install(args) => {
+                let report = shell::install(shell_install_options(&cwd, args)?)?;
+                print_shell_install_report(report, ShellInstallAction::Install);
+            }
+            ShellCommand::Uninstall(args) => {
+                let report = shell::uninstall(shell_install_options(&cwd, args)?)?;
+                print_shell_install_report(report, ShellInstallAction::Uninstall);
+            }
         },
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ShellInstallAction {
+    Install,
+    Uninstall,
+}
+
+fn print_shell_install_report(report: shell::ShellInstallReport, action: ShellInstallAction) {
+    match (action, report.changed) {
+        (ShellInstallAction::Install, true) => {
+            println!("installed {} shell integration", report.shell.as_str());
+        }
+        (ShellInstallAction::Install, false) => {
+            println!(
+                "{} shell integration already installed",
+                report.shell.as_str()
+            );
+        }
+        (ShellInstallAction::Uninstall, true) => {
+            println!("uninstalled {} shell integration", report.shell.as_str());
+        }
+        (ShellInstallAction::Uninstall, false) => {
+            println!(
+                "{} shell integration was not installed",
+                report.shell.as_str()
+            );
+        }
+    }
+    println!("rc: {}", report.rc_file.display());
+    println!("script: {}", report.script_file.display());
 }
 
 fn cleanup_prompts_available() -> bool {
@@ -339,6 +384,25 @@ fn resolve_path_arg(cwd: &Path, path: PathBuf) -> PathBuf {
     }
 }
 
+fn shell_install_options(
+    cwd: &Path,
+    args: cli::ShellManageArgs,
+) -> CliResult<shell::InstallOptions> {
+    let rc_file = match args.rc_file {
+        Some(path) => resolve_path_arg(cwd, path),
+        None => shell::default_rc_file(args.shell)?,
+    };
+    let script_file = match args.script_file {
+        Some(path) => resolve_path_arg(cwd, path),
+        None => shell::default_script_file(args.shell)?,
+    };
+    Ok(shell::InstallOptions {
+        shell: args.shell,
+        rc_file,
+        script_file,
+    })
+}
+
 enum Context {
     Source(SourceRepo),
     Outpost(Outpost),
@@ -349,7 +413,7 @@ fn classify(cwd: &Path) -> CliResult<Context> {
     match Outpost::at(source.work_tree()) {
         Ok(outpost) => Ok(Context::Outpost(outpost)),
         Err(OutpostError::NotAnOutpost(_)) => Ok(Context::Source(source)),
-        Err(err) => Err(err),
+        Err(err) => Err(err.into()),
     }
 }
 
@@ -360,7 +424,8 @@ fn require_source(command: &'static str, cwd: &Path) -> CliResult<SourceRepo> {
             command,
             expected: "a source repository",
             cwd: cwd.to_path_buf(),
-        }),
+        }
+        .into()),
     }
 }
 
@@ -371,7 +436,8 @@ fn require_outpost(command: &'static str, cwd: &Path) -> CliResult<Outpost> {
             command,
             expected: "a managed outpost",
             cwd: cwd.to_path_buf(),
-        }),
+        }
+        .into()),
     }
 }
 
@@ -393,7 +459,8 @@ fn contextual_outpost_selector(
             None => Err(OutpostError::MissingOutpostPath {
                 command,
                 cwd: cwd.to_path_buf(),
-            }),
+            }
+            .into()),
         },
         Context::Outpost(outpost) => {
             let path = path

@@ -61,7 +61,10 @@ service, daemon, database, API server, or provider-specific integration.
 | `git-outpost` crate/package | Present | End-user package installed with `cargo install git-outpost`; installs both `git-outpost` and `gop`. |
 | `git-outpost` binary | Present | Canonical binary; Git dispatches `git outpost ...` to it. |
 | `gop` binary | Present | Short alias for everyday use; same CLI entrypoint as `git-outpost`. |
-| `gop shell init [bash\|zsh]` | Present | Prints marker-wrapped Bash/Zsh shell integration that shadows `gop` only to implement `gop cd`; calls whose first argument is not exactly `cd` delegate to the binary. It does not install or uninstall shell startup configuration. Bash behavior is covered in CI; Zsh is smoke-tested when available. |
+| `gop shell init [bash\|zsh]` | Present | Prints marker-wrapped Bash/Zsh shell integration that shadows `gop` only to implement `gop cd`; calls whose first argument is not exactly `cd` delegate to the binary. |
+| `gop cd [<outpost>]` | Present | Binary fallback listed in help; prints shell setup guidance when shell integration is not active. The shell function handles real directory changes after setup. |
+| `gop shell install <bash\|zsh>` | Present | Writes the generated integration script and a managed source block in the selected shell startup file. Re-running updates the generated integration. |
+| `gop shell uninstall <bash\|zsh>` | Present | Removes only Git Outpost's managed source block and generated integration script. |
 | GitHub CI / release workflows | Present | Validate formatting, clippy, tests, docs, packaging, cross-platform integration, and crates.io publishing on release paths. |
 
 ## Implementation Phases

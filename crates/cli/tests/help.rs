@@ -32,7 +32,7 @@ fn e_03_help_lists_commands_and_long_flags() {
     let help = common::stdout(&output);
     for command in [
         "add", "pull", "source", "merge", "rebase", "push", "list", "lock", "unlock", "move",
-        "remove", "prune", "status", "analyze", "config", "path", "shell",
+        "remove", "prune", "status", "analyze", "config", "path", "cd", "shell",
     ] {
         assert_eq!(
             count_command_line(&help, command),
@@ -73,6 +73,19 @@ fn e_03_help_lists_commands_and_long_flags() {
         }
     }
 
+    let cd_help = help_for(&["cd", "--help"]);
+    for token in [
+        "shell integration",
+        "gop shell install",
+        "gop shell init",
+        "OUTPOST",
+    ] {
+        assert!(
+            cd_help.contains(token),
+            "expected {token} in cd help:\n{cd_help}"
+        );
+    }
+
     let config_help = help_for(&["config", "--help"]);
     for token in ["set", "get", "unset", "list", "show", "outpost-container"] {
         assert!(
@@ -82,7 +95,7 @@ fn e_03_help_lists_commands_and_long_flags() {
     }
 
     let shell_help = help_for(&["shell", "--help"]);
-    for token in ["init", "shell integration"] {
+    for token in ["init", "install", "uninstall", "shell integration"] {
         assert!(
             shell_help.contains(token),
             "expected {token} in shell help:\n{shell_help}"
@@ -94,6 +107,36 @@ fn e_03_help_lists_commands_and_long_flags() {
         assert!(
             shell_init_help.contains(token),
             "expected {token} in shell init help:\n{shell_init_help}"
+        );
+    }
+
+    let shell_install_help = help_for(&["shell", "install", "--help"]);
+    for token in [
+        "Install shell integration",
+        "SHELL",
+        "bash",
+        "zsh",
+        "--rc-file",
+        "--script-file",
+    ] {
+        assert!(
+            shell_install_help.contains(token),
+            "expected {token} in shell install help:\n{shell_install_help}"
+        );
+    }
+
+    let shell_uninstall_help = help_for(&["shell", "uninstall", "--help"]);
+    for token in [
+        "Uninstall shell integration",
+        "SHELL",
+        "bash",
+        "zsh",
+        "--rc-file",
+        "--script-file",
+    ] {
+        assert!(
+            shell_uninstall_help.contains(token),
+            "expected {token} in shell uninstall help:\n{shell_uninstall_help}"
         );
     }
 }

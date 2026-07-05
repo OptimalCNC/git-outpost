@@ -66,6 +66,9 @@ pub enum Command {
     /// Push the current outpost branch through the source repository.
     Push(PushArgs),
 
+    /// Explain how to enable shell-backed directory changes.
+    Cd(CdArgs),
+
     /// Print a source or outpost path.
     Path(PathArgs),
 
@@ -109,6 +112,7 @@ impl Command {
             Command::Rebase(args) => args.validate_refs(),
             Command::Pull(_)
             | Command::Push(_)
+            | Command::Cd(_)
             | Command::Shell(_)
             | Command::Path(_)
             | Command::List(_)
@@ -232,6 +236,22 @@ pub struct PathArgs {
 pub enum PathTargetArg {
     Source,
     Outpost(PathBuf),
+}
+
+const CD_AFTER_HELP: &str = "\
+This binary command cannot change your current shell directory.
+Enable shell integration with `gop shell install bash` or `gop shell install zsh`.
+For a temporary shell, run `eval \"$(gop shell init bash)\"` or `eval \"$(gop shell init zsh)\"`.
+";
+
+#[derive(Debug, Args)]
+#[command(
+    about = "Explain how to enable shell integration for `gop cd`.",
+    after_help = CD_AFTER_HELP
+)]
+pub struct CdArgs {
+    #[arg(value_name = "OUTPOST")]
+    pub outpost: Option<PathBuf>,
 }
 
 fn parse_path_target(value: &str) -> Result<PathTargetArg, String> {
@@ -365,6 +385,27 @@ pub enum ShellCommand {
         #[arg(value_enum, value_name = "SHELL")]
         shell: Option<ShellKind>,
     },
+
+    /// Install shell integration into a startup file.
+    Install(ShellManageArgs),
+
+    /// Uninstall shell integration from a startup file.
+    Uninstall(ShellManageArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ShellManageArgs {
+    /// Shell startup syntax to manage.
+    #[arg(value_enum, value_name = "SHELL")]
+    pub shell: ShellKind,
+
+    /// Startup file to edit instead of the shell default.
+    #[arg(long, value_name = "PATH")]
+    pub rc_file: Option<PathBuf>,
+
+    /// Generated integration script path instead of the Git Outpost default.
+    #[arg(long, value_name = "PATH")]
+    pub script_file: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
