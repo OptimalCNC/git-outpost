@@ -185,9 +185,7 @@ fn dispatch(cli: Cli) -> CliResult<()> {
         Command::Analyze(args) => {
             let (source, selector) =
                 contextual_outpost_selector("analyze", &cwd, args.outpost_path)?;
-            reporter.step(StepKind::Analysis, "checking GitHub availability");
             let gh_status = gh::GhStatus::detect(&source);
-            reporter.step(StepKind::Analysis, &gh_status.progress_message());
             let report = ops::analyze::run_with_reporter(
                 &source,
                 ops::analyze::AnalyzeOptions { selector },

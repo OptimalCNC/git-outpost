@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::ops::branch_analysis::{
-    self, BranchCleanupCandidate, BranchCleanupFinding, BranchCleanupProvider,
-    BranchCleanupSkipReason,
+    self, BranchCleanupCandidate, BranchCleanupFinding, BranchCleanupSkipReason,
+    CleanupEvidenceProvider,
 };
 use crate::selector::{OutpostSelector, resolve_entry};
 use crate::source_repo::read_optional_config;
@@ -100,7 +100,7 @@ pub enum BranchDeleteSafety {
 pub fn run(
     source: &SourceRepo,
     opts: AnalyzeOptions,
-    provider: Option<&dyn BranchCleanupProvider>,
+    provider: Option<&dyn CleanupEvidenceProvider>,
 ) -> OutpostResult<AnalyzeReport> {
     let mut reporter = SilentReporter;
     run_with_reporter(source, opts, provider, &mut reporter)
@@ -109,7 +109,7 @@ pub fn run(
 pub fn run_with_reporter(
     source: &SourceRepo,
     opts: AnalyzeOptions,
-    provider: Option<&dyn BranchCleanupProvider>,
+    provider: Option<&dyn CleanupEvidenceProvider>,
     reporter: &mut dyn Reporter,
 ) -> OutpostResult<AnalyzeReport> {
     reporter.step(StepKind::Analysis, "resolving outpost");
@@ -149,11 +149,23 @@ pub fn run_with_reporter(
         None => Probe::Unknown("outpost HEAD is detached".to_owned()),
     };
 
+    reporter.step(StepKind::Analysis, "checking safe branch deletion proof");
+    let delete_analysis = branch_analysis::analyze_branch_cleanup(source, &outpost, provider);
+    let safe_delete = branch_delete_safety(&delete_analysis);
+    reporter.step(StepKind::Analysis, &format_safe_delete(&safe_delete));
+    let cleanup_evidence = delete_analysis.evidence.as_ref();
+
     reporter.step(StepKind::Analysis, "checking upstream remote");
-    let upstream_remote = match source_upstream.as_ref() {
-        Probe::Known(upstream) => probe_upstream_remote(source, &upstream.remote),
-        Probe::Unknown(reason) => Probe::Unknown(reason),
-        Probe::Unavailable(reason) => Probe::Unavailable(reason),
+    let upstream_remote = match cleanup_evidence {
+        Some(evidence) => Probe::Known(UpstreamRemote {
+            remote: evidence.request.upstream_remote.clone(),
+            url: evidence.request.upstream_url.clone(),
+        }),
+        None => match source_upstream.as_ref() {
+            Probe::Known(upstream) => probe_upstream_remote(source, &upstream.remote),
+            Probe::Unknown(reason) => Probe::Unknown(reason),
+            Probe::Unavailable(reason) => Probe::Unavailable(reason),
+        },
     };
     reporter.step(
         StepKind::Analysis,
@@ -161,34 +173,66 @@ pub fn run_with_reporter(
     );
 
     reporter.step(StepKind::Analysis, "checking upstream branch");
-    let upstream_branch = match source_upstream.as_ref() {
-        Probe::Known(upstream) => probe_remote_branch(source, &upstream.remote, &upstream.branch),
-        Probe::Unknown(reason) => Probe::Unknown(reason),
-        Probe::Unavailable(reason) => Probe::Unavailable(reason),
+    let upstream_branch = match cleanup_evidence {
+        Some(evidence) => match evidence.snapshot.upstream_oid.as_ref() {
+            Some(oid) => Probe::Known(RemoteBranchIdentity {
+                remote: evidence.request.upstream_remote.clone(),
+                branch: evidence.request.branch.clone(),
+                oid: oid.clone(),
+            }),
+            None => Probe::Unknown(format!(
+                "{}/{} is missing",
+                evidence.request.upstream_remote.as_str(),
+                evidence.request.branch.as_str()
+            )),
+        },
+        None => match source_upstream.as_ref() {
+            Probe::Known(upstream) => {
+                probe_remote_branch(source, &upstream.remote, &upstream.branch)
+            }
+            Probe::Unknown(reason) => Probe::Unknown(reason),
+            Probe::Unavailable(reason) => Probe::Unavailable(reason),
+        },
     };
     reporter.step(StepKind::Analysis, &format_probe_identity(&upstream_branch));
 
     reporter.step(StepKind::Analysis, "discovering upstream default branch");
-    let upstream_default_branch = match source_upstream.as_ref() {
-        Probe::Known(upstream) => probe_default_branch(source, &upstream.remote),
-        Probe::Unknown(reason) => Probe::Unknown(reason),
-        Probe::Unavailable(reason) => Probe::Unavailable(reason),
+    let upstream_default_branch = match cleanup_evidence {
+        Some(evidence) => match evidence.snapshot.default_branch.as_ref() {
+            Some(default) => Probe::Known(RemoteBranchIdentity {
+                remote: evidence.request.upstream_remote.clone(),
+                branch: default.branch.clone(),
+                oid: default.oid.clone(),
+            }),
+            None => Probe::Unknown(format!(
+                "{} default branch is unknown",
+                evidence.request.upstream_remote.as_str()
+            )),
+        },
+        None => match source_upstream.as_ref() {
+            Probe::Known(upstream) => probe_default_branch(source, &upstream.remote),
+            Probe::Unknown(reason) => Probe::Unknown(reason),
+            Probe::Unavailable(reason) => Probe::Unavailable(reason),
+        },
     };
     reporter.step(
         StepKind::Analysis,
         &format_probe_identity(&upstream_default_branch),
     );
+    if let Some(evidence) = cleanup_evidence {
+        if let Err(message) = hydrate_cleanup_evidence_objects(source, evidence) {
+            reporter.warn(&message);
+        }
+    }
     reporter.step(StepKind::Analysis, "comparing source and upstream");
     let source_vs_upstream = match (
         branch.as_ref(),
         source_upstream.as_ref(),
         upstream_branch.as_ref(),
     ) {
-        (Some(branch), Probe::Known(upstream), Probe::Known(_)) => probe_source_vs_remote_ref(
-            source,
-            branch,
-            &remote_branch_ref(&upstream.remote, &upstream.branch),
-        ),
+        (Some(branch), Probe::Known(_), Probe::Known(identity)) => {
+            probe_source_vs_remote_oid(source, branch, &identity.oid)
+        }
         (Some(_), Probe::Unknown(reason), _) | (Some(_), _, Probe::Unknown(reason)) => {
             Probe::Unknown(reason)
         }
@@ -203,11 +247,9 @@ pub fn run_with_reporter(
     );
     reporter.step(StepKind::Analysis, "comparing source and upstream default");
     let source_vs_upstream_default = match (branch.as_ref(), upstream_default_branch.as_ref()) {
-        (Some(branch), Probe::Known(default)) => probe_source_vs_remote_ref(
-            source,
-            branch,
-            &remote_branch_ref(&default.remote, &default.branch),
-        ),
+        (Some(branch), Probe::Known(default)) => {
+            probe_source_vs_remote_oid(source, branch, &default.oid)
+        }
         (Some(_), Probe::Unknown(reason)) => Probe::Unknown(reason),
         (Some(_), Probe::Unavailable(reason)) => Probe::Unavailable(reason),
         (None, _) => Probe::Unknown("outpost HEAD is detached".to_owned()),
@@ -225,11 +267,6 @@ pub fn run_with_reporter(
         StepKind::Analysis,
         &format_probe_push_hazard(&source_push_hazard),
     );
-    reporter.step(StepKind::Analysis, "checking safe branch deletion proof");
-    let delete_analysis = branch_analysis::analyze_branch_cleanup(source, &outpost, provider);
-    let safe_delete = branch_delete_safety(&delete_analysis);
-    reporter.step(StepKind::Analysis, &format_safe_delete(&safe_delete));
-
     Ok(AnalyzeReport {
         outpost_path: outpost.work_tree().to_path_buf(),
         source_path: source.work_tree().to_path_buf(),
@@ -441,27 +478,54 @@ fn probe_remote_branch(
     }
 }
 
-fn probe_source_vs_remote_ref(
+fn probe_source_vs_remote_oid(
     source: &SourceRepo,
     branch: &BranchName,
-    remote_ref: &str,
+    remote_oid: &str,
 ) -> Probe<AheadBehind> {
     match source.branch_exists(branch) {
         Ok(true) => {}
         Ok(false) => return Probe::Unknown("source branch is missing".to_owned()),
         Err(err) => return Probe::Unavailable(err.to_string()),
     }
-    match ref_exists(source.git(), remote_ref) {
+    match source.has_commit_oid(remote_oid) {
         Ok(true) => {}
-        Ok(false) => return Probe::Unknown(format!("{remote_ref} is missing")),
+        Ok(false) => {
+            return Probe::Unavailable(format!("observed remote commit {remote_oid} is missing"));
+        }
         Err(err) => return Probe::Unavailable(err.to_string()),
     }
 
     let local_ref = source_branch_ref(branch);
-    match ahead_behind_existing_refs(source.git(), &local_ref, remote_ref) {
+    match ahead_behind_existing_refs(source.git(), &local_ref, remote_oid) {
         Ok(value) => Probe::Known(value),
         Err(err) => Probe::Unavailable(err.to_string()),
     }
+}
+
+fn hydrate_cleanup_evidence_objects(
+    source: &SourceRepo,
+    evidence: &branch_analysis::CleanupEvidenceObservation,
+) -> Result<(), String> {
+    let mut missing_branches = Vec::new();
+    if let Some(upstream_oid) = evidence.snapshot.upstream_oid.as_deref() {
+        match source.has_commit_oid(upstream_oid) {
+            Ok(true) => {}
+            Ok(false) => missing_branches.push(evidence.request.branch.clone()),
+            Err(err) => return Err(err.to_string()),
+        }
+    }
+    if let Some(default) = evidence.snapshot.default_branch.as_ref() {
+        match source.has_commit_oid(&default.oid) {
+            Ok(true) => {}
+            Ok(false) => missing_branches.push(default.branch.clone()),
+            Err(err) => return Err(err.to_string()),
+        }
+    }
+
+    source
+        .fetch_remote_branches(&evidence.request.upstream_remote, &missing_branches)
+        .map_err(|err| err.to_string())
 }
 
 fn probe_source_push_hazard(source: &SourceRepo, branch: &BranchName) -> Probe<SourcePushHazard> {
@@ -517,10 +581,6 @@ fn ahead_behind_existing_refs(
     let range = format!("{local_ref}...{remote_ref}");
     let output = git.run_capture(["rev-list", "--left-right", "--count", &range])?;
     parse_ahead_behind(git.cwd(), &output)
-}
-
-fn ref_exists(git: &GitInvoker, ref_name: &str) -> OutpostResult<bool> {
-    git.run_status(["rev-parse", "--verify", "--quiet", ref_name])
 }
 
 fn rev_parse(git: &GitInvoker, reference: &str) -> OutpostResult<String> {

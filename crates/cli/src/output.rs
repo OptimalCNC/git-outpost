@@ -413,15 +413,15 @@ fn format_push_step(step: ops::push::StepResult) -> String {
 }
 
 fn format_gh_status(status: &gh::GhStatus) -> Option<String> {
-    match status {
-        gh::GhStatus::Available(_) => None,
-        gh::GhStatus::NotInstalled => Some(
+    if status.is_not_installed() {
+        Some(
             "branch-cleanup: gh not found; merged-PR proof unavailable; trying local Git proof only"
                 .to_owned(),
-        ),
-        gh::GhStatus::Unavailable { message } => Some(format!(
+        )
+    } else {
+        status.unavailable_message().map(|message| format!(
             "branch-cleanup: gh unavailable: {message}; merged-PR proof unavailable; trying local Git proof only"
-        )),
+        ))
     }
 }
 
@@ -607,16 +607,14 @@ mod tests {
     #[test]
     fn gh_status_diagnostics_explain_proof_fallback() {
         assert_eq!(
-            format_gh_status(&gh::GhStatus::NotInstalled).as_deref(),
+            format_gh_status(&gh::GhStatus::not_installed_for_tests()).as_deref(),
             Some(
                 "branch-cleanup: gh not found; merged-PR proof unavailable; trying local Git proof only"
             )
         );
 
-        let message = format_gh_status(&gh::GhStatus::Unavailable {
-            message: "permission denied".to_owned(),
-        })
-        .expect("unavailable diagnostic");
+        let message = format_gh_status(&gh::GhStatus::unavailable_for_tests("permission denied"))
+            .expect("unavailable diagnostic");
         assert!(
             message.contains("permission denied")
                 && message.contains("trying local Git proof only"),

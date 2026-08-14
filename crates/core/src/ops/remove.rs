@@ -5,7 +5,7 @@ use crate::selector::{OutpostSelector, resolve_entry};
 use crate::{BranchName, OutpostError, OutpostResult, RemoteName, SourceRepo, safety};
 
 pub use crate::ops::branch_analysis::{
-    BranchCleanupCandidate, BranchCleanupProof, BranchCleanupProvider, BranchCleanupSkipReason,
+    BranchCleanupCandidate, BranchCleanupProof, BranchCleanupSkipReason, CleanupEvidenceProvider,
     MergedPullRequest,
 };
 
@@ -52,7 +52,7 @@ pub trait BranchCleanupPrompt {
 }
 
 pub struct BranchCleanupOptions<'a> {
-    pub provider: Option<&'a dyn BranchCleanupProvider>,
+    pub provider: Option<&'a dyn CleanupEvidenceProvider>,
     pub prompt: &'a mut dyn BranchCleanupPrompt,
 }
 
@@ -175,7 +175,7 @@ fn record_mode_skip(
 fn analyze_branch_cleanup(
     source: &SourceRepo,
     outpost: &crate::Outpost,
-    provider: Option<&dyn BranchCleanupProvider>,
+    provider: Option<&dyn CleanupEvidenceProvider>,
     outcomes: &mut Vec<BranchCleanupOutcome>,
 ) -> Option<BranchCleanupCandidate> {
     let analysis = branch_analysis::analyze_branch_cleanup(source, outpost, provider);
@@ -229,24 +229,6 @@ fn perform_branch_cleanup(
     let Some(expected_upstream_oid) = candidate.upstream_oid.as_deref() else {
         return;
     };
-    match source.remote_branch_oid(&candidate.upstream_remote, &candidate.branch) {
-        Ok(Some(current_oid)) if current_oid == expected_upstream_oid => {}
-        Ok(_) => {
-            outcomes.push(BranchCleanupOutcome::Warning {
-                branch: Some(candidate.branch),
-                message: "upstream branch changed or disappeared before deletion".to_owned(),
-            });
-            return;
-        }
-        Err(err) => {
-            outcomes.push(warning(
-                Some(candidate.branch),
-                "cannot re-check upstream branch before deletion",
-                err,
-            ));
-            return;
-        }
-    }
 
     if !prompt.confirm_upstream_branch_delete(&candidate) {
         outcomes.push(BranchCleanupOutcome::DeclinedUpstreamBranch {

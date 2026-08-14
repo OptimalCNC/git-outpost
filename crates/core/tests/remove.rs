@@ -1,11 +1,16 @@
 #[allow(dead_code)]
 mod common;
 
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use common::fixture::AbcFixture;
+use outpost_core::ops::cleanup_evidence::{
+    CleanupEvidenceProvider, CleanupEvidenceRequest, CleanupEvidenceSnapshot, ObservedRemoteBranch,
+};
 use outpost_core::ops::remove;
 use outpost_core::selector::OutpostSelector;
 use outpost_core::{
@@ -441,6 +446,7 @@ fn remove_with_cleanup_skips_checked_out_source_branch() {
         .add_outpost_on_branch("C", Some(branch.clone()))
         .expect("add C");
     let source = fixture.source_repo().expect("source repo");
+    let provider = FakeProvider::new(None);
     let mut prompt = TestPrompt::new([true], []);
 
     let report = remove::run_with_cleanup(
@@ -450,7 +456,7 @@ fn remove_with_cleanup_skips_checked_out_source_branch() {
             force: false,
         },
         remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
-            provider: None,
+            provider: Some(&provider),
             prompt: &mut prompt,
         }),
     )
@@ -458,6 +464,7 @@ fn remove_with_cleanup_skips_checked_out_source_branch() {
 
     assert_source_branch_exists(&source, "feat");
     assert!(prompt.source_prompts.is_empty());
+    assert_eq!(provider.calls.get(), 0);
     assert!(report.branch_cleanup.iter().any(|outcome| matches!(
         outcome,
         remove::BranchCleanupOutcome::Skipped {
@@ -480,13 +487,20 @@ fn remove_with_cleanup_accepts_matching_merged_pr_proof() {
         .branch_oid(&branch)
         .expect("source oid")
         .expect("branch oid");
-    let provider = FakeProvider {
-        proof: Some(remove::MergedPullRequest {
+    let mut snapshot = cleanup_snapshot(
+        &source,
+        Some(remove::MergedPullRequest {
             id: "#12".to_owned(),
             head_ref_name: branch.clone(),
-            head_ref_oid: source_oid,
+            head_ref_oid: source_oid.clone(),
         }),
-    };
+    );
+    snapshot
+        .default_branch
+        .as_mut()
+        .expect("default branch")
+        .oid = "0000000000000000000000000000000000000000".to_owned();
+    let provider = FakeProvider::new(Some(snapshot));
     let mut prompt = TestPrompt::new([true], []);
 
     let report = remove::run_with_cleanup(
@@ -504,10 +518,66 @@ fn remove_with_cleanup_accepts_matching_merged_pr_proof() {
 
     assert_source_branch_missing(&source, "feat");
     assert_eq!(prompt.source_prompts, vec![branch.clone()]);
+    assert_eq!(provider.calls.get(), 1);
+    let requests = provider.requests.borrow();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].upstream_remote.as_str(), "origin");
+    assert_eq!(requests[0].upstream_url, fixture.upstream.to_string_lossy());
+    assert_eq!(requests[0].branch, branch);
+    assert_eq!(requests[0].source_oid, source_oid);
     assert!(report.branch_cleanup.iter().any(|outcome| matches!(
         outcome,
         remove::BranchCleanupOutcome::DeletedSourceBranch { branch: deleted } if deleted == &branch
     )));
+}
+
+#[test]
+fn remove_with_cleanup_fetches_default_only_when_ancestry_needs_missing_object() {
+    let fixture = AbcFixture::new();
+    ensure_origin_head(&fixture);
+    let branch = fixture.create_source_branch("feat").expect("create feat");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add C");
+    let default_oid = fixture
+        .commit_in_upstream("main", "advance upstream default")
+        .expect("advance default");
+    let source = fixture.source_repo().expect("source repo");
+    assert!(
+        !source
+            .has_commit_oid(&default_oid)
+            .expect("missing default object before analysis")
+    );
+    let provider = FakeProvider::new(Some(CleanupEvidenceSnapshot {
+        default_branch: Some(ObservedRemoteBranch {
+            branch: BranchName::parse("main".to_owned()).expect("main"),
+            oid: default_oid.clone(),
+        }),
+        upstream_oid: None,
+        merged_pull_request: None,
+    }));
+    let mut prompt = TestPrompt::new([true], []);
+
+    remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            selector: OutpostSelector::from_path(outpost),
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: Some(&provider),
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("remove with conditional default fetch");
+
+    assert_source_branch_missing(&source, "feat");
+    assert!(
+        source
+            .has_commit_oid(&default_oid)
+            .expect("default object after analysis")
+    );
+    assert_eq!(provider.calls.get(), 1);
 }
 
 #[test]
@@ -519,13 +589,14 @@ fn remove_with_cleanup_rejects_mismatched_merged_pr_proof() {
         .add_outpost_on_branch("C", Some(branch.clone()))
         .expect("add C");
     let source = fixture.source_repo().expect("source repo");
-    let provider = FakeProvider {
-        proof: Some(remove::MergedPullRequest {
+    let provider = FakeProvider::new(Some(cleanup_snapshot(
+        &source,
+        Some(remove::MergedPullRequest {
             id: "#12".to_owned(),
             head_ref_name: branch.clone(),
             head_ref_oid: "0000000000000000000000000000000000000000".to_owned(),
         }),
-    };
+    )));
     let mut prompt = TestPrompt::new([true], []);
 
     let report = remove::run_with_cleanup(
@@ -590,6 +661,94 @@ fn remove_with_cleanup_prompts_separately_for_upstream_branch() {
             branch: declined,
         } if remote.as_str() == "origin" && declined == &branch
     )));
+}
+
+#[test]
+fn remove_with_cleanup_uses_final_lease_when_upstream_moves_after_source_prompt() {
+    let fixture = AbcFixture::new();
+    ensure_origin_head(&fixture);
+    let branch = fixture.create_source_branch("feat").expect("create feat");
+    fixture
+        .push_source_branch(&branch)
+        .expect("push feat to origin");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add C");
+    let moved_oid = fixture
+        .commit_in_upstream("main", "remote branch race target")
+        .expect("create remote race target");
+    let source = fixture.source_repo().expect("source repo");
+    let source_oid = source
+        .branch_oid(&branch)
+        .expect("source branch query")
+        .expect("source branch");
+    let mut snapshot = cleanup_snapshot(&source, None);
+    snapshot.upstream_oid = Some(source_oid.clone());
+    let provider = FakeProvider::new(Some(snapshot));
+    let mut prompt = RemoteRacePrompt {
+        fixture: &fixture,
+        branch: branch.clone(),
+        moved_oid: moved_oid.clone(),
+        upstream_prompted: false,
+    };
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            selector: OutpostSelector::from_path(outpost),
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: Some(&provider),
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("outpost removal survives leased remote deletion failure");
+
+    assert_source_branch_missing(&source, "feat");
+    assert!(prompt.upstream_prompted);
+    assert_eq!(
+        fixture
+            .invoker(&fixture.upstream)
+            .run_capture(["rev-parse", "refs/heads/feat"])
+            .expect("remote feat OID"),
+        moved_oid
+    );
+    assert!(report.branch_cleanup.iter().any(|outcome| matches!(
+        outcome,
+        remove::BranchCleanupOutcome::Warning {
+            branch: Some(warned),
+            message,
+        } if warned == &branch && message.contains("upstream branch was not deleted")
+    )));
+
+    let commands = source.git_argv_log_for_tests();
+    let source_delete = commands
+        .iter()
+        .position(|argv| {
+            argv == &vec![
+                OsString::from("update-ref"),
+                OsString::from("-d"),
+                OsString::from("refs/heads/feat"),
+                OsString::from(source_oid.as_str()),
+            ]
+        })
+        .expect("exact source deletion command");
+    let after_source_delete = &commands[source_delete + 1..];
+    assert!(
+        after_source_delete
+            .iter()
+            .all(|argv| argv.first() != Some(&OsString::from("ls-remote"))),
+        "no upstream observation should run after source deletion: {after_source_delete:?}"
+    );
+    assert!(after_source_delete.iter().any(|argv| {
+        argv == &vec![
+            OsString::from("push"),
+            OsString::from(format!("--force-with-lease=refs/heads/feat:{source_oid}")),
+            OsString::from("origin"),
+            OsString::from(":refs/heads/feat"),
+        ]
+    }));
 }
 
 #[test]
@@ -805,17 +964,48 @@ fn source_branch_with_unmerged_commit(fixture: &AbcFixture, branch: &str) -> Bra
     branch
 }
 
-struct FakeProvider {
+fn cleanup_snapshot(
+    source: &SourceRepo,
     proof: Option<remove::MergedPullRequest>,
+) -> CleanupEvidenceSnapshot {
+    let main = BranchName::parse("main".to_owned()).expect("main");
+    CleanupEvidenceSnapshot {
+        default_branch: Some(ObservedRemoteBranch {
+            oid: source
+                .branch_oid(&main)
+                .expect("default branch query")
+                .expect("default branch"),
+            branch: main,
+        }),
+        upstream_oid: None,
+        merged_pull_request: proof,
+    }
 }
 
-impl remove::BranchCleanupProvider for FakeProvider {
-    fn merged_pull_request(
+struct FakeProvider {
+    snapshot: Option<CleanupEvidenceSnapshot>,
+    calls: Cell<usize>,
+    requests: RefCell<Vec<CleanupEvidenceRequest>>,
+}
+
+impl FakeProvider {
+    fn new(snapshot: Option<CleanupEvidenceSnapshot>) -> Self {
+        Self {
+            snapshot,
+            calls: Cell::new(0),
+            requests: RefCell::new(Vec::new()),
+        }
+    }
+}
+
+impl CleanupEvidenceProvider for FakeProvider {
+    fn snapshot(
         &self,
-        _branch: &BranchName,
-        _source_oid: &str,
-    ) -> OutpostResult<Option<remove::MergedPullRequest>> {
-        Ok(self.proof.clone())
+        request: &CleanupEvidenceRequest,
+    ) -> OutpostResult<Option<CleanupEvidenceSnapshot>> {
+        self.calls.set(self.calls.get() + 1);
+        self.requests.borrow_mut().push(request.clone());
+        Ok(self.snapshot.clone())
     }
 }
 
@@ -856,6 +1046,35 @@ struct RacePrompt<'a> {
     fixture: &'a AbcFixture,
     branch: BranchName,
     new_oid: String,
+}
+
+struct RemoteRacePrompt<'a> {
+    fixture: &'a AbcFixture,
+    branch: BranchName,
+    moved_oid: String,
+    upstream_prompted: bool,
+}
+
+impl remove::BranchCleanupPrompt for RemoteRacePrompt<'_> {
+    fn confirm_source_branch_delete(
+        &mut self,
+        _candidate: &remove::BranchCleanupCandidate,
+    ) -> bool {
+        let branch_ref = format!("refs/heads/{}", self.branch.as_str());
+        self.fixture
+            .invoker(&self.fixture.upstream)
+            .run_check(["update-ref", &branch_ref, &self.moved_oid])
+            .expect("move upstream branch during source prompt");
+        true
+    }
+
+    fn confirm_upstream_branch_delete(
+        &mut self,
+        _candidate: &remove::BranchCleanupCandidate,
+    ) -> bool {
+        self.upstream_prompted = true;
+        true
+    }
 }
 
 impl remove::BranchCleanupPrompt for RacePrompt<'_> {

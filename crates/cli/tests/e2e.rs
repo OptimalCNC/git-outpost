@@ -696,11 +696,12 @@ fn analyze_runs_from_source_with_selector_and_from_outpost_without_selector() {
     );
     assert!(
         source_stderr.contains("analysis: resolving outpost ... ")
-            && source_stderr.contains("analysis: checking GitHub availability ... ")
             && source_stderr.contains("analysis: discovering upstream default branch ... ")
             && source_stderr.contains("analysis: comparing source and upstream default ... ")
             && source_stderr.contains("analysis: checking GitHub metadata ... ")
-            && source_stderr.contains("analysis: checking safe branch deletion proof ... "),
+            && source_stderr.contains("analysis: checking safe branch deletion proof ... ")
+            && !source_stderr.contains("checking GitHub availability")
+            && !source_stderr.contains("not checked"),
         "analyze should stream same-line progress and result messages to stderr:\n{source_stderr}"
     );
 

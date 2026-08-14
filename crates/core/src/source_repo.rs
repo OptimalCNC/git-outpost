@@ -78,6 +78,11 @@ impl SourceRepo {
         &self.git_common_dir
     }
 
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub fn git_argv_log_for_tests(&self) -> Vec<Vec<OsString>> {
+        self.git.argv_log()
+    }
+
     pub fn outpost_at(&self, path: &Path) -> OutpostResult<Outpost> {
         Outpost::at_with(path, &self.env)
     }
@@ -226,6 +231,12 @@ impl SourceRepo {
         rev_parse(&self.git, &source_branch_ref(branch)).map(|oid| Some(oid.trim().to_owned()))
     }
 
+    pub fn has_commit_oid(&self, oid: &str) -> OutpostResult<bool> {
+        let commit = format!("{oid}^{{commit}}");
+        self.git
+            .run_status(["rev-parse", "--verify", "--quiet", &commit])
+    }
+
     pub fn origin_branch_oid(&self, branch: &BranchName) -> OutpostResult<Option<String>> {
         self.remote_branch_oid(&origin_remote(), branch)
     }
@@ -304,6 +315,30 @@ impl SourceRepo {
         let oid = rev_parse(&self.git, &remote_tracking_ref)?;
 
         Ok(Some((branch, oid.trim().to_owned())))
+    }
+
+    pub fn fetch_remote_branches(
+        &self,
+        remote: &RemoteName,
+        branches: &[BranchName],
+    ) -> OutpostResult<()> {
+        let mut unique = std::collections::BTreeSet::new();
+        let mut args = vec![OsString::from("fetch"), OsString::from(remote.as_str())];
+        for branch in branches {
+            if !unique.insert(branch.clone()) {
+                continue;
+            }
+            args.push(OsString::from(format!(
+                "+refs/heads/{}:refs/remotes/{}/{}",
+                branch.as_str(),
+                remote.as_str(),
+                branch.as_str()
+            )));
+        }
+        if args.len() == 2 {
+            return Ok(());
+        }
+        self.git.run_check(args)
     }
 
     fn remote_head_branch(&self, remote: &RemoteName) -> OutpostResult<Option<BranchName>> {

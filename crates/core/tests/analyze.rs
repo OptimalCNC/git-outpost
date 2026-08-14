@@ -1,6 +1,8 @@
 #[allow(dead_code)]
 mod common;
 
+use std::cell::{Cell, RefCell};
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -9,7 +11,10 @@ use common::fixture::CapturingReporter;
 use outpost_core::ops::analyze::{
     self, AnalyzeOptions, BranchDeleteSafety, Probe, SourcePushHazard,
 };
-use outpost_core::ops::branch_analysis::{BranchCleanupProvider, MergedPullRequest};
+use outpost_core::ops::cleanup_evidence::{
+    CleanupEvidenceProvider, CleanupEvidenceRequest, CleanupEvidenceSnapshot, MergedPullRequest,
+    ObservedRemoteBranch,
+};
 use outpost_core::selector::OutpostSelector;
 use outpost_core::{AheadBehind, BranchName, OutpostResult, SourceRepo};
 
@@ -321,13 +326,22 @@ fn analyze_reports_safe_delete_from_matching_merged_pr_proof() {
         .branch_oid(&branch)
         .expect("source oid")
         .expect("branch oid");
-    let provider = FakeProvider {
-        proof: Some(MergedPullRequest {
+    let main = BranchName::parse("main".to_owned()).expect("main");
+    let provider = FakeProvider::new(Some(CleanupEvidenceSnapshot {
+        default_branch: Some(ObservedRemoteBranch {
+            oid: source
+                .branch_oid(&main)
+                .expect("default branch query")
+                .expect("default branch"),
+            branch: main,
+        }),
+        upstream_oid: None,
+        merged_pull_request: Some(MergedPullRequest {
             id: "#123".to_owned(),
             head_ref_name: branch.clone(),
             head_ref_oid: source_oid,
         }),
-    };
+    }));
 
     let report = analyze::run(
         &source,
@@ -347,6 +361,166 @@ fn analyze_reports_safe_delete_from_matching_merged_pr_proof() {
                     outpost_core::ops::branch_analysis::BranchCleanupProof::MergedPullRequest(_)
                 )
     ));
+}
+
+#[test]
+fn analyze_reuses_one_snapshot_for_remote_identities_comparisons_and_delete_proof() {
+    let fixture = AbcFixture::new();
+    ensure_origin_head(&fixture);
+    let branch = source_branch_with_unmerged_commit(&fixture, "feat");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add C");
+    let source = fixture.source_repo().expect("source repo");
+    let source_oid = source
+        .branch_oid(&branch)
+        .expect("source branch query")
+        .expect("source branch");
+    let main = BranchName::parse("main".to_owned()).expect("main");
+    let default_oid = source
+        .branch_oid(&main)
+        .expect("default branch query")
+        .expect("default branch");
+    let provider = FakeProvider::new(Some(CleanupEvidenceSnapshot {
+        default_branch: Some(ObservedRemoteBranch {
+            branch: main,
+            oid: default_oid.clone(),
+        }),
+        upstream_oid: Some(source_oid.clone()),
+        merged_pull_request: Some(MergedPullRequest {
+            id: "#456".to_owned(),
+            head_ref_name: branch.clone(),
+            head_ref_oid: source_oid.clone(),
+        }),
+    }));
+
+    let report = analyze::run(
+        &source,
+        AnalyzeOptions {
+            selector: OutpostSelector::from_path(outpost),
+        },
+        Some(&provider),
+    )
+    .expect("analyze report");
+
+    assert_eq!(provider.calls.get(), 1);
+    let requests = provider.requests.borrow();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].branch, branch);
+    assert_eq!(requests[0].source_oid, source_oid);
+    assert_eq!(
+        report.upstream_branch.as_ref().map(|identity| (
+            identity.remote.as_str(),
+            identity.branch.as_str(),
+            identity.oid.as_str()
+        )),
+        Probe::Known(("origin", "feat", requests[0].source_oid.as_str()))
+    );
+    assert_eq!(
+        report
+            .upstream_default_branch
+            .as_ref()
+            .map(|identity| (identity.branch.as_str(), identity.oid.as_str())),
+        Probe::Known(("main", default_oid.as_str()))
+    );
+    assert_eq!(
+        report.source_vs_upstream,
+        Probe::Known(AheadBehind {
+            ahead: 0,
+            behind: 0,
+        })
+    );
+    assert!(matches!(
+        report.safe_delete,
+        BranchDeleteSafety::Yes(candidate)
+            if matches!(
+                candidate.proof,
+                outpost_core::ops::branch_analysis::BranchCleanupProof::MergedPullRequest(_)
+            )
+    ));
+}
+
+#[test]
+fn analyze_batches_missing_snapshot_objects_into_one_fetch() {
+    let fixture = AbcFixture::new();
+    ensure_origin_head(&fixture);
+    let branch = source_branch_with_unmerged_commit(&fixture, "feat");
+    fixture
+        .push_source_branch(&branch)
+        .expect("publish source feature branch");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add C");
+    let upstream_branch_oid = fixture
+        .commit_in_upstream("feat", "advance upstream feature")
+        .expect("advance upstream feature");
+    let upstream_default_oid = fixture
+        .commit_in_upstream("main", "advance upstream default")
+        .expect("advance upstream default");
+    let source = fixture.source_repo().expect("source repo");
+    let source_oid = source
+        .branch_oid(&branch)
+        .expect("source branch query")
+        .expect("source branch");
+    assert!(
+        !source
+            .has_commit_oid(&upstream_branch_oid)
+            .expect("feature object absent before analyze")
+            && !source
+                .has_commit_oid(&upstream_default_oid)
+                .expect("default object absent before analyze")
+    );
+    let provider = FakeProvider::new(Some(CleanupEvidenceSnapshot {
+        default_branch: Some(ObservedRemoteBranch {
+            branch: BranchName::parse("main".to_owned()).expect("main"),
+            oid: upstream_default_oid.clone(),
+        }),
+        upstream_oid: Some(upstream_branch_oid.clone()),
+        merged_pull_request: Some(MergedPullRequest {
+            id: "#789".to_owned(),
+            head_ref_name: branch.clone(),
+            head_ref_oid: source_oid,
+        }),
+    }));
+
+    let report = analyze::run(
+        &source,
+        AnalyzeOptions {
+            selector: OutpostSelector::from_path(outpost),
+        },
+        Some(&provider),
+    )
+    .expect("analyze report");
+
+    assert_eq!(provider.calls.get(), 1);
+    assert_eq!(
+        report.source_vs_upstream,
+        Probe::Known(AheadBehind {
+            ahead: 0,
+            behind: 1,
+        })
+    );
+    assert_eq!(
+        report.source_vs_upstream_default,
+        Probe::Known(AheadBehind {
+            ahead: 1,
+            behind: 1,
+        })
+    );
+    let fetch_calls = source
+        .git_argv_log_for_tests()
+        .into_iter()
+        .filter(|argv| argv.first() == Some(&OsString::from("fetch")))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        fetch_calls,
+        vec![vec![
+            OsString::from("fetch"),
+            OsString::from("origin"),
+            OsString::from("+refs/heads/feat:refs/remotes/origin/feat"),
+            OsString::from("+refs/heads/main:refs/remotes/origin/main"),
+        ]]
+    );
 }
 
 #[test]
@@ -460,15 +634,28 @@ fn canonical(path: &Path) -> PathBuf {
 }
 
 struct FakeProvider {
-    proof: Option<MergedPullRequest>,
+    snapshot: Option<CleanupEvidenceSnapshot>,
+    calls: Cell<usize>,
+    requests: RefCell<Vec<CleanupEvidenceRequest>>,
 }
 
-impl BranchCleanupProvider for FakeProvider {
-    fn merged_pull_request(
+impl FakeProvider {
+    fn new(snapshot: Option<CleanupEvidenceSnapshot>) -> Self {
+        Self {
+            snapshot,
+            calls: Cell::new(0),
+            requests: RefCell::new(Vec::new()),
+        }
+    }
+}
+
+impl CleanupEvidenceProvider for FakeProvider {
+    fn snapshot(
         &self,
-        _branch: &BranchName,
-        _source_oid: &str,
-    ) -> OutpostResult<Option<MergedPullRequest>> {
-        Ok(self.proof.clone())
+        request: &CleanupEvidenceRequest,
+    ) -> OutpostResult<Option<CleanupEvidenceSnapshot>> {
+        self.calls.set(self.calls.get() + 1);
+        self.requests.borrow_mut().push(request.clone());
+        Ok(self.snapshot.clone())
     }
 }

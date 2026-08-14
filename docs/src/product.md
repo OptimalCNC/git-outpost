@@ -613,16 +613,21 @@ deletes the outpost directory.
 
 In interactive terminals, `remove` then analyzes the outpost's tracked source
 branch and prompts before branch cleanup when it can prove deletion is safe. It
-deletes the local source branch with an exact-OID guard, so a branch that moves
-during cleanup is left intact. If `<remote>/<branch>` exists at the analyzed OID,
-the command prompts separately before deleting the upstream branch with
-`--force-with-lease`. If proof is missing, prompts are declined, the command is
-non-interactive, or cleanup fails after the outpost directory is removed,
-outpost removal still succeeds and branches are left intact or reported as
-warnings. The CLI prints branch-cleanup diagnostics to stderr after the stable
-stdout result `removed <path>`, including skipped cleanup reasons and declined
-prompts. When `gh` is not installed or unavailable, merged-PR proof is reported
-as unavailable and cleanup falls back to local Git proof.
+collects the upstream default, candidate branch, and merged-pull-request
+evidence in one provider snapshot; non-GitHub remotes use one batched
+`ls-remote` fallback. The default branch is fetched only when ancestry proof
+needs a commit object that is not already local. It deletes the local source
+branch with an exact-OID guard, so a branch that moves during cleanup is left
+intact. If `<remote>/<branch>` exists at the analyzed OID, the command prompts
+separately before deleting the upstream branch with `--force-with-lease`; that
+final lease rejects deletion if the remote branch has moved since the snapshot.
+If proof is missing, prompts are declined, the command is non-interactive, or
+cleanup fails after the outpost directory is removed, outpost removal still
+succeeds and branches are left intact or reported as warnings. The CLI prints
+branch-cleanup diagnostics to stderr after the stable stdout result
+`removed <path>`, including skipped cleanup reasons and declined prompts. When
+`gh` is not installed or unavailable, merged-PR proof is reported as unavailable
+and cleanup falls back to local Git proof.
 
 `-f`/`--force` allows removal despite dirty state, unpushed commits, or a lock.
 It does not weaken branch cleanup proof. `--no-branch-cleanup` disables branch
@@ -678,6 +683,11 @@ ID prefix selectors as lifecycle commands. From a managed outpost, omitting
 registry state, and GitHub state. It may fetch remote-tracking refs and may use
 `gh` for best-effort pull request metadata. Probe failures are reported as
 `unknown` or `unavailable` fields rather than prompts or advice.
+
+When branch cleanup is locally eligible, `analyze` reuses one evidence snapshot
+for upstream identities, safe-delete proof, and GitHub pull-request output. If
+observed commits are not local, it fetches the required named refs together
+before calculating ahead/behind relationships.
 
 Output includes the outpost path, source path, upstream remote name and URL,
 branch, dirty state, lock state, ahead/behind comparisons, upstream default and

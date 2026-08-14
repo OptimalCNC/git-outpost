@@ -100,6 +100,7 @@ git-outpost/                       # repo root
 │   │   │       ├── merge.rs
 │   │   │       ├── rebase.rs
 │   │   │       ├── push.rs
+│   │   │       ├── cleanup_evidence.rs
 │   │   │       ├── remove.rs
 │   │   │       ├── prune.rs
 │   │   │       └── unlock.rs
@@ -1394,23 +1395,33 @@ diagnostics from `RemoveReport` are rendered to stderr.
    remote must equal `outpost.remoteName`; the upstream merge ref must be
    `refs/heads/BRANCH`; the matching source branch must exist; outpost
    `HEAD` must equal that source branch tip; the branch must not be checked
-   out in the source repository or another source worktree; and the branch
-   must not equal the resolved default branch for the selected upstream remote.
-8. A cleanup candidate needs one proof: either the provider reports a merged
+   out in the source repository or another source worktree. Core then binds the
+   upstream remote name and URL, branch, and source OID into one cleanup
+   evidence request. The resulting snapshot contains the observed default
+   branch tip, optional candidate branch tip, and optional merged-PR proof. The
+   branch must not equal the observed default branch.
+8. A cleanup candidate needs one proof: either the snapshot contains a merged
    pull request whose `headRefName` and `headRefOid` match the branch and
    source tip, or local Git proves the source branch tip is an ancestor of the
-   fetched upstream default branch. If `gh` is unavailable or fails, CLI
-   cleanup falls back to local Git proof only. Missing proof skips cleanup
-   without blocking outpost removal.
+   observed upstream default OID. The GitHub adapter obtains the snapshot with
+   one GraphQL command. Unsupported or failed providers fall back to one
+   `git ls-remote --symref REMOTE HEAD refs/heads/BRANCH` command. Ancestry
+   fetches the exact default branch only when the observed OID is absent
+   locally. Missing proof skips cleanup without blocking outpost removal.
 9. Remove the registry entry by path, save.
 10. `std::fs::remove_dir_all(path)`. Errors here surface as `IoAt`.
 11. After the outpost directory is removed, prompt to delete the source branch.
     Source deletion uses `git update-ref -d refs/heads/BRANCH EXPECTED_OID`.
-12. If `<remote>/BRANCH` existed at analysis time and still points at the same
-    OID, prompt separately before upstream deletion. Upstream deletion uses
-    `git push --force-with-lease=refs/heads/BRANCH:EXPECTED_OID <remote>
-    :refs/heads/BRANCH`. Any branch cleanup failure becomes a warning in
-    `RemoveReport`, not a rollback trigger.
+12. If `<remote>/BRANCH` existed in the evidence snapshot, prompt separately
+    before upstream deletion. Upstream deletion uses:
+
+    ```text
+    git push --force-with-lease=refs/heads/BRANCH:EXPECTED_OID <remote> :refs/heads/BRANCH
+    ```
+
+    The lease is the atomic final guard: a branch that moved or disappeared
+    after the snapshot is not deleted. Any branch cleanup failure becomes a
+    warning in `RemoveReport`, not a rollback trigger.
 
 The lock check uses the registry entry and runs before missing-path
 cleanup. A locked registered-but-missing path therefore returns
