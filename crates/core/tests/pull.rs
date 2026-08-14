@@ -90,12 +90,7 @@ fn p03_pull_returns_divergence_when_source_and_origin_diverge() {
     );
 
     assert!(matches!(err, OutpostError::Divergence { branch } if branch == "main"));
-    assert!(
-        !reporter
-            .step_kinds()
-            .iter()
-            .any(|kind| *kind == StepKind::OutpostFetch)
-    );
+    assert!(!reporter.step_kinds().contains(&StepKind::OutpostFetch));
 }
 
 #[test]

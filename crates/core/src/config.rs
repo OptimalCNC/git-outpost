@@ -210,7 +210,7 @@ impl<'src> ConfigStore<'src> {
         serde_json::to_writer_pretty(temp.as_file_mut(), &file).map_err(|source| {
             OutpostError::IoAt {
                 path: path.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, source),
+                source: std::io::Error::other(source),
             }
         })?;
         use std::io::Write;

@@ -125,11 +125,10 @@ fn explicit_path_syntax(path: &Path) -> bool {
         return true;
     }
     let mut components = path.components();
-    match (components.next(), components.next()) {
-        (Some(Component::CurDir | Component::ParentDir), _) => true,
-        (Some(_), Some(_)) => true,
-        _ => false,
-    }
+    matches!(
+        (components.next(), components.next()),
+        (Some(Component::CurDir | Component::ParentDir), _) | (Some(_), Some(_))
+    )
 }
 
 fn absolutize(cwd: &Path, path: &Path) -> PathBuf {
