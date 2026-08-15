@@ -83,6 +83,23 @@ git outpost status
 gop status
 ```
 
+## Agent skill
+
+Install the `using-git-outpost` skill globally with the
+[Vercel Skills CLI](https://github.com/vercel-labs/skills):
+
+```bash
+npx skills add OptimalCNC/git-outpost \
+  --skill using-git-outpost \
+  --global
+```
+
+The skill helps agents identify whether a checkout is a managed outpost or a
+source repository, then choose context-appropriate `gop` workflows. It maps
+ordinary worktree and parallel-checkout requests to `gop add`, lets the agent
+decide whether and where to configure `outpost-container`, and covers
+navigation, synchronization, publication, and lifecycle safety.
+
 ## Contributing
 
 This is a Cargo workspace with the implementation split between:
