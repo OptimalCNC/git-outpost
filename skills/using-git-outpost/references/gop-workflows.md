@@ -24,28 +24,23 @@ A request for a worktree or parallel checkout maps to `gop add`. Use `git worktr
 
 `add` and `config` require source-repository context. From an outpost, first run `gop path src`, retain the returned path as `source`, then use `gop -C <source> ...`.
 
-### Choose `outpost-container` Autonomously
+### Choose `outpost-container` When Needed
 
 An explicit destination path (absolute, `./name`, `../name`, or `group/name`) bypasses `outpost-container`. For a one-off explicit path, use it and leave `outpost-container` unchanged. The agent may still configure a container when recurring named creation would benefit from one.
 
-For a bare or omitted destination, inspect current source-owned configuration:
+Use `outpost-container`, `outposts`, and `stale-registrations` from `SourceContext(report)` directly. `<unset>` is normal. `outpost-container` is per-source state stored under `<source>/.outpost/config.json`, not a user-global default.
 
-```bash
-gop -C <source> config show
-```
+Bare names and branch-derived omitted destinations require a configured container. When it is unset, use an explicit destination or configure a safe container if recurring named creation justifies it.
 
-`outpost-container` is per-source state stored under `<source>/.outpost/config.json`, not a user-global default. Bare names and branch-derived omitted destinations require it.
+For a new container:
 
-Apply this policy autonomously:
-
-1. Reuse a valid configured `outpost-container`.
-2. If it is unset and existing outposts could establish the layout, inspect `gop -C <source> list` after establishing `Ready(list)` below. Only `clean` or `dirty` entries establish a live layout; exclude `missing` and `not-managed` entries.
-3. Choose a durable container:
+1. Use existing `outposts` rows to establish the recurring layout; ignore `stale-registrations`.
+2. Choose a durable container:
    - prefer the clear common parent of existing outposts;
    - otherwise prefer an obvious repository-specific sibling container;
    - otherwise use a dedicated sibling such as `<source-parent>/<source-name>-outposts`.
-4. Reject filesystem roots and broad home or workspace ancestors even when they are common and writable; choose a repository-specific sibling instead.
-5. Choose a writable, unambiguous absolute path outside the source work tree. Use that same absolute value for creation and configuration; `config set` canonicalizes it after creation. State the path and reason, then run:
+3. Reject filesystem roots and broad home or workspace ancestors.
+4. Choose a writable, unambiguous absolute path outside the source work tree. Use it for creation and configuration; `config set` canonicalizes it after creation. State the path and reason, then run:
 
    ```bash
    mkdir -p <absolute-container>
@@ -106,7 +101,7 @@ Use `gop path` plus the execution tool's working-directory option for agent navi
 
 For `gop path` and shell-backed `gop cd`, the exact token `src` is reserved for the source. Use an explicit path such as `./src` or `../src` to navigate to an outpost named `src`; lifecycle selectors do not reserve it.
 
-Establish `Ready(list)` without transport: parse `<source>/.outpost/registry.json`, then inspect each existing registered path's local `outpost.managed`, `outpost.sourceRepo`, `outpost.remoteName`, and effective fetch URLs. For every managed candidate belonging to this source, all fetch routes must identify the recorded source before `gop list` may perform per-outpost fetches. Treat `-` as an unavailable comparison and exit 0 as listing success, not proof that every ref refreshed.
+Source status supplies the local outpost layout for orientation and container choice. When the task specifically requires the fetching comparisons from `gop list`, first verify that each existing registered outpost's local metadata and effective fetch routes identify the source. Treat `-` as an unavailable comparison and exit 0 as listing success, not proof that every ref refreshed.
 
 For a temporary wrapper, evaluate `gop shell init <bash|zsh>` in the current shell. Persistent `gop shell install <bash|zsh>` writes a generated script and a managed startup-file block; `uninstall` removes those managed artifacts. For either mutation, `Ready(command)` names the shell, startup file, script path, and expected postconditions. After install, inspect both files and verify wrapper discovery in a matching shell. Uninstall completion is the absence of the managed block and generated script; manually pasted init snippets remain user-owned and may keep wrapper discovery active.
 

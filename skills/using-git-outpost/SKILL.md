@@ -11,25 +11,21 @@ Treat Git Outpost as a self-contained-clone realization of worktree intent. Orie
 
 ## Orient First
 
-1. Resolve the effective work tree:
+If `gop` is available, orient with one call against the relevant path:
 
-   ```bash
-   git -C <path> rev-parse --show-toplevel
-   ```
+```bash
+gop --no-color -C <path> status
+```
 
-   If this fails, return `NoDiscoverableWorkTree(error)`, preserve the error, and end checkout orientation. Obtain a valid checkout path before repository-bound workflows; repository-independent `shell` guidance remains available.
-2. If `gop` is available, run against the resolved root:
+Parse the result into exactly one named state:
 
-   ```bash
-   gop --no-color -C <root> status
-   ```
+- `SourceContext(report)`: exit 0 and the first line is `context: source`.
+- `ManagedOutpostContext(report)`: exit 0 and the first line is `context: outpost`. `health: problems` is still an outpost.
+- `Unknown(error)`: every nonzero result. Preserve the error.
 
-3. Parse the result into exactly one named state:
-   - `StatusManagedOutpost(report)`: exit 0. Preserve the full report; this proves diagnostic membership, not complete metadata, source reachability, registry membership, attached `HEAD`, or command readiness. `health: problems` is still an outpost.
-   - `SourceContext(root)`: exit 2 and stderr says `not inside a managed outpost: <root>`. This is an unmanaged Git work tree that `gop` can treat as a source; it does not prove this is the intended source.
-   - `Unknown(error)`: every other result, including a later `not inside a Git repository` diagnostic. Preserve the error because it can describe a broken associated source rather than `<root>`.
+Preserve the full successful report. It contains local facts only, may include degraded health or stale registrations, and does not establish mutation readiness.
 
-If `gop` is unavailable, use `git -C <root> config --local --type=bool --get outpost.managed`. Only `true` establishes `ManagedOutpostWithoutGop`; treat every other result as unknown and report that the CLI is unavailable. This fallback proves only the local marker and supports ordinary file and commit work, not `gop` workflows.
+If `gop` is unavailable, use `git -C <path> config --local --type=bool --get outpost.managed`. Only `true` establishes `ManagedOutpostWithoutGop`; treat every other result as unknown and report that the CLI is unavailable. This fallback proves only the local marker and supports ordinary file and commit work, not source orientation or `gop` workflows.
 
 Orientation is complete only after naming the state.
 

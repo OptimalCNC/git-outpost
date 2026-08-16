@@ -94,11 +94,11 @@ npx skills add OptimalCNC/git-outpost \
   --global
 ```
 
-The skill helps agents identify whether a checkout is a managed outpost or a
-source repository, then choose context-appropriate `gop` workflows. It maps
-ordinary worktree and parallel-checkout requests to `gop add`, lets the agent
-decide whether and where to configure `outpost-container`, and covers
-navigation, synchronization, publication, and lifecycle safety.
+The skill uses one context-aware `gop status` call to identify a source or
+managed outpost and report the optional `outpost-container`. It maps ordinary
+worktree and parallel-checkout requests to `gop add`, leaves whether and where
+to configure the container to the agent, and covers navigation,
+synchronization, publication, and lifecycle safety.
 
 ## Contributing
 
