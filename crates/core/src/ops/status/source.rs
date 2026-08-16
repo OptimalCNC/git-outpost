@@ -163,6 +163,9 @@ fn build_live_row(
     env: &BTreeMap<OsString, OsString>,
 ) -> OutpostResult<RegisteredOutpostStatus> {
     let outpost_path = canonicalize_path(&entry.path)?;
+    if outpost_path != entry.path {
+        return Err(integrity_error(source_path, &entry.path));
+    }
     let git = invoker_at(&outpost_path, env);
     let raw = RawMetadata::read(&git)
         .map_err(|error| metadata_integrity_error(source_path, &outpost_path, error))?;

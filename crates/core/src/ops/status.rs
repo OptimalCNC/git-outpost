@@ -18,18 +18,6 @@ pub enum StatusReport {
     Outpost(OutpostStatus),
 }
 
-#[cfg(any(test, feature = "test-helpers"))]
-impl std::ops::Deref for StatusReport {
-    type Target = OutpostStatus;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Outpost(report) => report,
-            Self::Source(_) => panic!("legacy outpost-only status access used for source report"),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceStatus {
     pub source_path: PathBuf,
@@ -183,10 +171,6 @@ pub enum ConfigProblem {
     },
     SourceUpstreamRouteUnavailable {
         remote: RemoteName,
-    },
-    #[cfg(any(test, feature = "test-helpers"))]
-    NoUpstreamTracking {
-        branch: BranchName,
     },
     NotInRegistry,
     PushWouldFail {

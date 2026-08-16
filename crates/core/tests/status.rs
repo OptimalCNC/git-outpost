@@ -617,6 +617,30 @@ fn source_registry_path_replaced_by_file_is_an_integrity_error() {
     assert_integrity(&fixture, &outpost);
 }
 
+#[cfg(unix)]
+#[test]
+fn source_registry_path_rebound_to_same_source_outpost_is_an_integrity_error() {
+    use std::os::unix::fs::symlink;
+
+    let fixture = AbcFixture::new();
+    let recorded = fixture.add_outpost("C").expect("add C");
+    let target = fixture.add_outpost("D").expect("add D");
+    let recorded_path = canonical(&recorded);
+    fs::remove_dir_all(&recorded).expect("remove recorded checkout");
+    symlink(&target, &recorded).expect("replace recorded checkout with symlink");
+
+    let error = expect_error(
+        run_with(&fixture.source, &fixture.git_env),
+        "symlink replacement should be an integrity error",
+    );
+
+    assert!(matches!(
+        error,
+        OutpostError::RegisteredOutpostIntegrity { source, outpost }
+            if source == canonical(&fixture.source) && outpost == recorded_path
+    ));
+}
+
 #[test]
 fn source_registry_outpost_container_supports_unset_configured_and_malformed() {
     let unset_fixture = AbcFixture::new();
