@@ -244,6 +244,45 @@ fn outpost_status_renders_exact_healthy_report() {
 }
 
 #[test]
+fn outpost_status_renders_split_source_upstream_fetch_and_push_routes() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    git_ok(
+        &fixture,
+        &fixture.source,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://fetch.example/widget.git",
+        ],
+    );
+    git_ok(
+        &fixture,
+        &fixture.source,
+        &[
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            "ssh://push.example/widget.git",
+        ],
+    );
+
+    let output = common::run(fixture.gop().current_dir(&outpost).arg("status"));
+    common::assert_success(&output, "split source-upstream gop status");
+    let outpost = common::displayed_path(&outpost);
+    let source = common::displayed_path(&fixture.source);
+
+    assert_eq!(
+        common::stdout(&output),
+        format!(
+            "context: outpost\noutpost: {outpost}\nsource: {source}\nsource-present: true\nremote: local\nbranch: main\noutpost-state: clean\nsource-upstream-fetch: origin/main  https://fetch.example/widget.git\nsource-upstream-push: origin/main  ssh://push.example/widget.git\noutpost-vs-source: ahead 0, behind 0\nsource-vs-upstream: ahead 0, behind 0\nhealth: ok\n"
+        )
+    );
+}
+
+#[test]
 fn outpost_status_renders_unconfigured_source_and_remote_exactly() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
