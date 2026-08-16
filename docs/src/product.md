@@ -662,6 +662,8 @@ routes, optional outpost container, live registered outposts, and stale
 registrations. The source registry is authoritative for the source-to-outpost
 relationship: a registered path that exists but has contradictory checkout
 metadata or source routes is an integrity error, not a third kind of outpost.
+`outpost-container: <unset>` is normal: it is not a health problem, and the
+agent decides whether to configure it and which safe value to use.
 
 Outpost output retains the outpost and source paths, source remote, branch and
 working tree state, health diagnostics, cached outpost-to-source and
@@ -670,10 +672,10 @@ branch's upstream routes when available. A managed outpost can still report
 degraded health when its source path, remote name, or registration is missing.
 
 Status is read-only and local: it does not fetch, contact a remote, test
-authentication, pull, push, stash, or update refs. Its comparisons use only
-existing local refs, so unavailable data does not trigger a fetch. It orients
-the current checkout; it does not establish that a later mutating command is
-ready.
+authentication, prove remote URL reachability, pull, push, stash, or update
+refs. Its comparisons use only existing local refs, so unavailable data does
+not trigger a fetch. It orients the current checkout; it does not establish
+that a later mutating command is ready.
 
 Status operates on the current directory. Use `gop -C <path> status` to
 inspect another source repository or outpost.
