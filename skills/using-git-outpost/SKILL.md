@@ -36,7 +36,7 @@ Read [references/gop-workflows.md](references/gop-workflows.md) when the state i
 
 For worktree, parallel-checkout, or outpost-creation tasks, read [Create an Outpost for Worktree Intent](references/gop-workflows.md#create-an-outpost-for-worktree-intent) before constructing the command and use its command forms.
 
-Build `Ready(command)` from the carried report facts plus only missing command-specific facts: verified live grammar and execution context; resolved selectors, paths, refs, and transport destinations; predicted writes and postconditions; applicable safety evidence and authorization. Resolve `Unknown` before mutation. Any unresolved applicable field means the command is not ready. Check `gop --version` and live subcommand help when syntax may have changed:
+`Ready(command)` extends the carried successful report without another orientation call by adding only missing command-specific facts (verified live grammar and execution context; resolved selectors, paths, refs, and transport destinations; predicted writes and postconditions; applicable safety evidence and authorization); a later `gop status` serves as a command-specific postcondition check after mutation. Resolve `Unknown` before mutation. Any unresolved applicable field means the command is not ready. Check `gop --version` and live subcommand help when syntax may have changed:
 
 ```bash
 gop <command> --help
