@@ -188,12 +188,13 @@ state, two ahead/behind values, and `ConfigProblem` collection retain their
 meanings and output.
 
 `RemoteUrlList` is a nonempty, first-seen de-duplicated sequence. A route
-lookup that successfully establishes that a named remote or URL is absent is
-`Unavailable`; process launch, termination, I/O, or invalid-data failures
-remain errors. Git's valid `branch.<name>.remote=.` form constructs
-`TrackedUpstream::LocalRepository` directly; it never invokes
-`git remote get-url .`. The enum cannot combine a local-repository target with
-remote URL routes.
+lookup that establishes that a named remote is absent is `Unavailable`;
+process launch, termination, I/O, or invalid-data failures remain errors. For
+a configured remote without URL entries, Git returns the remote name as its
+effective fallback URL, which remains `Known`. Git's valid
+`branch.<name>.remote=.` form constructs `TrackedUpstream::LocalRepository`
+directly; it never invokes `git remote get-url .`. The enum cannot combine a
+local-repository target with remote URL routes.
 
 The recorded outpost-to-source remote is a local relationship. Every effective
 fetch and push URL for it must resolve, after the same local path handling used
@@ -222,11 +223,12 @@ collapsed in text output only when the complete states and URL sequences are
 equal; status does not infer repository identity from URL spelling.
 
 The private route probe maps command success with at least one nonempty URL to
-`Known`, and `GitFailed` with exit code 2 to `Unavailable`; Git uses code 2 for
-a missing named remote or a remote without an effective URL. Every other
-`GitFailed`, process termination, I/O error, or empty/malformed successful
-output remains an error. This mapping is made by the probe helper, not by
-matching human-readable stderr.
+`Known`, and `GitFailed` with exit code 2 to `Unavailable`; for this command,
+Git uses code 2 when the named remote is not configured. A configured remote
+without URL entries succeeds with the remote name as its effective fallback.
+Every other `GitFailed`, process termination, I/O error, or empty/malformed
+successful output remains an error. This mapping is made by the probe helper,
+not by matching human-readable stderr.
 
 `Unavailable` is a reportable state for a source branch's upstream route. The
 same result for the recorded outpost-to-source remote fails the ownership
@@ -370,9 +372,10 @@ upstream-push: origin/main  git@github.com:acme/widget.git
 ```
 
 Multiple effective URLs repeat the applicable line in stable order. A
-configured tracking target whose named remote or effective URL is absent
-retains the target and prints `<unavailable>` instead of inventing a URL. A
-dot-repository route prints `<local-repository>`.
+configured tracking target whose named remote is absent retains the target and
+prints `<unavailable>` instead of inventing a URL. A configured remote without
+URL entries prints Git's remote-name fallback. A dot-repository route prints
+`<local-repository>`.
 
 The dot-repository target itself uses Git's standard remote/branch notation:
 
@@ -458,10 +461,9 @@ health: problems
 
 All current `ConfigProblem` categories remain, with the upstream-tracking
 category split by relationship as described above. If a configured source
-upstream target exists but its named remote or effective URLs are absent, the
-target is shown with `<unavailable>` and
-`SourceUpstreamRouteUnavailable { remote }` is added; status does not fail or
-claim a route.
+upstream target names an absent remote, the target is shown with
+`<unavailable>` and `SourceUpstreamRouteUnavailable { remote }` is added;
+status does not fail or claim a route.
 
 The new health text is stable:
 
@@ -497,8 +499,8 @@ The command fails without a partial report when:
 - required local Git state for the report or an outpost row cannot be read or
   parsed;
 - a Git process cannot be launched, terminates abnormally, or returns invalid
-  route data. A normal nonzero result proving an absent named remote or URL is
-  the successful `<unavailable>` route state described above.
+  route data. A normal exit-2 result proving an absent named remote is the
+  successful `<unavailable>` route state described above.
 
 The integrity error names both the source and registered path, and says that
 the registration and checkout are inconsistent. It must not describe the
@@ -563,8 +565,9 @@ Core tests cover:
 - identical fetch/push routes collapsed, differing routes split, multiple URLs
   retained in order, and unavailable configured routes not invented;
 - dot-repository tracking without a remote URL probe;
-- missing named remotes and remotes without URLs as exit-2 unavailable probes,
-  plus injected non-2 Git failure and malformed successful output as errors;
+- missing named remotes as exit-2 unavailable probes, configured remotes
+  without URL entries as Git remote-name fallbacks, plus injected non-2 Git
+  failure and malformed successful output as errors;
 - preservation of every current managed-outpost status diagnostic and
   ahead/behind behavior;
 - missing-source and detached-outpost degraded reports;

@@ -140,7 +140,7 @@ Discover and canonicalize the work tree once, read `RawMetadata` once, and dispa
 
 - [ ] **Step 4: Write failing upstream-route tests**
 
-Add Core tests for local and target branch names that differ, equal and different fetch/push routes, multiple URLs with first-seen de-duplication, exit-2 missing remote/URL as `Unavailable`, non-2 Git failure as an error, detached and unset tracking, and `branch.<name>.remote=.` as `TrackedUpstream::LocalRepository` without a `remote get-url .` invocation. The central remote-target assertion is:
+Add Core tests for local and target branch names that differ, equal and different fetch/push routes, multiple URLs with first-seen de-duplication, an exit-2 missing remote as `Unavailable`, a configured remote without URL entries using Git's remote-name fallback, non-2 Git failure as an error, detached and unset tracking, and `branch.<name>.remote=.` as `TrackedUpstream::LocalRepository` without a `remote get-url .` invocation. The central remote-target assertion is:
 
 ```rust
 assert_eq!(
@@ -182,7 +182,7 @@ fn probe_urls(
 ) -> OutpostResult<RouteAvailability>;
 ```
 
-Read both `branch.<name>.remote` and `.merge`; only `refs/heads/<branch>` is complete branch tracking. For named remotes run `remote get-url --all` and `remote get-url --push --all`. Parse nonempty lines into a private-constructor `RemoteUrlList`, de-duplicate without sorting, map only `GitFailed { code: 2 }` to `Unavailable`, and propagate every other error. Special-case remote `.` before any remote lookup.
+Read both `branch.<name>.remote` and `.merge`; only `refs/heads/<branch>` is complete branch tracking. For named remotes run `remote get-url --all` and `remote get-url --push --all`. Parse nonempty lines, including Git's remote-name fallback for a configured remote without URL entries, into a private-constructor `RemoteUrlList`; de-duplicate without sorting, map only `GitFailed { code: 2 }` to `Unavailable`, and propagate every other error. Special-case remote `.` before any remote lookup.
 
 - [ ] **Step 7: Write failing source inventory and integrity tests**
 

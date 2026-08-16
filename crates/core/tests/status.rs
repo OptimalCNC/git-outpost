@@ -452,13 +452,10 @@ fn source_upstream_reports_missing_named_remote_as_unavailable() {
 }
 
 #[test]
-fn source_upstream_without_effective_url_maps_git_exit_two_to_unavailable_routes() {
+fn source_upstream_configured_remote_without_url_uses_git_name_fallback() {
     let fixture = AbcFixture::new();
     set_branch_tracking(&fixture, &fixture.source, "main", "origin", "main");
-    fixture
-        .invoker(&fixture.source)
-        .run_check(["config", "--local", "--remove-section", "remote.origin"])
-        .expect("remove configured remote URLs");
+    unset_all_local_config(&fixture, &fixture.source, "remote.origin.url");
 
     let report = expect_source(run_with(&fixture.source, &fixture.git_env).expect("source status"));
 
@@ -470,8 +467,8 @@ fn source_upstream_without_effective_url_maps_git_exit_two_to_unavailable_routes
                 remote: remote("origin"),
                 branch: branch("main"),
                 routes: RemoteRoutes {
-                    fetch: RouteAvailability::Unavailable,
-                    push: RouteAvailability::Unavailable,
+                    fetch: RouteAvailability::Known(urls(["origin"])),
+                    push: RouteAvailability::Known(urls(["origin"])),
                 },
             }),
         }
