@@ -655,6 +655,7 @@ fn source_registry_metadata_io_error_is_not_stale() {
     let sealed = fixture.root.join("sealed");
     let path = sealed.join("C");
     fs::create_dir_all(&path).expect("create registered path");
+    let registered_path = canonical(&path);
     let source = fixture.source_repo().expect("source repo");
     let mut registry = source.registry_mut().expect("registry mut");
     registry
@@ -669,7 +670,8 @@ fn source_registry_metadata_io_error_is_not_stale() {
     assert!(matches!(
         expect_error(result, "metadata error must propagate"),
         OutpostError::IoAt { path: error_path, source }
-            if error_path == path && source.kind() == std::io::ErrorKind::PermissionDenied
+            if error_path == registered_path
+                && source.kind() == std::io::ErrorKind::PermissionDenied
     ));
 }
 
@@ -853,10 +855,12 @@ fn outpost_source_upstream_is_reported_even_without_outpost_remote_metadata() {
             remote: remote("origin"),
             branch: branch("main"),
             routes: RemoteRoutes {
-                fetch: RouteAvailability::Known(urls([canonical(&fixture.upstream)
+                fetch: RouteAvailability::Known(urls([fixture
+                    .upstream
                     .to_str()
                     .expect("upstream path"),])),
-                push: RouteAvailability::Known(urls([canonical(&fixture.upstream)
+                push: RouteAvailability::Known(urls([fixture
+                    .upstream
                     .to_str()
                     .expect("upstream path"),])),
             },
