@@ -20,7 +20,7 @@ gop --no-color -C <path> status
 Parse the result into exactly one named state:
 
 - `SourceContext(report)`: exit 0 and the first line is `context: source`.
-- `ManagedOutpostContext(report)`: exit 0 and the first line is `context: outpost`. `health: problems` is still an outpost.
+- `ManagedOutpostContext(report)`: exit 0 and the first line is `context: outpost`. This is the state name for both `health: ok` and `health: problems` reports.
 - `Unknown(error)`: every nonzero result. Preserve the error.
 
 Preserve the full successful report. It contains local facts only, may include degraded health or stale registrations, and does not establish mutation readiness.
@@ -33,7 +33,9 @@ Orientation is complete only after naming the state.
 
 Read [references/gop-workflows.md](references/gop-workflows.md) when the state is managed or the task concerns `gop`, an outpost, a worktree, or a parallel checkout. For mutations, always load **Context and Lifecycle**; also load **Two-Hop Model** for synchronization, publication, or removal. Then load the section matching the user's purpose.
 
-Resolve `Unknown` and require a discoverable work tree before checkout-lifecycle, synchronization, or publication mutation. Before mutation, establish `Ready(command)`: verified live grammar and execution context; resolved selectors, paths, refs, and transport destinations; predicted writes and postconditions; applicable safety evidence and authorization. Any unresolved applicable field means the command is not ready. Status alone never establishes readiness. Check `gop --version` and live subcommand help when syntax may have changed:
+For worktree, parallel-checkout, or outpost-creation tasks, read [Create an Outpost for Worktree Intent](references/gop-workflows.md#create-an-outpost-for-worktree-intent) before constructing the command and use its command forms.
+
+A successful `SourceContext(report)` or `ManagedOutpostContext(report)` already supplies the discoverable work tree and named context facts; carry those facts into `Ready(command)`. Resolve `Unknown` before mutation. Complete `Ready(command)` with verified live grammar and execution context; resolved selectors, paths, refs, and transport destinations; predicted writes and postconditions; applicable safety evidence and authorization. Any unresolved applicable field means the command is not ready. Status alone never establishes readiness. Check `gop --version` and live subcommand help when syntax may have changed:
 
 ```bash
 gop <command> --help
