@@ -95,6 +95,13 @@ pub enum OutpostError {
     #[error("registry entry path is not a managed outpost of this source: {}", .0.display())]
     RegistryEntryNotManaged(PathBuf),
 
+    #[error(
+        "registered outpost is inconsistent with source {}: {}",
+        .r#source.display(),
+        .outpost.display()
+    )]
+    RegisteredOutpostIntegrity { r#source: PathBuf, outpost: PathBuf },
+
     #[error("registry entry not found: {}", .0.display())]
     RegistryEntryNotFound(PathBuf),
 
@@ -165,6 +172,7 @@ impl OutpostError {
             | OutpostIdPrefixAmbiguous(_)
             | OutpostSelectorAmbiguous(_)
             | RegistryEntryNotManaged(_)
+            | RegisteredOutpostIntegrity { .. }
             | RegistryEntryNotFound(_) => 6,
             GitFailed { code, .. } => (*code).clamp(1, 125) as u8,
             GitTerminatedBySignal { .. } => 137,
@@ -344,6 +352,13 @@ mod tests {
             (
                 OutpostError::RegistryEntryNotManaged(path("/outpost")),
                 "registry entry path is not a managed outpost of this source: /outpost",
+            ),
+            (
+                OutpostError::RegisteredOutpostIntegrity {
+                    source: path("/source"),
+                    outpost: path("/outpost"),
+                },
+                "registered outpost is inconsistent with source /source: /outpost",
             ),
             (
                 OutpostError::RegistryEntryNotFound(path("/missing")),
