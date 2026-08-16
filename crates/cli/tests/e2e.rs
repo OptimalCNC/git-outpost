@@ -1,19 +1,429 @@
 mod common;
 
+use std::path::Path;
+
+fn git_ok(fixture: &common::CliFixture, repo: &Path, args: &[&str]) {
+    let output = common::run(fixture.git(repo).args(args));
+    common::assert_success(&output, "git fixture setup");
+}
+
+fn source_status(fixture: &common::CliFixture) -> String {
+    let output = common::run(fixture.gop().current_dir(&fixture.source).arg("status"));
+    common::assert_success(&output, "gop status from source");
+    common::stdout(&output)
+}
+
+fn empty_source_status(fixture: &common::CliFixture, branch: &str, upstream_lines: &str) -> String {
+    let source = common::displayed_path(&fixture.source);
+    format!(
+        "context: source\nsource: {source}\nbranch: {branch}\nsource-state: clean\n{upstream_lines}outpost-container: <unset>\noutposts: none\nstale-registrations: none\n"
+    )
+}
+
+#[test]
+fn source_status_renders_exact_empty_inventory() {
+    let fixture = common::CliFixture::new();
+    let upstream = common::displayed_path(&fixture.upstream);
+
+    assert_eq!(
+        source_status(&fixture),
+        empty_source_status(
+            &fixture,
+            "main",
+            &format!("upstream: origin/main  {upstream}\n")
+        )
+    );
+}
+
+#[test]
+fn source_status_renders_tabular_live_and_stale_rows() {
+    let fixture = common::CliFixture::new();
+    let dirty = fixture.add_outpost("C");
+    let detached = fixture.add_outpost("D");
+    let stale = fixture.add_outpost("E");
+    std::fs::write(dirty.join("dirty.txt"), "dirty\n").expect("dirty outpost");
+    git_ok(&fixture, &detached, &["checkout", "--detach"]);
+    let lock = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["lock", "../D"]),
+    );
+    common::assert_success(&lock, "gop lock D");
+    std::fs::remove_dir_all(&stale).expect("remove stale checkout");
+
+    let source = common::displayed_path(&fixture.source);
+    let upstream = common::displayed_path(&fixture.upstream);
+    let dirty = common::displayed_path(&dirty);
+    let detached = common::displayed_path(&detached);
+    let stale = common::displayed_path(&stale);
+    let ids = [&dirty, &detached, &stale]
+        .map(|path| outpost_core::OutpostId::derive(Path::new(&source), Path::new(path)));
+    assert!(
+        ids.iter()
+            .map(|id| &id.as_str()[..5])
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            == 3,
+        "fixture IDs unexpectedly collide at five characters"
+    );
+
+    assert_eq!(
+        source_status(&fixture),
+        format!(
+            "context: source\nsource: {source}\nbranch: main\nsource-state: clean\nupstream: origin/main  {upstream}\noutpost-container: <unset>\noutposts:\n  {}\t{dirty}\tmain\tdirty\n  {}\t{detached}\tdetached\tclean\tlocked\nstale-registrations:\n  {}\t{stale}\n",
+            &ids[0].as_str()[..5],
+            &ids[1].as_str()[..5],
+            &ids[2].as_str()[..5],
+        )
+    );
+}
+
+#[test]
+fn source_status_renders_unset_detached_and_local_upstreams() {
+    let unset = common::CliFixture::new();
+    git_ok(
+        &unset,
+        &unset.source,
+        &["config", "--unset", "branch.main.remote"],
+    );
+    git_ok(
+        &unset,
+        &unset.source,
+        &["config", "--unset", "branch.main.merge"],
+    );
+    assert_eq!(
+        source_status(&unset),
+        empty_source_status(&unset, "main", "upstream: <unset>\n")
+    );
+
+    let detached = common::CliFixture::new();
+    git_ok(&detached, &detached.source, &["checkout", "--detach"]);
+    assert_eq!(
+        source_status(&detached),
+        empty_source_status(&detached, "detached", "upstream: <not-applicable>\n")
+    );
+
+    let local = common::CliFixture::new();
+    git_ok(
+        &local,
+        &local.source,
+        &["config", "branch.main.remote", "."],
+    );
+    assert_eq!(
+        source_status(&local),
+        empty_source_status(&local, "main", "upstream: ./main  <local-repository>\n")
+    );
+}
+
+#[test]
+fn source_status_renders_split_multiple_routes() {
+    let split = common::CliFixture::new();
+    git_ok(
+        &split,
+        &split.source,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://fetch.example/one.git",
+        ],
+    );
+    git_ok(
+        &split,
+        &split.source,
+        &[
+            "remote",
+            "set-url",
+            "--add",
+            "origin",
+            "https://fetch.example/two.git",
+        ],
+    );
+    git_ok(
+        &split,
+        &split.source,
+        &[
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            "ssh://push.example/one.git",
+        ],
+    );
+    git_ok(
+        &split,
+        &split.source,
+        &[
+            "remote",
+            "set-url",
+            "--add",
+            "--push",
+            "origin",
+            "ssh://push.example/two.git",
+        ],
+    );
+    assert_eq!(
+        source_status(&split),
+        empty_source_status(
+            &split,
+            "main",
+            "upstream-fetch: origin/main  https://fetch.example/one.git\nupstream-fetch: origin/main  https://fetch.example/two.git\nupstream-push: origin/main  ssh://push.example/one.git\nupstream-push: origin/main  ssh://push.example/two.git\n"
+        )
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn source_status_renders_one_direction_unavailable() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = common::CliFixture::new();
+    git_ok(
+        &fixture,
+        &fixture.source,
+        &["config", "branch.main.remote", "publish"],
+    );
+    let original_path = std::env::var_os("PATH").expect("PATH");
+    let real_git = std::env::split_paths(&original_path)
+        .map(|path| path.join("git"))
+        .find(|path| path.is_file())
+        .expect("git executable on PATH");
+    let wrapper_dir = fixture.root.join("git-wrapper");
+    std::fs::create_dir(&wrapper_dir).expect("create Git wrapper directory");
+    let wrapper = wrapper_dir.join("git");
+    std::fs::write(
+        &wrapper,
+        format!(
+            "#!/bin/sh\nif [ \"$*\" = \"remote get-url --all publish\" ]; then exit 2; fi\nif [ \"$*\" = \"remote get-url --push --all publish\" ]; then echo ssh://push.example/only.git; exit 0; fi\nexec '{}' \"$@\"\n",
+            real_git.display()
+        ),
+    )
+    .expect("write Git wrapper");
+    std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755))
+        .expect("make Git wrapper executable");
+    let path = std::env::join_paths(
+        std::iter::once(wrapper_dir).chain(std::env::split_paths(&original_path)),
+    )
+    .expect("prepend Git wrapper to PATH");
+    let output = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .env("PATH", path)
+            .arg("status"),
+    );
+    common::assert_success(&output, "one-direction source status");
+
+    assert_eq!(
+        common::stdout(&output),
+        empty_source_status(
+            &fixture,
+            "main",
+            "upstream-fetch: publish/main  <unavailable>\nupstream-push: publish/main  ssh://push.example/only.git\n"
+        )
+    );
+}
+
+#[test]
+fn outpost_status_renders_exact_healthy_report() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    let output = common::run(fixture.gop().current_dir(&outpost).arg("status"));
+    common::assert_success(&output, "gop status from outpost");
+    let outpost = common::displayed_path(&outpost);
+    let source = common::displayed_path(&fixture.source);
+    let upstream = common::displayed_path(&fixture.upstream);
+
+    assert_eq!(
+        common::stdout(&output),
+        format!(
+            "context: outpost\noutpost: {outpost}\nsource: {source}\nsource-present: true\nremote: local\nbranch: main\noutpost-state: clean\nsource-upstream: origin/main  {upstream}\noutpost-vs-source: ahead 0, behind 0\nsource-vs-upstream: ahead 0, behind 0\nhealth: ok\n"
+        )
+    );
+}
+
+#[test]
+fn outpost_status_renders_unconfigured_source_and_remote_exactly() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    git_ok(
+        &fixture,
+        &outpost,
+        &["config", "--unset", "outpost.sourceRepo"],
+    );
+    git_ok(
+        &fixture,
+        &outpost,
+        &["config", "--unset", "outpost.remoteName"],
+    );
+    let output = common::run(fixture.gop().current_dir(&outpost).arg("status"));
+    common::assert_success(&output, "degraded gop status");
+    let outpost = common::displayed_path(&outpost);
+
+    assert_eq!(
+        common::stdout(&output),
+        format!(
+            "context: outpost\noutpost: {outpost}\nsource: -\nsource-present: false\nremote: -\nbranch: main\noutpost-state: clean\nsource-upstream: <unavailable>\noutpost-vs-source: -\nsource-vs-upstream: -\nhealth: problems\n  - missing source repo config\n  - missing remote name config\n"
+        )
+    );
+}
+
+#[test]
+fn outpost_status_renders_detached_head_as_not_applicable() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    git_ok(&fixture, &outpost, &["checkout", "--detach"]);
+    let output = common::run(fixture.gop().current_dir(&outpost).arg("status"));
+    common::assert_success(&output, "detached gop status");
+    let outpost = common::displayed_path(&outpost);
+    let source = common::displayed_path(&fixture.source);
+
+    assert_eq!(
+        common::stdout(&output),
+        format!(
+            "context: outpost\noutpost: {outpost}\nsource: {source}\nsource-present: true\nremote: local\nbranch: detached\noutpost-state: clean\nsource-upstream: <not-applicable>\noutpost-vs-source: -\nsource-vs-upstream: -\nhealth: ok\n"
+        )
+    );
+}
+
+#[test]
+fn outpost_status_keeps_source_upstream_when_remote_metadata_is_missing() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    git_ok(
+        &fixture,
+        &outpost,
+        &["config", "--unset", "outpost.remoteName"],
+    );
+    let output = common::run(fixture.gop().current_dir(&outpost).arg("status"));
+    common::assert_success(&output, "missing-remote gop status");
+    let outpost = common::displayed_path(&outpost);
+    let source = common::displayed_path(&fixture.source);
+    let upstream = common::displayed_path(&fixture.upstream);
+
+    assert_eq!(
+        common::stdout(&output),
+        format!(
+            "context: outpost\noutpost: {outpost}\nsource: {source}\nsource-present: true\nremote: -\nbranch: main\noutpost-state: clean\nsource-upstream: origin/main  {upstream}\noutpost-vs-source: -\nsource-vs-upstream: ahead 0, behind 0\nhealth: problems\n  - missing remote name config\n"
+        )
+    );
+}
+
+#[test]
+fn outpost_status_names_outpost_to_source_tracking_problem() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    git_ok(
+        &fixture,
+        &outpost,
+        &["config", "--unset", "branch.main.merge"],
+    );
+    let output = common::run(fixture.gop().current_dir(&outpost).arg("status"));
+    common::assert_success(&output, "missing outpost tracking status");
+    let outpost = common::displayed_path(&outpost);
+    let source = common::displayed_path(&fixture.source);
+    let upstream = common::displayed_path(&fixture.upstream);
+
+    assert_eq!(
+        common::stdout(&output),
+        format!(
+            "context: outpost\noutpost: {outpost}\nsource: {source}\nsource-present: true\nremote: local\nbranch: main\noutpost-state: clean\nsource-upstream: origin/main  {upstream}\noutpost-vs-source: -\nsource-vs-upstream: ahead 0, behind 0\nhealth: problems\n  - outpost-to-source tracking unavailable for main\n"
+        )
+    );
+}
+
+#[test]
+fn outpost_status_names_unset_source_upstream_problem() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    git_ok(
+        &fixture,
+        &fixture.source,
+        &["config", "--unset", "branch.main.remote"],
+    );
+    git_ok(
+        &fixture,
+        &fixture.source,
+        &["config", "--unset", "branch.main.merge"],
+    );
+    let output = common::run(fixture.gop().current_dir(&outpost).arg("status"));
+    common::assert_success(&output, "unset source upstream status");
+    let outpost = common::displayed_path(&outpost);
+    let source = common::displayed_path(&fixture.source);
+
+    assert_eq!(
+        common::stdout(&output),
+        format!(
+            "context: outpost\noutpost: {outpost}\nsource: {source}\nsource-present: true\nremote: local\nbranch: main\noutpost-state: clean\nsource-upstream: <unset>\noutpost-vs-source: ahead 0, behind 0\nsource-vs-upstream: -\nhealth: problems\n  - source upstream tracking unset for main\n"
+        )
+    );
+}
+
+#[test]
+fn outpost_status_names_unavailable_source_upstream_route() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    git_ok(
+        &fixture,
+        &fixture.source,
+        &["config", "branch.main.remote", "missing"],
+    );
+    let output = common::run(fixture.gop().current_dir(&outpost).arg("status"));
+    common::assert_success(&output, "unavailable source route status");
+    let outpost = common::displayed_path(&outpost);
+    let source = common::displayed_path(&fixture.source);
+
+    assert_eq!(
+        common::stdout(&output),
+        format!(
+            "context: outpost\noutpost: {outpost}\nsource: {source}\nsource-present: true\nremote: local\nbranch: main\noutpost-state: clean\nsource-upstream: missing/main  <unavailable>\noutpost-vs-source: ahead 0, behind 0\nsource-vs-upstream: -\nhealth: problems\n  - source upstream route unavailable: missing\n"
+        )
+    );
+}
+
+#[test]
+fn outpost_status_names_missing_same_named_source_branch() {
+    let fixture = common::CliFixture::new();
+    git_ok(&fixture, &fixture.source, &["branch", "feature"]);
+    let outpost = fixture.outpost("C");
+    let add = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["add", "../C", "feature"]),
+    );
+    common::assert_success(&add, "gop add feature outpost");
+    git_ok(&fixture, &fixture.source, &["branch", "-D", "feature"]);
+    let output = common::run(fixture.gop().current_dir(&outpost).arg("status"));
+    common::assert_success(&output, "missing source branch status");
+    let outpost = common::displayed_path(&outpost);
+    let source = common::displayed_path(&fixture.source);
+
+    assert_eq!(
+        common::stdout(&output),
+        format!(
+            "context: outpost\noutpost: {outpost}\nsource: {source}\nsource-present: true\nremote: local\nbranch: feature\noutpost-state: clean\nsource-upstream: <unavailable>\noutpost-vs-source: ahead 0, behind 0\nsource-vs-upstream: -\nhealth: problems\n  - source branch missing: feature\n"
+        )
+    );
+}
+
 #[test]
 fn e_02_invocation_forms_produce_same_status_stdout() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
 
-    let gop = common::run(fixture.gop().current_dir(&outpost).arg("status"));
-    common::assert_success(&gop, "gop status");
-    let git_outpost = common::run(fixture.git_outpost().current_dir(&outpost).arg("status"));
-    common::assert_success(&git_outpost, "git-outpost status");
-    let git_dispatch = common::run(fixture.git_dispatch().current_dir(&outpost).arg("status"));
-    common::assert_success(&git_dispatch, "git outpost status");
+    for path in [&fixture.source, &outpost] {
+        let gop = common::run(fixture.gop().current_dir(path).arg("status"));
+        common::assert_success(&gop, "gop status");
+        let git_outpost = common::run(fixture.git_outpost().current_dir(path).arg("status"));
+        common::assert_success(&git_outpost, "git-outpost status");
+        let git_dispatch = common::run(fixture.git_dispatch().current_dir(path).arg("status"));
+        common::assert_success(&git_dispatch, "git outpost status");
 
-    assert_eq!(common::stdout(&gop), common::stdout(&git_outpost));
-    assert_eq!(common::stdout(&gop), common::stdout(&git_dispatch));
+        assert_eq!(common::stdout(&gop), common::stdout(&git_outpost));
+        assert_eq!(common::stdout(&gop), common::stdout(&git_dispatch));
+    }
 }
 
 #[test]
@@ -913,6 +1323,7 @@ fn e_07_copied_outpost_is_git_independent_when_source_is_missing() {
 
     let copy = fixture.outpost("C-copy");
     common::copy_dir_recursively(&outpost, &copy);
+    let source = common::displayed_path(&fixture.source);
     std::fs::remove_dir_all(&fixture.source).expect("remove source repository");
 
     let git_status = common::run(fixture.git(&copy).arg("status"));
@@ -926,18 +1337,12 @@ fn e_07_copied_outpost_is_git_independent_when_source_is_missing() {
 
     let status = common::run(fixture.gop().current_dir(&copy).arg("status"));
     common::assert_success(&status, "gop status in copied outpost");
-    let stdout = common::stdout(&status);
-    assert!(
-        stdout.contains("source-present: false"),
-        "status should report the missing source as absent:\n{stdout}"
-    );
-    assert!(
-        stdout.contains("health: problems"),
-        "status should report degraded health:\n{stdout}"
-    );
-    assert!(
-        stdout.contains("source missing:"),
-        "status should include the SourceMissing config problem:\n{stdout}"
+    let copy = common::displayed_path(&copy);
+    assert_eq!(
+        common::stdout(&status),
+        format!(
+            "context: outpost\noutpost: {copy}\nsource: {source}\nsource-present: false\nremote: local\nbranch: new-branch\noutpost-state: clean\nsource-upstream: <unavailable>\noutpost-vs-source: -\nsource-vs-upstream: -\nhealth: problems\n  - source missing: {source}\n"
+        )
     );
 }
 
@@ -1463,7 +1868,7 @@ pwd
 #[test]
 fn shell_gop_delegates_non_cd_commands_to_binary() {
     let fixture = common::CliFixture::new();
-    let outpost = fixture.add_outpost("C");
+    fixture.add_outpost("C");
 
     let script = r#"
 set -eu
@@ -1475,11 +1880,7 @@ gop status | sed -n '1p'
     let output = bash_script(script, &fixture);
 
     common::assert_success(&output, "bash gop status delegation");
-    let stdout = common::stdout(&output);
-    assert!(
-        stdout.starts_with(&format!("outpost: {}", common::displayed_path(&outpost))),
-        "delegated status should print outpost status:\n{stdout}"
-    );
+    assert_eq!(common::stdout(&output), "context: outpost\n");
 }
 
 #[cfg(unix)]

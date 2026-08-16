@@ -10,7 +10,11 @@ use outpost_core::ops::analyze::{
 use outpost_core::ops::branch_analysis::{
     BranchCleanupFinding, BranchCleanupProof, BranchCleanupSkipReason,
 };
-use outpost_core::ops::status::ConfigProblem;
+use outpost_core::ops::status::{
+    ConfigProblem, OutpostHeadStatus, OutpostStatus, RegisteredOutpostHead, RemoteRoutes,
+    RouteAvailability, SourceHead, SourceLocation, SourceStatus, SourceUpstreamStatus,
+    StatusReport, TrackedUpstream,
+};
 
 pub fn print_added(outpost: &outpost_core::Outpost) {
     println!("added {}", outpost.work_tree().display());
@@ -44,20 +48,106 @@ pub fn print_path(path: &Path) {
     println!("{}", path.display());
 }
 
-pub fn print_status(report: &ops::status::StatusReport) {
-    println!("outpost: {}", report.outpost_path.display());
-    match &report.source_path {
-        Some(path) => println!("source: {}", path.display()),
-        None => println!("source: -"),
+pub fn print_status(report: &StatusReport) {
+    match report {
+        StatusReport::Source(report) => print_source_status(report),
+        StatusReport::Outpost(report) => print_outpost_status(report),
     }
-    println!("source-present: {}", report.source_present);
+}
+
+fn print_source_status(report: &SourceStatus) {
+    println!("context: source");
+    println!("source: {}", report.source_path.display());
+    match &report.head {
+        SourceHead::Attached { branch, .. } => println!("branch: {}", branch.as_str()),
+        SourceHead::Detached => println!("branch: detached"),
+    }
+    println!(
+        "source-state: {}",
+        if report.source_dirty {
+            "dirty"
+        } else {
+            "clean"
+        }
+    );
+    match &report.head {
+        SourceHead::Attached { upstream, .. } => match upstream {
+            Some(upstream) => print_tracked_upstream("upstream", upstream),
+            None => println!("upstream: <unset>"),
+        },
+        SourceHead::Detached => println!("upstream: <not-applicable>"),
+    }
+    match &report.outpost_container {
+        Some(path) => println!("outpost-container: {}", path.display()),
+        None => println!("outpost-container: <unset>"),
+    }
+    if report.outposts.is_empty() {
+        println!("outposts: none");
+    } else {
+        println!("outposts:");
+        for outpost in &report.outposts {
+            let head = match &outpost.head {
+                RegisteredOutpostHead::Attached(branch) => branch.as_str(),
+                RegisteredOutpostHead::Detached => "detached",
+            };
+            let state = if outpost.dirty { "dirty" } else { "clean" };
+            if outpost.locked {
+                println!(
+                    "  {}\t{}\t{}\t{}\tlocked",
+                    outpost.display_id,
+                    outpost.path.display(),
+                    head,
+                    state
+                );
+            } else {
+                println!(
+                    "  {}\t{}\t{}\t{}",
+                    outpost.display_id,
+                    outpost.path.display(),
+                    head,
+                    state
+                );
+            }
+        }
+    }
+    if report.stale_registrations.is_empty() {
+        println!("stale-registrations: none");
+    } else {
+        println!("stale-registrations:");
+        for registration in &report.stale_registrations {
+            println!(
+                "  {}\t{}",
+                registration.display_id,
+                registration.path.display()
+            );
+        }
+    }
+}
+
+fn print_outpost_status(report: &OutpostStatus) {
+    println!("context: outpost");
+    println!("outpost: {}", report.outpost_path.display());
+    match &report.source {
+        SourceLocation::Unconfigured => {
+            println!("source: -");
+            println!("source-present: false");
+        }
+        SourceLocation::Missing(path) => {
+            println!("source: {}", path.display());
+            println!("source-present: false");
+        }
+        SourceLocation::Present(path) => {
+            println!("source: {}", path.display());
+            println!("source-present: true");
+        }
+    }
     match &report.remote_name {
         Some(remote) => println!("remote: {}", remote.as_str()),
         None => println!("remote: -"),
     }
-    match &report.current_branch {
-        Some(branch) => println!("branch: {}", branch.as_str()),
-        None => println!("branch: detached"),
+    match &report.head {
+        OutpostHeadStatus::Attached { branch, .. } => println!("branch: {}", branch.as_str()),
+        OutpostHeadStatus::Detached => println!("branch: detached"),
     }
     println!(
         "outpost-state: {}",
@@ -67,6 +157,18 @@ pub fn print_status(report: &ops::status::StatusReport) {
             "clean"
         }
     );
+    match &report.head {
+        OutpostHeadStatus::Attached {
+            source_upstream, ..
+        } => match source_upstream {
+            SourceUpstreamStatus::Configured(upstream) => {
+                print_tracked_upstream("source-upstream", upstream);
+            }
+            SourceUpstreamStatus::Unset => println!("source-upstream: <unset>"),
+            SourceUpstreamStatus::Unavailable => println!("source-upstream: <unavailable>"),
+        },
+        OutpostHeadStatus::Detached => println!("source-upstream: <not-applicable>"),
+    }
     println!(
         "outpost-vs-source: {}",
         format_ahead_behind(report.outpost_ahead_behind_source)
@@ -82,6 +184,41 @@ pub fn print_status(report: &ops::status::StatusReport) {
         println!("health: problems");
         for problem in &report.problems {
             println!("  - {}", format_problem(problem));
+        }
+    }
+}
+
+fn print_tracked_upstream(label: &str, upstream: &TrackedUpstream) {
+    match upstream {
+        TrackedUpstream::LocalRepository { branch } => {
+            println!("{label}: ./{branch}  <local-repository>");
+        }
+        TrackedUpstream::Remote {
+            remote,
+            branch,
+            routes,
+        } => print_remote_routes(label, remote.as_str(), branch.as_str(), routes),
+    }
+}
+
+fn print_remote_routes(label: &str, remote: &str, branch: &str, routes: &RemoteRoutes) {
+    if routes.fetch == routes.push {
+        print_route(label, remote, branch, &routes.fetch);
+    } else {
+        print_route(&format!("{label}-fetch"), remote, branch, &routes.fetch);
+        print_route(&format!("{label}-push"), remote, branch, &routes.push);
+    }
+}
+
+fn print_route(label: &str, remote: &str, branch: &str, route: &RouteAvailability) {
+    match route {
+        RouteAvailability::Known(urls) => {
+            for url in urls.as_slice() {
+                println!("{label}: {remote}/{branch}  {url}");
+            }
+        }
+        RouteAvailability::Unavailable => {
+            println!("{label}: {remote}/{branch}  <unavailable>");
         }
     }
 }
@@ -396,8 +533,18 @@ fn format_problem(problem: &ConfigProblem) -> String {
             configured.display(),
             actual.display()
         ),
-        ConfigProblem::NoUpstreamTracking { branch } => {
-            format!("no upstream tracking for {}", branch.as_str())
+        ConfigProblem::SourceBranchMissing { branch } => {
+            format!("source branch missing: {}", branch.as_str())
+        }
+        ConfigProblem::OutpostSourceTrackingUnavailable { branch } => format!(
+            "outpost-to-source tracking unavailable for {}",
+            branch.as_str()
+        ),
+        ConfigProblem::SourceUpstreamTrackingUnset { branch } => {
+            format!("source upstream tracking unset for {}", branch.as_str())
+        }
+        ConfigProblem::SourceUpstreamRouteUnavailable { remote } => {
+            format!("source upstream route unavailable: {}", remote.as_str())
         }
         ConfigProblem::NotInRegistry => "not in source registry".to_owned(),
         ConfigProblem::PushWouldFail { branch } => {
