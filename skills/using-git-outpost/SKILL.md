@@ -7,7 +7,7 @@ description: Use when beginning work in a Git checkout, or when a Git task invol
 
 ## Overview
 
-Treat Git Outpost as a self-contained-clone realization of worktree intent. Orient once, then use ordinary Git for files and commits and `gop` for checkout topology or the two-hop path between outpost, source, and upstream.
+An outpost is a fast, self-contained local clone of an existing local clone, called the source repository. It serves the same parallel-checkout purpose as a worktree but has its own `.git` directory. `gop` manages this relationship and makes it easy to synchronize or publish through the source to its real upstream remote. Orient once, then use ordinary Git for files and commits and `gop` for checkout topology and that two-hop path.
 
 ## Orient First
 
@@ -26,7 +26,7 @@ Normal orientation has this exact recipe:
 
 3. For a successful state, preserve the full report, carry it forward, and end orientation. The report contains local facts and may include degraded health or stale registrations.
 
-If `gop` is unavailable, use `git -C <path> config --local --type=bool --get outpost.managed`. Only `true` establishes `ManagedOutpostWithoutGop`; treat every other result as unknown and report that the CLI is unavailable. This fallback proves only the local marker and supports ordinary file and commit work, not source orientation or `gop` workflows.
+`gop` is required. If it is unavailable, preserve the command error as `Unknown(error)` and stop using this skill.
 
 Orientation is complete only after naming the state.
 
