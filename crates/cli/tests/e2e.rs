@@ -23,7 +23,7 @@ fn empty_source_status(fixture: &common::CliFixture, branch: &str, upstream_line
 #[test]
 fn source_status_renders_exact_empty_inventory() {
     let fixture = common::CliFixture::new();
-    let upstream = common::displayed_path(&fixture.upstream);
+    let upstream = fixture.upstream.display();
 
     assert_eq!(
         source_status(&fixture),
@@ -41,6 +41,7 @@ fn source_status_renders_tabular_live_and_stale_rows() {
     let dirty = fixture.add_outpost("C");
     let detached = fixture.add_outpost("D");
     let stale = fixture.add_outpost("E");
+    let stale_display = common::displayed_path(&stale);
     std::fs::write(dirty.join("dirty.txt"), "dirty\n").expect("dirty outpost");
     git_ok(&fixture, &detached, &["checkout", "--detach"]);
     let lock = common::run(
@@ -53,10 +54,10 @@ fn source_status_renders_tabular_live_and_stale_rows() {
     std::fs::remove_dir_all(&stale).expect("remove stale checkout");
 
     let source = common::displayed_path(&fixture.source);
-    let upstream = common::displayed_path(&fixture.upstream);
+    let upstream = fixture.upstream.display();
     let dirty = common::displayed_path(&dirty);
     let detached = common::displayed_path(&detached);
-    let stale = common::displayed_path(&stale);
+    let stale = stale_display;
     let ids = [&dirty, &detached, &stale]
         .map(|path| outpost_core::OutpostId::derive(Path::new(&source), Path::new(path)));
     assert!(
@@ -233,7 +234,7 @@ fn outpost_status_renders_exact_healthy_report() {
     common::assert_success(&output, "gop status from outpost");
     let outpost = common::displayed_path(&outpost);
     let source = common::displayed_path(&fixture.source);
-    let upstream = common::displayed_path(&fixture.upstream);
+    let upstream = fixture.upstream.display();
 
     assert_eq!(
         common::stdout(&output),
@@ -339,7 +340,7 @@ fn outpost_status_keeps_source_upstream_when_remote_metadata_is_missing() {
     common::assert_success(&output, "missing-remote gop status");
     let outpost = common::displayed_path(&outpost);
     let source = common::displayed_path(&fixture.source);
-    let upstream = common::displayed_path(&fixture.upstream);
+    let upstream = fixture.upstream.display();
 
     assert_eq!(
         common::stdout(&output),
@@ -362,7 +363,7 @@ fn outpost_status_names_outpost_to_source_tracking_problem() {
     common::assert_success(&output, "missing outpost tracking status");
     let outpost = common::displayed_path(&outpost);
     let source = common::displayed_path(&fixture.source);
-    let upstream = common::displayed_path(&fixture.upstream);
+    let upstream = fixture.upstream.display();
 
     assert_eq!(
         common::stdout(&output),
