@@ -192,15 +192,6 @@ fn e_08_cli_errors_return_documented_exit_codes() {
     assert_failure_code_contains(&not_a_repo, 2, "NotARepo", "not inside a Git repository");
 
     let fixture = common::CliFixture::new();
-    let not_an_outpost = common::run(fixture.gop().current_dir(&fixture.source).arg("status"));
-    assert_failure_code_contains(
-        &not_an_outpost,
-        2,
-        "NotAnOutpost",
-        "not inside a managed outpost",
-    );
-
-    let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
     std::fs::remove_dir_all(&fixture.source).expect("remove source");
     let source_missing = common::run(fixture.gop().current_dir(&outpost).arg("push"));
@@ -518,20 +509,22 @@ fn e_12_global_c_changes_effective_cwd() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
 
-    let direct = common::run(fixture.gop().current_dir(&outpost).arg("status"));
-    common::assert_success(&direct, "direct status");
+    for path in [&fixture.source, &outpost] {
+        let direct = common::run(fixture.gop().current_dir(path).arg("status"));
+        common::assert_success(&direct, "direct status");
 
-    let with_c = common::run(
-        fixture
-            .gop()
-            .current_dir(&fixture.root)
-            .arg("-C")
-            .arg(&outpost)
-            .arg("status"),
-    );
-    common::assert_success(&with_c, "status with -C");
+        let with_c = common::run(
+            fixture
+                .gop()
+                .current_dir(&fixture.root)
+                .arg("-C")
+                .arg(path)
+                .arg("status"),
+        );
+        common::assert_success(&with_c, "status with -C");
 
-    assert_eq!(common::stdout(&direct), common::stdout(&with_c));
+        assert_eq!(common::stdout(&direct), common::stdout(&with_c));
+    }
 
     let remove = common::run(
         fixture

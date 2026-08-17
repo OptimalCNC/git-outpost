@@ -90,7 +90,7 @@ pub enum Command {
     /// Prune stale registry entries.
     Prune(PruneArgs),
 
-    /// Summarize the current managed outpost.
+    /// Summarize the current source repository or managed outpost.
     Status(StatusArgs),
 
     /// Analyze a managed outpost and related branch state.

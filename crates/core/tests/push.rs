@@ -6,7 +6,7 @@ use std::path::Path;
 
 use common::fixture::{AbcFixture, CapturingReporter};
 use outpost_core::ops::push::{PushOptions, StepResult, run};
-use outpost_core::ops::status::{ConfigProblem, run_with as status_run_with};
+use outpost_core::ops::status::{ConfigProblem, StatusReport, run_with as status_run_with};
 use outpost_core::{AheadBehind, Outpost, OutpostError, OutpostResult, StepKind};
 
 #[test]
@@ -301,10 +301,13 @@ fn push_first_publication_to_absent_origin_branch_counts_only_new_commits() {
     );
 
     let status = status_run_with(&outpost_path, &fixture.git_env).expect("status after push");
+    let StatusReport::Outpost(status) = status else {
+        panic!("expected outpost status after push");
+    };
     assert!(
         !status
             .problems
-            .contains(&ConfigProblem::NoUpstreamTracking {
+            .contains(&ConfigProblem::SourceUpstreamTrackingUnset {
                 branch: feature.clone(),
             }),
         "push should leave source branch tracking origin"

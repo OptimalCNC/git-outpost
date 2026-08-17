@@ -290,7 +290,7 @@ additional working-directory-specific behavior to explain.
 | `move` | / | Disallowed |
 | `remove` | / | Disallowed |
 | `prune` | / | Disallowed |
-| `status` | Disallowed | / |
+| `status` | / | / |
 | `analyze` | Requires `<outpost>` | May omit `<outpost>`; defaults to the current outpost |
 
 ## Commands
@@ -652,25 +652,33 @@ stale clones.
 
 ### `status`
 
-Summarize the current managed outpost. `status` is not a replacement for
-`git status` and does not list file-level changes. It is read-only and does not
-fetch, pull, push, stash, or update refs.
+Summarize the current source repository or managed outpost. The first line
+identifies the context as `source` or `outpost`. `status` is not a replacement
+for `git status` and does not list file-level changes.
 
-Output should include:
+Source output reports the checked-out branch or detached `HEAD`, source working
+tree state, configured tracking target and its effective local fetch/push
+routes, optional outpost container, live registered outposts, and stale
+registrations. The source registry is authoritative for the source-to-outpost
+relationship: a registered path that exists but has contradictory checkout
+metadata or source routes is an integrity error, not a third kind of outpost.
+`outpost-container: <unset>` is normal: it is not a health problem, and the
+agent decides whether to configure it and which safe value to use.
 
-- outpost path
-- source repository path, or that it is not configured
-- source remote name inside the outpost
-- current branch, or detached `HEAD` state
-- clean or dirty working tree state
-- ahead/behind state relative to the source repository, or why it is unavailable
-- source branch ahead/behind state relative to its upstream, based on existing
-  local refs, or why it is unavailable
-- a short health line: `ok` or the blocking configuration problems found while
-  building the summary
+Outpost output retains the outpost and source paths, source remote, branch and
+working tree state, health diagnostics, cached outpost-to-source and
+source-to-upstream ahead/behind comparisons, and the same-named source
+branch's upstream routes when available. A managed outpost can still report
+degraded health when its source path, remote name, or registration is missing.
+
+Status is read-only and local: it does not fetch, contact a remote, test
+authentication, prove remote URL reachability, pull, push, stash, or update
+refs. Its comparisons use only existing local refs, so unavailable data does
+not trigger a fetch. It orients the current checkout; it does not establish
+that a later mutating command is ready.
 
 Status operates on the current directory. Use `gop -C <path> status` to
-inspect another outpost.
+inspect another source repository or outpost.
 
 ### `analyze [<outpost>]`
 

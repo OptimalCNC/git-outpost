@@ -94,6 +94,12 @@ fn e_03_help_lists_commands_and_long_flags() {
         );
     }
 
+    let root_help = help_for(&["--help"]);
+    assert!(
+        root_help.contains("Summarize the current source repository or managed outpost"),
+        "expected source-or-outpost status summary in help:\n{root_help}"
+    );
+
     let shell_help = help_for(&["shell", "--help"]);
     for token in ["init", "install", "uninstall", "shell integration"] {
         assert!(

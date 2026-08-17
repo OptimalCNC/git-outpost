@@ -1032,57 +1032,149 @@ cwd is a managed outpost, it reads the outpost metadata to open its
 #### 5.9.3 `ops/status.rs`
 
 ```rust
-pub struct StatusReport {
+mod routes;
+mod source;
+
+pub enum StatusReport {
+    Source(SourceStatus),
+    Outpost(OutpostStatus),
+}
+
+pub struct SourceStatus {
+    pub source_path: PathBuf,
+    pub head: SourceHead,
+    pub source_dirty: bool,
+    pub outpost_container: Option<PathBuf>,
+    pub outposts: Vec<RegisteredOutpostStatus>,
+    pub stale_registrations: Vec<StaleRegistration>,
+}
+
+pub enum SourceHead {
+    Attached {
+        branch: BranchName,
+        upstream: Option<TrackedUpstream>,
+    },
+    Detached,
+}
+
+pub enum TrackedUpstream {
+    Remote {
+        remote: RemoteName,
+        branch: BranchName,
+        routes: RemoteRoutes,
+    },
+    LocalRepository { branch: BranchName },
+}
+
+pub struct RemoteRoutes {
+    pub fetch: RouteAvailability,
+    pub push: RouteAvailability,
+}
+
+pub enum RouteAvailability {
+    Known(RemoteUrlList),
+    Unavailable,
+}
+
+pub struct RemoteUrlList(Vec<String>);
+
+pub struct RegisteredOutpostStatus {
+    pub display_id: OutpostIdPrefix,
+    pub path: PathBuf,
+    pub head: RegisteredOutpostHead,
+    pub dirty: bool,
+    pub locked: bool,
+}
+
+pub enum RegisteredOutpostHead {
+    Attached(BranchName),
+    Detached,
+}
+
+pub struct StaleRegistration {
+    pub display_id: OutpostIdPrefix,
+    pub path: PathBuf,
+}
+
+pub struct OutpostStatus {
     pub outpost_path: PathBuf,
-    /// `None` when `outpost.sourceRepo` is missing from the
-    /// outpost's local config — degraded reporting mode (S-13).
-    pub source_path: Option<PathBuf>,
-    pub source_present: bool,
-    /// `None` when `outpost.remoteName` is missing.
+    pub source: SourceLocation,
     pub remote_name: Option<RemoteName>,
-    pub current_branch: Option<BranchName>,
+    pub head: OutpostHeadStatus,
     pub outpost_dirty: bool,
     pub source_ahead_behind_upstream: Option<AheadBehind>,
     pub outpost_ahead_behind_source: Option<AheadBehind>,
     pub problems: Vec<ConfigProblem>,
 }
 
+pub enum SourceLocation {
+    Unconfigured,
+    Missing(PathBuf),
+    Present(PathBuf),
+}
+
+pub enum OutpostHeadStatus {
+    Attached {
+        branch: BranchName,
+        source_upstream: SourceUpstreamStatus,
+    },
+    Detached,
+}
+
+pub enum SourceUpstreamStatus {
+    Configured(TrackedUpstream),
+    Unset,
+    Unavailable,
+}
+
 pub enum ConfigProblem {
-    /// outpost.sourceRepo missing.
     MissingSourceRepoConfig,
-    /// outpost.sourceRepo points at a path that no longer exists.
     SourceMissing(PathBuf),
-    /// outpost.remoteName missing.
     MissingRemoteNameConfig,
-    /// remote.<remote_name>.url disagrees with outpost.sourceRepo.
     LocalRemoteMismatch { configured: PathBuf, actual: PathBuf },
-    /// Current branch has no upstream tracking configured.
-    NoUpstreamTracking { branch: BranchName },
-    /// Source repo's registry does not contain this outpost's path.
+    SourceBranchMissing { branch: BranchName },
+    OutpostSourceTrackingUnavailable { branch: BranchName },
+    SourceUpstreamTrackingUnset { branch: BranchName },
+    SourceUpstreamRouteUnavailable { remote: RemoteName },
     NotInRegistry,
-    /// Source repo's receive.denyCurrentBranch is not `updateInstead` and
-    /// the outpost's tracked branch is checked out in the source.
     PushWouldFail { branch: BranchName },
 }
 
-/// Takes a path so it can run on managed outposts with broken metadata
-/// (S-09, S-13). Internally, it reads `RawMetadata` first; missing or
-/// false `outpost.managed` returns `NotAnOutpost`. For managed outposts,
-/// missing `sourceRepo` or `remoteName` are reported as `ConfigProblem`
-/// entries. Only when metadata is fully valid does it construct a full
-/// `Outpost` for ahead/behind computations. CLI dispatch passes the
-/// effective cwd after global `-C` processing; the CLI has no positional
-/// status target.
 pub fn run(target_path: &Path) -> OutpostResult<StatusReport>;
 
-/// Test-friendly variant: threads the supplied env through every
-/// internal `GitInvoker` (matching §10.3's hermetic-env requirement).
-/// `run()` is a thin wrapper that calls `run_with(target_path, &Default::default())`.
 pub fn run_with(
     target_path: &Path,
     env: &BTreeMap<OsString, OsString>,
 ) -> OutpostResult<StatusReport>;
 ```
+
+`StatusReport` makes source and managed-outpost reports disjoint. The refined
+source `HEAD`, upstream, and route types make detached `HEAD`, a local
+repository tracking target, and unavailable remote routes explicit instead of
+encoding incompatible combinations in optional fields. `RemoteUrlList` is
+nonempty and de-duplicated; fetch and push remain separate facts until the
+renderer chooses to collapse equal routes.
+
+`run_with` discovers and canonicalizes the work tree, reads `RawMetadata`, and
+selects `StatusReport::Outpost` only when `outpost.managed` is `true`; an
+absent or `false` marker selects `StatusReport::Source`, while an invalid
+marker is an error. The outpost path retains degraded reporting and cached
+local ahead/behind comparisons. `SourceLocation` and `OutpostHeadStatus`
+encode when source and source-upstream facts can apply.
+
+The private `source` implementation constructs source reports from local Git
+state, source configuration, and the source registry. The registry is
+authoritative for source-to-outpost registration: missing registered paths are
+`StaleRegistration` rows, while an existing path with missing or contradictory
+reverse metadata, remote name, or source routes is an integrity error rather
+than a normal status category. The private `routes` implementation probes
+effective local fetch and push URLs; a proved missing route is `Unavailable`,
+while other command, I/O, or invalid-data failures remain errors. Neither path
+fetches nor contacts a remote.
+
+CLI dispatch passes the effective cwd to `ops::status::run` once. Only
+`output.rs` matches `StatusReport` and renders text; context classification,
+registry checks, route lookup, and diagnostics remain in Core.
 
 #### 5.9.4 `ops/source.rs`
 

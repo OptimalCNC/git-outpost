@@ -9,17 +9,146 @@ use crate::source_repo::{
 };
 use crate::{BranchName, GitInvoker, OutpostError, OutpostResult, RefName, RemoteName};
 
+mod routes;
+mod source;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StatusReport {
+pub enum StatusReport {
+    Source(SourceStatus),
+    Outpost(OutpostStatus),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceStatus {
+    pub source_path: PathBuf,
+    pub head: SourceHead,
+    pub source_dirty: bool,
+    pub outpost_container: Option<PathBuf>,
+    pub outposts: Vec<RegisteredOutpostStatus>,
+    pub stale_registrations: Vec<StaleRegistration>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceHead {
+    Attached {
+        branch: BranchName,
+        upstream: Option<TrackedUpstream>,
+    },
+    Detached,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrackedUpstream {
+    Remote {
+        remote: RemoteName,
+        branch: BranchName,
+        routes: RemoteRoutes,
+    },
+    LocalRepository {
+        branch: BranchName,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteRoutes {
+    pub fetch: RouteAvailability,
+    pub push: RouteAvailability,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RouteAvailability {
+    Known(RemoteUrlList),
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteUrlList(Vec<String>);
+
+impl RemoteUrlList {
+    pub fn as_slice(&self) -> &[String] {
+        &self.0
+    }
+
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub fn for_tests<const N: usize>(values: [&str; N]) -> Self {
+        assert!(N > 0, "remote URL list must be nonempty");
+        Self(values.into_iter().map(str::to_owned).collect())
+    }
+
+    fn from_output(git: &GitInvoker, output: &str) -> OutpostResult<Self> {
+        let mut urls = Vec::new();
+        for line in output.lines().filter(|line| !line.trim().is_empty()) {
+            if !urls.iter().any(|existing| existing == line) {
+                urls.push(line.to_owned());
+            }
+        }
+        if urls.is_empty() {
+            return Err(OutpostError::IoAt {
+                path: git.cwd().to_path_buf(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "git remote get-url returned no URLs",
+                ),
+            });
+        }
+        Ok(Self(urls))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegisteredOutpostStatus {
+    pub display_id: crate::OutpostIdPrefix,
+    pub path: PathBuf,
+    pub head: RegisteredOutpostHead,
+    pub dirty: bool,
+    pub locked: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RegisteredOutpostHead {
+    Attached(BranchName),
+    Detached,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StaleRegistration {
+    pub display_id: crate::OutpostIdPrefix,
+    pub path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutpostStatus {
     pub outpost_path: PathBuf,
-    pub source_path: Option<PathBuf>,
-    pub source_present: bool,
+    pub source: SourceLocation,
     pub remote_name: Option<RemoteName>,
-    pub current_branch: Option<BranchName>,
+    pub head: OutpostHeadStatus,
     pub outpost_dirty: bool,
     pub source_ahead_behind_upstream: Option<AheadBehind>,
     pub outpost_ahead_behind_source: Option<AheadBehind>,
     pub problems: Vec<ConfigProblem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceLocation {
+    Unconfigured,
+    Missing(PathBuf),
+    Present(PathBuf),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OutpostHeadStatus {
+    Attached {
+        branch: BranchName,
+        source_upstream: SourceUpstreamStatus,
+    },
+    Detached,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceUpstreamStatus {
+    Configured(TrackedUpstream),
+    Unset,
+    Unavailable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,8 +160,17 @@ pub enum ConfigProblem {
         configured: PathBuf,
         actual: PathBuf,
     },
-    NoUpstreamTracking {
+    SourceBranchMissing {
         branch: BranchName,
+    },
+    OutpostSourceTrackingUnavailable {
+        branch: BranchName,
+    },
+    SourceUpstreamTrackingUnset {
+        branch: BranchName,
+    },
+    SourceUpstreamRouteUnavailable {
+        remote: RemoteName,
     },
     NotInRegistry,
     PushWouldFail {
@@ -52,11 +190,11 @@ pub fn run_with(
     let git = invoker_at(&outpost_path, env);
     let raw = RawMetadata::read(&git)?;
 
-    if raw.managed != Some(true) {
-        return Err(OutpostError::NotAnOutpost(outpost_path));
+    if raw.managed == Some(true) {
+        return report_from_raw(outpost_path, raw, &git, env).map(StatusReport::Outpost);
     }
 
-    report_from_raw(outpost_path, raw, &git, env)
+    source::build(outpost_path, &git, env).map(StatusReport::Source)
 }
 
 fn discover_work_tree(
@@ -75,7 +213,7 @@ fn report_from_raw(
     raw: RawMetadata,
     git: &GitInvoker,
     env: &BTreeMap<OsString, OsString>,
-) -> OutpostResult<StatusReport> {
+) -> OutpostResult<OutpostStatus> {
     let mut problems = Vec::new();
     let source_path = match raw.source_repo {
         Some(path) => Some(canonicalize_existing_or_missing(&path)?),
@@ -88,7 +226,11 @@ fn report_from_raw(
         problems.push(ConfigProblem::MissingRemoteNameConfig);
     }
 
-    let source_present = source_path.as_ref().is_some_and(|path| path.exists());
+    let source_present = source_path
+        .as_ref()
+        .map(|path| path_is_present(path))
+        .transpose()?
+        .unwrap_or(false);
     if let Some(path) = source_path.as_ref().filter(|_| !source_present) {
         problems.push(ConfigProblem::SourceMissing(path.clone()));
     }
@@ -97,33 +239,73 @@ fn report_from_raw(
     let outpost_dirty = is_dirty(git)?;
     let mut source_ahead_behind_upstream = None;
     let mut outpost_ahead_behind_source = None;
+    let mut source_upstream = SourceUpstreamStatus::Unavailable;
 
-    if let (Some(source_path), Some(remote_name)) = (source_path.as_ref(), remote_name.as_ref()) {
-        if source_present {
+    if let Some(source_path) = source_path.as_ref().filter(|_| source_present) {
+        let source = SourceRepo::at_with(source_path, env)?;
+        if let Some(remote_name) = remote_name.as_ref() {
             check_local_remote(git, &outpost_path, source_path, remote_name, &mut problems)?;
-            let source = SourceRepo::at_with(source_path, env)?;
-            check_registry(&source, &outpost_path, &mut problems)?;
-            if let Some(branch) = current_branch.as_ref() {
+        }
+        check_registry(&source, &outpost_path, &mut problems)?;
+
+        if let Some(branch) = current_branch.as_ref() {
+            let source_git = invoker_at(source_path, env);
+            let source_branch_ref = format!("refs/heads/{}", branch.as_str());
+            let source_branch_exists = ref_exists(&source_git, &source_branch_ref)?;
+            if !source_branch_exists {
+                problems.push(ConfigProblem::SourceBranchMissing {
+                    branch: branch.clone(),
+                });
+            }
+
+            if let Some(remote_name) = remote_name.as_ref() {
                 outpost_ahead_behind_source =
                     ahead_behind_outpost_source(git, branch, remote_name, &mut problems)?;
-                source_ahead_behind_upstream =
-                    ahead_behind_source_upstream(source_path, branch, env, &mut problems)?;
-                check_push_would_fail(&source, branch, &mut problems)?;
             }
+
+            if source_branch_exists {
+                source_upstream = read_source_upstream(&source_git, branch, &mut problems)?;
+                source_ahead_behind_upstream =
+                    ahead_behind_source_upstream(&source_git, branch, &source_upstream)?;
+            }
+            check_push_would_fail(&source, branch, &mut problems)?;
         }
     }
 
-    Ok(StatusReport {
+    let source = match source_path {
+        None => SourceLocation::Unconfigured,
+        Some(path) if source_present => SourceLocation::Present(path),
+        Some(path) => SourceLocation::Missing(path),
+    };
+    let head = match current_branch {
+        Some(branch) => OutpostHeadStatus::Attached {
+            branch,
+            source_upstream,
+        },
+        None => OutpostHeadStatus::Detached,
+    };
+
+    Ok(OutpostStatus {
         outpost_path,
-        source_path,
-        source_present,
+        source,
         remote_name,
-        current_branch,
+        head,
         outpost_dirty,
         source_ahead_behind_upstream,
         outpost_ahead_behind_source,
         problems,
     })
+}
+
+fn path_is_present(path: &Path) -> OutpostResult<bool> {
+    match std::fs::metadata(path) {
+        Ok(_) => Ok(true),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(source) => Err(OutpostError::IoAt {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
 }
 
 fn map_discovery_error(err: OutpostError, path: &Path) -> OutpostError {
@@ -134,10 +316,15 @@ fn map_discovery_error(err: OutpostError, path: &Path) -> OutpostError {
 }
 
 fn canonicalize_existing_or_missing(path: &Path) -> OutpostResult<PathBuf> {
-    if path.exists() {
-        canonicalize_path(path)
-    } else {
-        Ok(canonicalize_missing(path))
+    match std::fs::metadata(path) {
+        Ok(_) => canonicalize_path(path),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+            Ok(canonicalize_missing(path))
+        }
+        Err(source) => Err(OutpostError::IoAt {
+            path: path.to_path_buf(),
+            source,
+        }),
     }
 }
 
@@ -229,7 +416,10 @@ fn ahead_behind_outpost_source(
     remote_name: &RemoteName,
     problems: &mut Vec<ConfigProblem>,
 ) -> OutpostResult<Option<AheadBehind>> {
-    let Some(remote_branch) = tracking_branch(git, branch, Some(remote_name), problems)? else {
+    let Some(remote_branch) = tracking_branch(git, branch, Some(remote_name))? else {
+        problems.push(ConfigProblem::OutpostSourceTrackingUnavailable {
+            branch: branch.clone(),
+        });
         return Ok(None);
     };
     let local_ref = format!("refs/heads/{}", branch.as_str());
@@ -238,46 +428,74 @@ fn ahead_behind_outpost_source(
 }
 
 fn ahead_behind_source_upstream(
-    source_path: &Path,
+    source_git: &GitInvoker,
     branch: &BranchName,
-    env: &BTreeMap<OsString, OsString>,
-    problems: &mut Vec<ConfigProblem>,
+    upstream: &SourceUpstreamStatus,
 ) -> OutpostResult<Option<AheadBehind>> {
-    let source_git = invoker_at(source_path, env);
-    let Some(remote_branch) = tracking_branch(&source_git, branch, None, problems)? else {
-        return Ok(None);
-    };
-    let Some(remote_name) = read_branch_remote(&source_git, branch)? else {
-        return Ok(None);
+    let upstream_ref = match upstream {
+        SourceUpstreamStatus::Configured(TrackedUpstream::Remote {
+            remote,
+            branch: upstream_branch,
+            ..
+        }) => format!(
+            "refs/remotes/{}/{}",
+            remote.as_str(),
+            upstream_branch.as_str()
+        ),
+        SourceUpstreamStatus::Configured(TrackedUpstream::LocalRepository {
+            branch: upstream_branch,
+        }) => {
+            format!("refs/heads/{}", upstream_branch.as_str())
+        }
+        SourceUpstreamStatus::Unset | SourceUpstreamStatus::Unavailable => return Ok(None),
     };
     let local_ref = format!("refs/heads/{}", branch.as_str());
-    let remote_ref = format!("refs/remotes/{}/{remote_branch}", remote_name.as_str());
-    ahead_behind_existing_refs(&source_git, &local_ref, &remote_ref)
+    ahead_behind_existing_refs(source_git, &local_ref, &upstream_ref)
+}
+
+fn read_source_upstream(
+    source_git: &GitInvoker,
+    branch: &BranchName,
+    problems: &mut Vec<ConfigProblem>,
+) -> OutpostResult<SourceUpstreamStatus> {
+    let Some(upstream) = routes::read_upstream(source_git, branch)? else {
+        problems.push(ConfigProblem::SourceUpstreamTrackingUnset {
+            branch: branch.clone(),
+        });
+        return Ok(SourceUpstreamStatus::Unset);
+    };
+
+    if let TrackedUpstream::Remote { remote, routes, .. } = &upstream {
+        if matches!(routes.fetch, RouteAvailability::Unavailable)
+            || matches!(routes.push, RouteAvailability::Unavailable)
+        {
+            problems.push(ConfigProblem::SourceUpstreamRouteUnavailable {
+                remote: remote.clone(),
+            });
+        }
+    }
+
+    Ok(SourceUpstreamStatus::Configured(upstream))
 }
 
 fn tracking_branch(
     git: &GitInvoker,
     branch: &BranchName,
     expected_remote: Option<&RemoteName>,
-    problems: &mut Vec<ConfigProblem>,
 ) -> OutpostResult<Option<String>> {
     let Some(remote) = read_branch_remote(git, branch)? else {
-        push_no_upstream_once(problems, branch);
         return Ok(None);
     };
     if expected_remote.is_some_and(|expected| expected != &remote) {
-        push_no_upstream_once(problems, branch);
         return Ok(None);
     }
 
     let merge_key = format!("branch.{}.merge", branch.as_str());
     let Some(merge_ref) = read_optional_config(git, &merge_key)? else {
-        push_no_upstream_once(problems, branch);
         return Ok(None);
     };
     let merge_ref = RefName::parse(merge_ref)?;
     let Some(remote_branch) = merge_ref.as_str().strip_prefix("refs/heads/") else {
-        push_no_upstream_once(problems, branch);
         return Ok(None);
     };
 
@@ -289,15 +507,6 @@ fn read_branch_remote(git: &GitInvoker, branch: &BranchName) -> OutpostResult<Op
     read_optional_config(git, &remote_key)?
         .map(RemoteName::parse)
         .transpose()
-}
-
-fn push_no_upstream_once(problems: &mut Vec<ConfigProblem>, branch: &BranchName) {
-    let problem = ConfigProblem::NoUpstreamTracking {
-        branch: branch.clone(),
-    };
-    if !problems.contains(&problem) {
-        problems.push(problem);
-    }
 }
 
 fn ahead_behind_existing_refs(
@@ -378,9 +587,9 @@ mod tests {
         )
         .expect("report");
 
-        assert_eq!(report.source_path, None);
-        assert!(!report.source_present);
+        assert_eq!(report.source, SourceLocation::Unconfigured);
         assert_eq!(report.remote_name, None);
+        assert!(matches!(report.head, OutpostHeadStatus::Attached { .. }));
         assert_eq!(
             report.problems,
             vec![
