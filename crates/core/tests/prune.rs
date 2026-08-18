@@ -167,19 +167,18 @@ fn prune_reports_existing_outpost_whose_source_repo_is_missing() {
     let outpost = fixture.add_outpost("C").expect("add C");
     let source = fixture.source_repo().expect("source repo");
     let outpost_path = canonical(&outpost);
-    fixture
-        .invoker(&outpost)
-        .run_check([
-            "config",
-            "--local",
-            "outpost.sourceRepo",
-            fixture
-                .root
-                .join("missing-source")
-                .to_str()
-                .expect("utf-8 path"),
-        ])
-        .expect("point outpost source at missing path");
+    let opened = outpost_core::Outpost::at(&outpost).expect("managed outpost");
+    let metadata_path = opened.metadata_path();
+    std::fs::write(
+        &metadata_path,
+        serde_json::json!({
+            "version": 1,
+            "source_repo": fixture.root.join("missing-source"),
+            "remote_name": "local"
+        })
+        .to_string(),
+    )
+    .expect("point outpost source at missing path");
 
     let report = prune::run(
         &source,

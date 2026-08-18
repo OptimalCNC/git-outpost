@@ -61,26 +61,26 @@ applicable:
 local -> /path/to/source/repo
 ```
 
-The outpost stores required local metadata that identifies it as managed by the
-Git Outpost tool:
-
-```ini
-outpost.managed = true
-outpost.sourceRepo = /path/to/source/repo
-outpost.remoteName = local
-```
-
-The source repository keeps a required registry for listing, pruning, and safer
-deletion:
+Git Outpost keeps its private state in each repository's exact Git directory,
+as reported by `git rev-parse --git-dir`:
 
 ```text
-.outpost/registry.json
+<exact-git-dir>/outpost/metadata.json  # outpost reverse link
+<exact-git-dir>/outpost/registry.json  # source registration
+<exact-git-dir>/outpost/config.json    # source-owned settings
 ```
 
-The source repository may also keep source-owned Git Outpost settings:
+The files are independent and per-worktree. A linked source worktree therefore
+has its own registry and configuration below its private Git directory rather
+than sharing the common Git directory. The metadata document is strict,
+versioned JSON; its presence is the managed-outpost marker:
 
-```text
-.outpost/config.json
+```json
+{
+  "version": 1,
+  "source_repo": "/canonical/path/to/source/repo",
+  "remote_name": "local"
+}
 ```
 
 The only supported config key is `outpost-container`. When set,
@@ -88,10 +88,13 @@ The only supported config key is `outpost-container`. When set,
 paths remain paths.
 
 `gop add` creates or updates the registry, and `gop config set` creates or
-updates the config file. Both locally ignore `.outpost/` in the source
-repository so source-owned Git Outpost metadata is neither tracked project
-content nor copied into outposts. This is Git Outpost's source-owned analogue
-to Git's `.git/worktrees` registry.
+updates the config file. These documents are Git administrative files: they
+are not listed by ignored-file commands and survive `git clean -fdx`. The
+temporary migration Adapter reads legacy worktree `.outpost/*.json` files and
+the three released local `outpost.*` keys. After it writes and verifies
+equivalent state in the exact Git directory, it removes only the migrated file
+or those known keys. Other files, Git configuration, the `.outpost/` directory,
+and its compatibility ignore entry remain untouched.
 
 Each registered outpost has a derived ID alias for human selection. The alias
 is computed from the source repository path and the outpost path. It is not
@@ -106,6 +109,14 @@ Git Outpost always owns and removes these removable artifacts:
 - the outpost directory
 - the source registry entry for that outpost
 
+During one-time state migration, Git Outpost also owns the exact legacy
+`.outpost/config.json` and `.outpost/registry.json` files and the local
+`outpost.managed`, `outpost.sourceRepo`, and `outpost.remoteName` keys. It
+removes each only after the corresponding current state is verified. It does
+not remove other files or keys, the `.outpost/` directory, or its compatibility
+ignore entry, and it refuses to clean through a symlinked `.outpost/`
+directory.
+
 `gop add -b` may create source-repo branches for tracking. Those branches are
 not recorded as owned provenance after creation. Once created, they are
 ordinary source-repository branches. `gop remove` may offer best-effort branch
@@ -117,9 +128,10 @@ local ancestry to the fetched upstream default branch. The user is prompted
 before deleting the source branch, and prompted separately before deleting the
 matching upstream `<remote>/<branch>` branch.
 
-Git Outpost also writes source-local setup state: a local ignore entry for
-`.outpost/` and `receive.denyCurrentBranch=updateInstead`. This setup state is
-left in place unless the user changes it directly.
+Git Outpost also writes source-local setup state: a local compatibility ignore
+entry for legacy `.outpost/` files and
+`receive.denyCurrentBranch=updateInstead`. This setup state is left in place
+unless the user changes it directly.
 
 The deletion model is safe by default. Git Outpost must not discard working
 tree changes, commits, or other user work silently. When deletion could lose
@@ -351,9 +363,10 @@ rejected in the MVP.
 `--remote-name <name>` uses `<name>` for the source repository remote inside
 the outpost. Defaults to `local`.
 
-`gop add` records outpost metadata, updates the source registry, and locally
-ignores `.outpost/` in the source repository. It also configures the source
-repository with `receive.denyCurrentBranch=updateInstead` so ordinary
+`gop add` initializes `<outpost-git-dir>/outpost/metadata.json`, updates the
+source registry under `<source-git-dir>/outpost/registry.json`, and retains the
+legacy ignore compatibility entry in the source repository. It also configures
+the source repository with `receive.denyCurrentBranch=updateInstead` so ordinary
 `git push` from an outpost can update a branch that is checked out in the
 source repository. This source-side config write must be visible in command
 output. There is no MVP flag to disable it; users who need a different policy
@@ -362,7 +375,7 @@ can change the Git config directly.
 ### `config set outpost-container <path>`
 
 Store the source repository's shared outpost container in
-`<source.work_tree>/.outpost/config.json`. `<path>` is resolved from the
+`<source-git-dir>/outpost/config.json`. `<path>` is resolved from the
 effective working directory, must name an existing directory, and is stored as
 a canonical absolute path. The command prints no stdout on success.
 
@@ -375,7 +388,7 @@ The config file uses a strict versioned schema:
 }
 ```
 
-Missing `.outpost/config.json` means empty config. Unknown JSON fields,
+Missing `outpost/config.json` means empty config. Unknown JSON fields,
 unsupported versions, malformed JSON, relative paths, and non-directory values
 fail as config errors. Unknown CLI keys are rejected; `outpost-container` is
 the only supported key.
@@ -399,7 +412,7 @@ Print only set keys as `key<TAB>value`. With no set keys, stdout is empty.
 Print the config storage path and all known keys, including unset keys:
 
 ```text
-storage	/path/to/source/.outpost/config.json
+storage	/path/to/source/.git/outpost/config.json
 outpost-container	<unset>
 ```
 

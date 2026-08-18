@@ -287,6 +287,28 @@ fn outpost_status_renders_split_source_upstream_fetch_and_push_routes() {
 fn outpost_status_renders_unconfigured_source_and_remote_exactly() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
+    std::fs::remove_file(outpost.join(".git/outpost/metadata.json"))
+        .expect("remove current metadata");
+    git_ok(
+        &fixture,
+        &outpost,
+        &["config", "--local", "outpost.managed", "true"],
+    );
+    git_ok(
+        &fixture,
+        &outpost,
+        &[
+            "config",
+            "--local",
+            "outpost.sourceRepo",
+            fixture.source.to_str().expect("source path"),
+        ],
+    );
+    git_ok(
+        &fixture,
+        &outpost,
+        &["config", "--local", "outpost.remoteName", "local"],
+    );
     git_ok(
         &fixture,
         &outpost,
@@ -331,6 +353,28 @@ fn outpost_status_renders_detached_head_as_not_applicable() {
 fn outpost_status_keeps_source_upstream_when_remote_metadata_is_missing() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
+    std::fs::remove_file(outpost.join(".git/outpost/metadata.json"))
+        .expect("remove current metadata");
+    git_ok(
+        &fixture,
+        &outpost,
+        &["config", "--local", "outpost.managed", "true"],
+    );
+    git_ok(
+        &fixture,
+        &outpost,
+        &[
+            "config",
+            "--local",
+            "outpost.sourceRepo",
+            fixture.source.to_str().expect("source path"),
+        ],
+    );
+    git_ok(
+        &fixture,
+        &outpost,
+        &["config", "--local", "outpost.remoteName", "local"],
+    );
     git_ok(
         &fixture,
         &outpost,
@@ -700,7 +744,13 @@ fn config_commands_store_list_show_and_unset_source_owned_config() {
     ]));
     common::assert_success(&set, "gop config set outpost-container");
     assert_eq!(common::stdout(&set), "");
-    let config_path = common::displayed_path(&fixture.source.join(".outpost").join("config.json"));
+    let config_path = common::displayed_path(
+        &fixture
+            .source
+            .join(".git")
+            .join("outpost")
+            .join("config.json"),
+    );
 
     let list = common::run(
         fixture

@@ -296,13 +296,15 @@ fn explicit_false_marker_is_source_and_invalid_marker_is_an_error() {
     ));
 
     set_local_config(&fixture, &fixture.source, "outpost.managed", "maybe");
-    assert!(matches!(
-        expect_error(
-            run_with(&fixture.source, &fixture.git_env),
-            "invalid marker"
-        ),
-        OutpostError::BadMetadata { .. }
-    ));
+    let report = expect_outpost(
+        run_with(&fixture.source, &fixture.git_env).expect("diagnostic invalid marker"),
+    );
+    assert!(
+        report
+            .problems
+            .iter()
+            .any(|problem| matches!(problem, ConfigProblem::InvalidMetadata { .. }))
+    );
 }
 
 #[test]
@@ -781,32 +783,27 @@ fn source_registry_outpost_container_supports_unset_configured_and_malformed() {
 fn source_registry_existing_contradictions_are_integrity_errors() {
     let missing_marker = AbcFixture::new();
     let outpost = missing_marker.add_outpost("C").expect("add C");
-    unset_local_config(&missing_marker, &outpost, "outpost.managed");
+    remove_current_metadata(&outpost);
     assert_integrity(&missing_marker, &outpost);
 
     let false_marker = AbcFixture::new();
     let outpost = false_marker.add_outpost("C").expect("add C");
-    set_local_config(&false_marker, &outpost, "outpost.managed", "false");
+    remove_current_metadata(&outpost);
     assert_integrity(&false_marker, &outpost);
 
     let wrong_source = AbcFixture::new();
     let outpost = wrong_source.add_outpost("C").expect("add C");
-    set_local_config(
-        &wrong_source,
-        &outpost,
-        "outpost.sourceRepo",
-        wrong_source.upstream.to_str().expect("upstream path"),
-    );
+    edit_current_metadata(&outpost, |metadata| {
+        metadata["source_repo"] =
+            serde_json::Value::String(wrong_source.upstream.to_string_lossy().into_owned());
+    });
     assert_integrity(&wrong_source, &outpost);
 
     let wrong_metadata_remote = AbcFixture::new();
     let outpost = wrong_metadata_remote.add_outpost("C").expect("add C");
-    set_local_config(
-        &wrong_metadata_remote,
-        &outpost,
-        "outpost.remoteName",
-        "other",
-    );
+    edit_current_metadata(&outpost, |metadata| {
+        metadata["remote_name"] = serde_json::Value::String("other".to_owned());
+    });
     assert_integrity(&wrong_metadata_remote, &outpost);
 
     let missing_recorded_remote = AbcFixture::new();
@@ -832,6 +829,8 @@ fn source_registry_existing_contradictions_are_integrity_errors() {
 fn outpost_source_upstream_is_reported_even_without_outpost_remote_metadata() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add C");
+    remove_current_metadata(&outpost);
+    seed_legacy_metadata(&fixture, &outpost);
     unset_local_config(&fixture, &outpost, "outpost.remoteName");
 
     let report = expect_outpost(run_with(&outpost, &fixture.git_env).expect("outpost status"));
@@ -981,6 +980,8 @@ fn outpost_source_path_access_error_is_not_reported_missing() {
     let sealed = fixture.root.join("sealed-source-parent");
     let configured = sealed.join("source");
     fs::create_dir_all(&configured).expect("create configured source path");
+    remove_current_metadata(&outpost);
+    seed_legacy_metadata(&fixture, &outpost);
     set_local_config(
         &fixture,
         &outpost,
@@ -1019,6 +1020,8 @@ fn status_from_source_and_outpost_is_local_and_does_not_change_refs() {
 fn s09_missing_source_repo_config_is_reported_as_problem() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add C");
+    remove_current_metadata(&outpost);
+    seed_legacy_metadata(&fixture, &outpost);
     unset_local_config(&fixture, &outpost, "outpost.sourceRepo");
 
     let report =
@@ -1035,6 +1038,8 @@ fn s09_missing_source_repo_config_is_reported_as_problem() {
 fn s13_missing_source_repo_config_keeps_degraded_report_available() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add C");
+    remove_current_metadata(&outpost);
+    seed_legacy_metadata(&fixture, &outpost);
     unset_local_config(&fixture, &outpost, "outpost.sourceRepo");
 
     let report =
@@ -1050,6 +1055,36 @@ fn s13_missing_source_repo_config_keeps_degraded_report_available() {
             .problems
             .contains(&ConfigProblem::MissingSourceRepoConfig)
     );
+}
+
+fn remove_current_metadata(outpost: &Path) {
+    let metadata = outpost_core::Outpost::at(outpost).expect("managed outpost");
+    fs::remove_file(metadata.metadata_path()).expect("remove current metadata");
+}
+
+fn seed_legacy_metadata(fixture: &AbcFixture, outpost: &Path) {
+    set_local_config(fixture, outpost, "outpost.managed", "true");
+    set_local_config(
+        fixture,
+        outpost,
+        "outpost.sourceRepo",
+        fixture.source.to_str().expect("source path"),
+    );
+    set_local_config(fixture, outpost, "outpost.remoteName", "local");
+}
+
+fn edit_current_metadata(outpost: &Path, edit: impl FnOnce(&mut serde_json::Value)) {
+    let metadata = outpost_core::Outpost::at(outpost).expect("managed outpost");
+    let path = metadata.metadata_path();
+    let mut value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).expect("metadata contents"))
+            .expect("metadata JSON");
+    edit(&mut value);
+    fs::write(
+        path,
+        serde_json::to_string_pretty(&value).expect("serialize metadata"),
+    )
+    .expect("write metadata");
 }
 
 fn unset_local_config(fixture: &AbcFixture, repo: &Path, key: &str) {
@@ -1328,7 +1363,7 @@ fn colliding_names(fixture: &AbcFixture) -> (String, String) {
 }
 
 fn duplicate_first_registry_entry(fixture: &AbcFixture) {
-    let path = fixture.source.join(".outpost/registry.json");
+    let path = fixture.source_repo().expect("source repo").registry_path();
     let mut value: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).expect("registry contents"))
             .expect("registry JSON");
@@ -1342,7 +1377,7 @@ fn duplicate_first_registry_entry(fixture: &AbcFixture) {
 }
 
 fn edit_first_registry_entry(fixture: &AbcFixture, edit: impl FnOnce(&mut serde_json::Value)) {
-    let path = fixture.source.join(".outpost/registry.json");
+    let path = fixture.source_repo().expect("source repo").registry_path();
     let mut value: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).expect("registry contents"))
             .expect("registry JSON");
@@ -1356,9 +1391,9 @@ fn edit_first_registry_entry(fixture: &AbcFixture, edit: impl FnOnce(&mut serde_
 }
 
 fn write_source_config(fixture: &AbcFixture, contents: &str) {
-    let directory = fixture.source.join(".outpost");
-    fs::create_dir_all(&directory).expect("create outpost config directory");
-    fs::write(directory.join("config.json"), contents).expect("write source config");
+    let path = fixture.source_repo().expect("source repo").config_path();
+    fs::create_dir_all(path.parent().expect("config parent")).expect("create config directory");
+    fs::write(path, contents).expect("write source config");
 }
 
 fn assert_integrity(fixture: &AbcFixture, outpost: &Path) {

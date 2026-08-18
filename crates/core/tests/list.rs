@@ -144,10 +144,8 @@ fn list_reports_missing_registered_outpost() {
 fn list_reports_not_managed_registered_path() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add C");
-    fixture
-        .invoker(&outpost)
-        .run_check(["config", "--local", "--unset", "outpost.managed"])
-        .expect("unset managed");
+    let managed = outpost_core::Outpost::at(&outpost).expect("managed outpost");
+    std::fs::remove_file(managed.metadata_path()).expect("remove metadata");
     let source = fixture.source_repo().expect("source repo");
 
     let summaries = run(&source).expect("list summaries");

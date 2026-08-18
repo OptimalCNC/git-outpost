@@ -27,7 +27,7 @@ This design does not:
   `receive.denyCurrentBranch`;
 - use the Git common directory as a shared state authority;
 - add a global state database;
-- automatically delete legacy files or Git configuration;
+- delete files or Git configuration outside the known legacy artifacts;
 - make migration a long-term fallback path after the migration period.
 
 The source registry remains authoritative for source-to-outpost registration.
@@ -240,29 +240,35 @@ Outpost callers
          -> LegacyOutpostReader     (old local outpost.* config)
 ```
 
-The legacy readers are read-only. They produce the same validated domain
-values consumed by the current writers; they do not expose legacy keys or file
-formats to normal callers.
+Legacy parsing produces the same validated domain values consumed by the
+current writers; it does not expose legacy keys or file formats to normal
+callers. The migrating Adapters separately own deletion of the known legacy
+artifacts after current state has been proven valid.
 
 ### Read precedence
 
 Each migrating Adapter follows this order:
 
 1. Read the new document.
-2. If it is present and valid, return it.
+2. If it is present and valid, remove any corresponding legacy artifact left
+   by an earlier migration, then return it.
 3. If it is present but invalid, return the invalid state/error and do not
    consult legacy storage.
 4. Only if it is absent, read the corresponding legacy representation.
 5. If legacy state is absent, return `Absent`.
 6. If legacy state is valid, write it through the current store, re-read the
-   new document, verify equivalence, and return the new value.
+   new document, verify equivalence, remove the corresponding legacy artifact,
+   and return the new value.
 7. If legacy state is damaged, report the damage; do not create a partial new
    document.
 
-The new document is authoritative as soon as it exists. Legacy state is left
-untouched, so migration does not perform destructive cleanup and can be
-retried safely. A later explicit cleanup can remove legacy artifacts after
-the migration period.
+The new document is authoritative as soon as it exists. Cleanup removes only
+the corresponding artifacts created by the released Git Outpost format. It
+runs after a newly written document has been re-read and proven equivalent,
+and it also runs when a valid current document already exists so cleanup from
+an earlier interrupted migration can be retried. An already-absent legacy
+artifact is success. A cleanup error is returned while the verified current
+document remains intact for the next invocation.
 
 Source config and registry migrate independently. If one succeeds and the
 other fails, the next invocation retries only the missing or failed document;
@@ -278,7 +284,9 @@ configuration must not classify a repository.
 `metadata.json`. A true marker with missing or invalid fields remains an
 invalid outpost state for diagnostic status and is not persisted as a partial
 new document. An absent or false marker means there is no legacy outpost
-state.
+state. After successful conversion, the Adapter unsets exactly those three
+local keys. Other local Git configuration, including unrelated `outpost.*`
+keys, is untouched.
 
 ### Source legacy conversion
 
@@ -286,7 +294,13 @@ The legacy source reader examines `<worktree>/.outpost/config.json` and
 `<worktree>/.outpost/registry.json` independently. Valid documents are
 converted to the new exact-Git-directory paths. Missing legacy documents are
 normal empty state. Invalid legacy documents remain configuration or registry
-errors rather than being silently replaced with empty state.
+errors rather than being silently replaced with empty state. After each
+document is successfully converted, the Adapter removes only that legacy JSON
+file. Config and registry cleanup are independent; the `.outpost/` directory,
+other files in it, and the existing local-ignore entry remain untouched.
+Cleanup refuses a symlinked `.outpost/` parent or a non-regular legacy path;
+hostile concurrent replacement of those paths is outside this local tool's
+threat model.
 
 ### Removal
 
@@ -311,15 +325,18 @@ On a successful first invocation against legacy state:
 
 - status output and context classification are unchanged;
 - no progress or migration message is added to stdout;
-- no worktree files, index, refs, branches, remotes, standard Git config, or
-  network state changes;
-- only equivalent new gop-owned files may be created under exact Git dirs.
+- no unrelated worktree files, index, refs, branches, remotes, standard Git
+  config, or network state changes;
+- equivalent new gop-owned files are created under exact Git dirs and their
+  corresponding legacy JSON files or local `outpost.*` keys are removed.
 
-On later invocations, no migration write occurs. If a source status examines
-registered outposts, each outpost's state is read through its migrating Store;
-therefore the first source status may migrate the source documents and any
-legacy outpost documents it actually inspects. This is still limited to
-equivalent gop-owned state and does not alter topology.
+After migration and cleanup complete, later invocations make no migration
+change. If an earlier version copied current state without cleanup, or cleanup
+previously failed, a later invocation retries cleanup from the valid current
+document. If a source status examines registered outposts, each outpost's state
+is read through its migrating Store; therefore the first source status may
+migrate the source documents and any legacy outpost documents it actually
+inspects. This is still limited to gop-owned state and does not alter topology.
 
 Strict construction maps `MetadataState::Absent` to `NotAnOutpost` and
 `MetadataState::Invalid` to `BadMetadata`. Diagnostic status does not
@@ -332,10 +349,12 @@ For a source registry, the registry remains authoritative. A live registered
 path with absent, invalid, mismatching, or redirected reverse metadata is a
 `RegisteredOutpostIntegrity` failure, not a normal outpost row.
 
-Migration failures are explicit. A failed atomic write leaves the legacy
-document intact; a partial source migration is retried per document. A
-concurrent equivalent migration may observe an already-created equivalent
-new document and succeed; a conflicting new value is an error.
+Migration failures are explicit. A failed atomic write or equivalence check
+leaves the legacy artifact intact; a partial source migration is retried per
+document. Cleanup failure leaves the verified current document in place,
+returns the error, and is retried on a later read. A concurrent equivalent
+migration may observe an already-created equivalent new document and succeed;
+a conflicting new value is an error.
 
 ## `gop add` ordering
 
@@ -372,9 +391,11 @@ Storage and adapter tests cover:
 - strict local-only legacy Git configuration reads;
 - precedence when both legacy and new documents exist;
 - invalid new state not falling back to legacy;
-- atomic writes, existing-file protection, and interrupted writes;
+- atomic document writes and existing-file protection;
 - independent source config and registry migration;
-- equivalent and conflicting concurrent migration attempts.
+- removal of only the corresponding known legacy files and local Git keys;
+- failed source writes preserving legacy files for retry;
+- cleanup failure reporting and retry from valid current state;
 
 Real Git fixtures cover:
 

@@ -2,11 +2,12 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use crate::metadata::RawMetadata;
+use crate::metadata::{MetadataState, MigratingOutpostStore, RawMetadata};
 use crate::outpost::AheadBehind;
 use crate::source_repo::{
     SourceRepo, canonicalize_path, invoker_at, is_dirty, read_optional_config,
 };
+use crate::state::OutpostStateStore;
 use crate::{BranchName, GitInvoker, OutpostError, OutpostResult, RefName, RemoteName};
 
 mod routes;
@@ -176,6 +177,9 @@ pub enum ConfigProblem {
     PushWouldFail {
         branch: BranchName,
     },
+    InvalidMetadata {
+        reason: String,
+    },
 }
 
 pub fn run(target_path: &Path) -> OutpostResult<StatusReport> {
@@ -186,26 +190,79 @@ pub fn run_with(
     target_path: &Path,
     env: &BTreeMap<OsString, OsString>,
 ) -> OutpostResult<StatusReport> {
-    let outpost_path = discover_work_tree(target_path, env)?;
+    let (outpost_path, git_dir) = discover_location(target_path, env)?;
     let git = invoker_at(&outpost_path, env);
-    let raw = RawMetadata::read(&git)?;
-
-    if raw.managed == Some(true) {
-        return report_from_raw(outpost_path, raw, &git, env).map(StatusReport::Outpost);
+    let store = MigratingOutpostStore::new(outpost_path.clone(), git_dir, git.clone());
+    match store.read_metadata()? {
+        MetadataState::Absent => source::build(outpost_path, &git, env).map(StatusReport::Source),
+        MetadataState::Valid(metadata) => report_from_raw(
+            outpost_path,
+            RawMetadata {
+                managed: Some(true),
+                source_repo: Some(metadata.source_repo),
+                remote_name: Some(metadata.remote_name),
+            },
+            &git,
+            env,
+        )
+        .map(StatusReport::Outpost),
+        MetadataState::Invalid(problem) => {
+            if let Some(raw) = problem.legacy {
+                report_from_raw(outpost_path, raw, &git, env).map(StatusReport::Outpost)
+            } else {
+                report_from_invalid_metadata(outpost_path, problem, &git).map(StatusReport::Outpost)
+            }
+        }
     }
-
-    source::build(outpost_path, &git, env).map(StatusReport::Source)
 }
 
-fn discover_work_tree(
+fn discover_location(
     target_path: &Path,
     env: &BTreeMap<OsString, OsString>,
-) -> OutpostResult<PathBuf> {
+) -> OutpostResult<(PathBuf, PathBuf)> {
     let git = invoker_at(target_path, env);
     let work_tree = git
         .run_capture(["rev-parse", "--show-toplevel"])
         .map_err(|err| map_discovery_error(err, target_path))?;
-    canonicalize_path(Path::new(&work_tree))
+    let git_dir = git
+        .run_capture(["rev-parse", "--git-dir"])
+        .map_err(|err| map_discovery_error(err, target_path))?;
+    let work_tree = canonicalize_path(Path::new(&work_tree))?;
+    let git_dir_path = PathBuf::from(git_dir);
+    let git_dir_path = if git_dir_path.is_absolute() {
+        git_dir_path
+    } else {
+        target_path.join(git_dir_path)
+    };
+    Ok((work_tree, canonicalize_path(&git_dir_path)?))
+}
+
+fn report_from_invalid_metadata(
+    outpost_path: PathBuf,
+    problem: crate::metadata::MetadataProblems,
+    git: &GitInvoker,
+) -> OutpostResult<OutpostStatus> {
+    let current_branch = current_branch_or_detached(git)?;
+    let outpost_dirty = is_dirty(git)?;
+    let head = match current_branch {
+        Some(branch) => OutpostHeadStatus::Attached {
+            branch,
+            source_upstream: SourceUpstreamStatus::Unavailable,
+        },
+        None => OutpostHeadStatus::Detached,
+    };
+    Ok(OutpostStatus {
+        outpost_path,
+        source: SourceLocation::Unconfigured,
+        remote_name: None,
+        head,
+        outpost_dirty,
+        source_ahead_behind_upstream: None,
+        outpost_ahead_behind_source: None,
+        problems: vec![ConfigProblem::InvalidMetadata {
+            reason: problem.reason,
+        }],
+    })
 }
 
 fn report_from_raw(

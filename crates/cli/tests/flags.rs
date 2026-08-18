@@ -432,20 +432,18 @@ fn e_08_cli_errors_return_documented_exit_codes() {
 
     let fixture = common::CliFixture::new();
     fixture.add_outpost("C");
-    std::fs::write(fixture.source.join(".outpost").join("registry.json"), "{\n")
+    std::fs::write(fixture.source.join(".git/outpost/registry.json"), "{\n")
         .expect("write invalid registry");
     let bad_registry = common::run(fixture.gop().current_dir(&fixture.source).arg("list"));
     assert_failure_code_contains(&bad_registry, 6, "BadRegistry", "invalid registry file");
 
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
-    let unset_remote = common::run(fixture.git(&outpost).args([
-        "config",
-        "--local",
-        "--unset",
-        "outpost.remoteName",
-    ]));
-    common::assert_success(&unset_remote, "unset outpost remote metadata");
+    std::fs::write(
+        outpost.join(".git/outpost/metadata.json"),
+        "{\"version\":1,\"source_repo\":\"/source\"}\n",
+    )
+    .expect("write invalid metadata");
     let bad_metadata = common::run(fixture.gop().current_dir(&outpost).arg("pull"));
     assert_failure_code_contains(&bad_metadata, 6, "BadMetadata", "invalid outpost metadata");
 

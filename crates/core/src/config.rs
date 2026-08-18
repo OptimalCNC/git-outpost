@@ -6,6 +6,7 @@ use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 
 use crate::registry::ensure_local_ignore;
+use crate::state::{SourceStateStore, Stored};
 use crate::{OutpostError, OutpostResult, SourceRepo};
 
 const CONFIG_VERSION: u32 = 1;
@@ -44,8 +45,8 @@ pub struct ConfigStore<'src> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SourceConfig {
-    outpost_container: Option<PathBuf>,
+pub struct SourceConfig {
+    pub outpost_container: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -154,77 +155,106 @@ impl<'src> ConfigStore<'src> {
     }
 
     fn load(&self) -> OutpostResult<SourceConfig> {
-        let path = self.storage_path();
-        let contents = match fs::read_to_string(&path) {
-            Ok(contents) => contents,
-            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(SourceConfig::empty());
-            }
-            Err(source) => {
-                return Err(OutpostError::IoAt { path, source });
-            }
-        };
-
-        let file = serde_json::from_str::<ConfigFile>(&contents).map_err(|source| {
-            OutpostError::BadConfig {
-                path: path.clone(),
-                reason: source.to_string(),
-            }
-        })?;
-        if file.version != CONFIG_VERSION {
-            return Err(OutpostError::BadConfig {
-                path,
-                reason: format!("unsupported config version {}", file.version),
-            });
+        match self.source.state_store().read_config()? {
+            Stored::Absent => Ok(SourceConfig::empty()),
+            Stored::Present(config) => Ok(config),
         }
-
-        let outpost_container = file
-            .outpost_container
-            .map(|value| validated_container_for_storage(&path, ConfigKey::OutpostContainer, value))
-            .transpose()?;
-
-        Ok(SourceConfig { outpost_container })
     }
 
     fn save(&self, config: &SourceConfig) -> OutpostResult<()> {
-        let path = self.storage_path();
-        let parent = path.parent().ok_or_else(|| OutpostError::IoAt {
-            path: path.clone(),
-            source: std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "config path has no parent",
-            ),
-        })?;
-        fs::create_dir_all(parent).map_err(|source| OutpostError::IoAt {
+        // Keep the released local exclusion harmlessly in place for users who
+        // already rely on it; the new state itself is under Git administration.
+        ensure_local_ignore(&self.source.local_exclude_path())?;
+        self.source.state_store().write_config(config)
+    }
+}
+
+pub(crate) fn read_file(path: &Path) -> OutpostResult<Stored<SourceConfig>> {
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Stored::Absent);
+        }
+        Err(source) => {
+            return Err(OutpostError::IoAt {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+
+    let file = serde_json::from_str::<ConfigFile>(&contents).map_err(|source| {
+        OutpostError::BadConfig {
+            path: path.to_path_buf(),
+            reason: source.to_string(),
+        }
+    })?;
+    if file.version != CONFIG_VERSION {
+        return Err(OutpostError::BadConfig {
+            path: path.to_path_buf(),
+            reason: format!("unsupported config version {}", file.version),
+        });
+    }
+
+    let outpost_container = file
+        .outpost_container
+        .map(|value| validated_container_for_storage(path, ConfigKey::OutpostContainer, value))
+        .transpose()?;
+
+    Ok(Stored::Present(SourceConfig { outpost_container }))
+}
+
+pub(crate) fn write_file(path: &Path, config: &SourceConfig) -> OutpostResult<()> {
+    write_file_inner(path, config, false)
+}
+
+pub(crate) fn write_file_noclobber(path: &Path, config: &SourceConfig) -> OutpostResult<()> {
+    write_file_inner(path, config, true)
+}
+
+fn write_file_inner(path: &Path, config: &SourceConfig, no_clobber: bool) -> OutpostResult<()> {
+    let file = ConfigFile::from_config(path, config)?;
+    let parent = path.parent().ok_or_else(|| OutpostError::IoAt {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "config path has no parent",
+        ),
+    })?;
+    fs::create_dir_all(parent).map_err(|source| OutpostError::IoAt {
+        path: parent.to_path_buf(),
+        source,
+    })?;
+    let mut temp =
+        tempfile::NamedTempFile::new_in(parent).map_err(|source| OutpostError::IoAt {
             path: parent.to_path_buf(),
             source,
         })?;
-        ensure_local_ignore(&self.source.local_exclude_path())?;
-
-        let file = ConfigFile::from_config(config);
-        let mut temp =
-            tempfile::NamedTempFile::new_in(parent).map_err(|source| OutpostError::IoAt {
-                path: parent.to_path_buf(),
-                source,
+    serde_json::to_writer_pretty(temp.as_file_mut(), &file).map_err(|source| {
+        OutpostError::IoAt {
+            path: path.to_path_buf(),
+            source: std::io::Error::other(source),
+        }
+    })?;
+    use std::io::Write;
+    writeln!(temp.as_file_mut()).map_err(|source| OutpostError::IoAt {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if no_clobber {
+        temp.persist_noclobber(path)
+            .map_err(|source| OutpostError::IoAt {
+                path: path.to_path_buf(),
+                source: source.error,
             })?;
-        serde_json::to_writer_pretty(temp.as_file_mut(), &file).map_err(|source| {
-            OutpostError::IoAt {
-                path: path.clone(),
-                source: std::io::Error::other(source),
-            }
-        })?;
-        use std::io::Write;
-        writeln!(temp.as_file_mut()).map_err(|source| OutpostError::IoAt {
-            path: path.clone(),
-            source,
-        })?;
-        temp.persist(&path).map_err(|source| OutpostError::IoAt {
-            path,
+    } else {
+        temp.persist(path).map_err(|source| OutpostError::IoAt {
+            path: path.to_path_buf(),
             source: source.error,
         })?;
-
-        Ok(())
     }
+
+    Ok(())
 }
 
 impl SourceConfig {
@@ -264,11 +294,16 @@ impl SourceConfig {
 }
 
 impl ConfigFile {
-    fn from_config(config: &SourceConfig) -> Self {
-        Self {
+    fn from_config(path: &Path, config: &SourceConfig) -> OutpostResult<Self> {
+        let outpost_container = config
+            .outpost_container
+            .clone()
+            .map(|value| validated_container_for_storage(path, ConfigKey::OutpostContainer, value))
+            .transpose()?;
+        Ok(Self {
             version: CONFIG_VERSION,
-            outpost_container: config.outpost_container.clone(),
-        }
+            outpost_container,
+        })
     }
 }
 

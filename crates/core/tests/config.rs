@@ -77,7 +77,7 @@ fn set_get_list_show_and_unset_round_trip() {
 }
 
 #[test]
-fn config_save_uses_source_metadata_directory_and_local_ignore() {
+fn config_save_uses_exact_git_directory_and_keeps_local_ignore_compatibility() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");
     let container = fixture.root.join("outposts");
@@ -93,7 +93,7 @@ fn config_save_uses_source_metadata_directory_and_local_ignore() {
 
     assert_eq!(
         store.storage_path(),
-        source.work_tree().join(".outpost").join("config.json")
+        source.git_dir().join("outpost").join("config.json")
     );
     assert!(
         fs::read_to_string(source.local_exclude_path_for_tests())

@@ -253,7 +253,7 @@ fn add_rejects_missing_existing_branch_before_clone() {
 }
 
 #[test]
-fn add_writes_outpost_metadata_keys() {
+fn add_writes_outpost_metadata_file_without_legacy_config_keys() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");
     let destination = fixture.root.join("C");
@@ -261,20 +261,27 @@ fn add_writes_outpost_metadata_keys() {
     let outpost = add_existing(&source, &destination, None).expect("add outpost");
     let git = fixture.invoker(&destination);
 
+    let metadata_path = outpost.metadata_path();
+    let metadata: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&metadata_path).expect("metadata file"))
+            .expect("metadata json");
+    assert_eq!(metadata["version"], 1);
     assert_eq!(
-        git.run_capture(["config", "--local", "--get", "outpost.managed"])
-            .expect("managed config"),
-        "true"
+        metadata["source_repo"],
+        source.work_tree().to_string_lossy().as_ref()
     );
-    assert_eq!(
-        git.run_capture(["config", "--local", "--get", "outpost.sourceRepo"])
-            .expect("source repo config"),
-        source.work_tree().to_string_lossy()
+    assert_eq!(metadata["remote_name"], "local");
+    assert!(
+        !git.run_status(["config", "--local", "--get", "outpost.managed"])
+            .expect("managed config lookup")
     );
-    assert_eq!(
-        git.run_capture(["config", "--local", "--get", "outpost.remoteName"])
-            .expect("remote name config"),
-        "local"
+    assert!(
+        !git.run_status(["config", "--local", "--get", "outpost.sourceRepo"])
+            .expect("source config lookup")
+    );
+    assert!(
+        !git.run_status(["config", "--local", "--get", "outpost.remoteName"])
+            .expect("remote config lookup")
     );
     assert!(
         !git.run_status(["config", "--local", "--get", "outpost.id"])

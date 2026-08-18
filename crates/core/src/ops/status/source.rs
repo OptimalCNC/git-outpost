@@ -3,12 +3,9 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
-use serde::de::Error as _;
-
 use crate::outpost_id::{OutpostId, shortest_unique_prefixes};
-use crate::source_repo::{canonicalize_path, invoker_at, is_dirty};
-use crate::{GitInvoker, OutpostError, OutpostIdPrefix, OutpostResult, RawMetadata, RemoteName};
+use crate::source_repo::{SourceRepo, canonicalize_path, is_dirty};
+use crate::{GitInvoker, Outpost, OutpostError, OutpostIdPrefix, OutpostResult, RemoteName};
 
 use super::routes::{self, RouteDirection};
 use super::{
@@ -16,8 +13,6 @@ use super::{
     StaleRegistration, canonicalize_existing_or_missing, canonicalize_remote_path,
     current_branch_or_detached,
 };
-
-const STORAGE_VERSION: u32 = 1;
 
 pub(super) fn build(
     source_path: PathBuf,
@@ -32,9 +27,19 @@ pub(super) fn build(
         None => SourceHead::Detached,
     };
     let source_dirty = is_dirty(git)?;
-    let outpost_container = load_outpost_container(&source_path)?;
-    let registry_path = source_path.join(".outpost/registry.json");
-    let entries = load_registry(&registry_path)?;
+    let source = SourceRepo::at_with(&source_path, env)?;
+    let outpost_container = source.outpost_container()?;
+    let registry_path = source.registry_path();
+    let entries = source
+        .registry()?
+        .entries()
+        .iter()
+        .map(|entry| RegistryEntry {
+            path: entry.path.clone(),
+            remote_name: entry.remote_name.clone(),
+            locked: entry.locked,
+        })
+        .collect::<Vec<_>>();
     reject_duplicate_paths(&registry_path, &entries)?;
 
     let ids = entries
@@ -77,70 +82,10 @@ pub(super) fn build(
     })
 }
 
-#[derive(Deserialize)]
-struct RegistryFile {
-    version: u32,
-    outposts: Vec<RegistryEntryFile>,
-}
-
-#[derive(Deserialize)]
-struct RegistryEntryFile {
-    path: PathBuf,
-    #[serde(rename = "created_at")]
-    _created_at: chrono::DateTime<chrono::Utc>,
-    remote_name: String,
-    locked: bool,
-    #[serde(rename = "lock_reason")]
-    _lock_reason: Option<String>,
-    #[serde(rename = "locked_at")]
-    _locked_at: Option<chrono::DateTime<chrono::Utc>>,
-}
-
 struct RegistryEntry {
     path: PathBuf,
     remote_name: RemoteName,
     locked: bool,
-}
-
-fn load_registry(path: &Path) -> OutpostResult<Vec<RegistryEntry>> {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(source) => {
-            return Err(OutpostError::IoAt {
-                path: path.to_path_buf(),
-                source,
-            });
-        }
-    };
-    let file = serde_json::from_str::<RegistryFile>(&contents).map_err(|source| {
-        OutpostError::BadRegistry {
-            path: path.to_path_buf(),
-            reason: source.to_string(),
-        }
-    })?;
-    if file.version != STORAGE_VERSION {
-        return Err(OutpostError::BadRegistry {
-            path: path.to_path_buf(),
-            reason: format!("unsupported registry version {}", file.version),
-        });
-    }
-    file.outposts
-        .into_iter()
-        .map(|entry| {
-            let remote_name = RemoteName::parse(entry.remote_name.clone()).map_err(|source| {
-                OutpostError::BadRegistry {
-                    path: path.to_path_buf(),
-                    reason: source.to_string(),
-                }
-            })?;
-            Ok(RegistryEntry {
-                path: entry.path,
-                remote_name,
-                locked: entry.locked,
-            })
-        })
-        .collect()
 }
 
 fn reject_duplicate_paths(path: &Path, entries: &[RegistryEntry]) -> OutpostResult<()> {
@@ -166,25 +111,20 @@ fn build_live_row(
     if outpost_path != entry.path {
         return Err(integrity_error(source_path, &entry.path));
     }
-    let git = invoker_at(&outpost_path, env);
-    let raw = RawMetadata::read(&git)
+    let outpost = Outpost::at_with(&outpost_path, env)
         .map_err(|error| metadata_integrity_error(source_path, &outpost_path, error))?;
-    if raw.managed != Some(true) {
-        return Err(integrity_error(source_path, &outpost_path));
-    }
-    let Some(recorded_source) = raw.source_repo else {
-        return Err(integrity_error(source_path, &outpost_path));
-    };
+    let git = outpost.git();
+    let recorded_source = outpost.metadata().source_repo.clone();
     let recorded_source = canonicalize_existing_or_missing(&recorded_source)?;
     if recorded_source != source_path {
         return Err(integrity_error(source_path, &outpost_path));
     }
-    if raw.remote_name.as_ref() != Some(&entry.remote_name) {
+    if outpost.metadata().remote_name != entry.remote_name {
         return Err(integrity_error(source_path, &outpost_path));
     }
-    validate_recorded_remote(&git, &outpost_path, source_path, &entry.remote_name)?;
+    validate_recorded_remote(git, &outpost_path, source_path, &entry.remote_name)?;
 
-    let head = match current_branch_or_detached(&git)? {
+    let head = match current_branch_or_detached(git)? {
         Some(branch) => RegisteredOutpostHead::Attached(branch),
         None => RegisteredOutpostHead::Detached,
     };
@@ -192,7 +132,7 @@ fn build_live_row(
         display_id,
         path: outpost_path,
         head,
-        dirty: is_dirty(&git)?,
+        dirty: is_dirty(git)?,
         locked: entry.locked,
     })
 }
@@ -205,6 +145,7 @@ fn metadata_integrity_error(
     match error {
         OutpostError::GitFailed { .. }
         | OutpostError::BadMetadata { .. }
+        | OutpostError::NotAnOutpost(_)
         | OutpostError::InvalidRefName { .. } => integrity_error(source_path, outpost_path),
         other => other,
     }
@@ -238,70 +179,4 @@ fn integrity_error(source: &Path, outpost: &Path) -> OutpostError {
         source: source.to_path_buf(),
         outpost: outpost.to_path_buf(),
     }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ConfigFile {
-    version: u32,
-    #[serde(default, deserialize_with = "deserialize_optional_path")]
-    outpost_container: Option<PathBuf>,
-}
-
-fn load_outpost_container(source_path: &Path) -> OutpostResult<Option<PathBuf>> {
-    let path = source_path.join(".outpost/config.json");
-    let contents = match fs::read_to_string(&path) {
-        Ok(contents) => contents,
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(source) => return Err(OutpostError::IoAt { path, source }),
-    };
-    let file = serde_json::from_str::<ConfigFile>(&contents).map_err(|source| {
-        OutpostError::BadConfig {
-            path: path.clone(),
-            reason: source.to_string(),
-        }
-    })?;
-    if file.version != STORAGE_VERSION {
-        return Err(OutpostError::BadConfig {
-            path,
-            reason: format!("unsupported config version {}", file.version),
-        });
-    }
-    let Some(container) = file.outpost_container else {
-        return Ok(None);
-    };
-    if !container.is_absolute() {
-        return Err(OutpostError::BadConfig {
-            path,
-            reason: "outpost-container must be an absolute path".to_owned(),
-        });
-    }
-    let canonical = fs::canonicalize(&container).map_err(|source| OutpostError::BadConfig {
-        path: path.clone(),
-        reason: format!("invalid outpost-container: {source}"),
-    })?;
-    let metadata = fs::metadata(&canonical).map_err(|source| OutpostError::BadConfig {
-        path: path.clone(),
-        reason: format!("invalid outpost-container: {source}"),
-    })?;
-    if !metadata.is_dir() {
-        return Err(OutpostError::BadConfig {
-            path,
-            reason: "invalid outpost-container: path is not an existing directory".to_owned(),
-        });
-    }
-    Ok(Some(canonical))
-}
-
-fn deserialize_optional_path<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    if value.is_null() {
-        return Err(D::Error::custom("outpost_container must be a path string"));
-    }
-    PathBuf::deserialize(value)
-        .map(Some)
-        .map_err(D::Error::custom)
 }

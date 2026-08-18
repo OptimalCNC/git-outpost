@@ -550,6 +550,9 @@ fn format_problem(problem: &ConfigProblem) -> String {
         ConfigProblem::PushWouldFail { branch } => {
             format!("push would fail for {}", branch.as_str())
         }
+        ConfigProblem::InvalidMetadata { reason } => {
+            format!("invalid outpost metadata: {reason}")
+        }
     }
 }
 

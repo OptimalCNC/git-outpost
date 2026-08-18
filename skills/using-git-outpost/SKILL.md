@@ -9,6 +9,29 @@ description: Use when beginning work in a Git checkout, or when a Git task invol
 
 An outpost is a fast, self-contained local clone of an existing local clone, called the source repository. It serves the same parallel-checkout purpose as a worktree but has its own `.git` directory. `gop` manages this relationship and makes it easy to synchronize or publish through the source to its real upstream remote. Orient once, then use ordinary Git for files and commits and `gop` for checkout topology and that two-hop path.
 
+## Private State
+
+Git Outpost's private state is stored below the exact per-worktree Git
+directory reported by `git rev-parse --git-dir`:
+
+```text
+<git-dir>/outpost/config.json
+<git-dir>/outpost/registry.json
+<git-dir>/outpost/metadata.json
+```
+
+Linked worktrees have independent state directories; the shared Git common
+directory is never the state authority. These files are Git administrative
+data, so `git clean -fdx` and ignored-file listings do not remove or show
+them. During the temporary migration period, a read with no current state may
+import legacy `<worktree>/.outpost/*.json` or local `outpost.*` values into the
+new files. After re-reading and verifying the new state, migration removes only
+the imported legacy file or the three known legacy keys. If valid current state
+already exists, it is authoritative: migration does not parse or compare the
+legacy contents and only removes those known leftovers. A first `gop status`
+may perform that local migration cleanup and must keep its report and context
+classification unchanged.
+
 ## Orient First
 
 Normal orientation has this exact recipe:

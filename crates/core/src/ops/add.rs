@@ -2,10 +2,11 @@ use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::metadata::Metadata;
+use crate::metadata::{Metadata, current_store_at_git};
 use crate::path::git_path_arg;
 use crate::registry::RegistryEntry;
 use crate::safety;
+use crate::state::OutpostStateStore;
 use crate::{
     BranchName, Outpost, OutpostError, OutpostResult, RemoteName, Reporter, SourceRepo, StepKind,
 };
@@ -57,11 +58,11 @@ pub fn run(
     }
     apply_checkout(source, &outpost_git, &checkout, &branch, &remote_name)?;
     let entry = RegistryEntry::new(destination.clone(), remote_name.clone())?;
-    Metadata {
+    let metadata = Metadata {
         source_repo: source.work_tree().to_path_buf(),
         remote_name: remote_name.clone(),
-    }
-    .write(&outpost_git)?;
+    };
+    current_store_at_git(&outpost_git)?.initialize_metadata(&metadata)?;
 
     reporter.step(
         StepKind::ConfigChange,
