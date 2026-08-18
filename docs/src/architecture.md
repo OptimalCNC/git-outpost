@@ -27,7 +27,7 @@ repository by editors, devcontainers, and CLIs.
 object store, not hiding Git behavior, not requiring a particular hosting
 provider.
 
-## Current State Storage (v0.4)
+## Current State Storage (v0.5)
 
 All private Git Outpost state is rooted at the exact per-worktree Git
 directory returned by `git rev-parse --git-dir`:
