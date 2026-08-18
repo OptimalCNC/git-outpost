@@ -381,6 +381,37 @@ fn failed_outpost_cleanup_is_reported_and_retried_from_current_metadata() {
 }
 
 #[test]
+fn source_status_propagates_outpost_cleanup_failure_and_retries() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("outpost");
+    let opened = Outpost::at(&outpost).expect("opened outpost");
+    let config_lock = opened.git_dir().join("config.lock");
+    let git = fixture.invoker(&outpost);
+    git.run_check(["config", "--local", "outpost.managed", "true"])
+        .expect("legacy marker");
+    fs::write(&config_lock, "locked\n").expect("block config writes");
+
+    let error = run_with(&fixture.source, &fixture.git_env)
+        .expect_err("source status must report outpost cleanup failure");
+
+    assert!(matches!(error, OutpostError::GitFailed { .. }));
+    assert!(
+        git.run_status(["config", "--local", "--get", "outpost.managed"])
+            .expect("legacy marker remains after failed source status")
+    );
+
+    fs::remove_file(config_lock).expect("unblock config writes");
+    assert!(matches!(
+        run_with(&fixture.source, &fixture.git_env).expect("retry source status"),
+        StatusReport::Source(_)
+    ));
+    assert!(
+        !git.run_status(["config", "--local", "--get", "outpost.managed"])
+            .expect("legacy marker cleaned on retry")
+    );
+}
+
+#[test]
 fn legacy_registry_is_migrated_and_removed() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source");
@@ -431,6 +462,176 @@ fn current_registry_cleans_legacy_file_left_by_previous_migration() {
 
     assert_eq!(loaded.entries().len(), 1);
     assert!(!legacy_path.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn current_registry_cleanup_failure_keeps_both_states_and_retries() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source");
+    fixture.add_outpost("C").expect("outpost");
+    let legacy_path = source.work_tree().join(".outpost/registry.json");
+    let legacy_dir = legacy_path.parent().expect("legacy parent");
+    fs::create_dir_all(legacy_dir).expect("legacy dir");
+    fs::write(
+        &legacy_path,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "version": 1,
+            "outposts": []
+        }))
+        .expect("legacy registry JSON"),
+    )
+    .expect("legacy registry");
+    fs::set_permissions(legacy_dir, fs::Permissions::from_mode(0o555))
+        .expect("block legacy cleanup");
+
+    let result = source.registry();
+
+    fs::set_permissions(legacy_dir, fs::Permissions::from_mode(0o755))
+        .expect("restore legacy directory");
+    let error = result.expect_err("non-writable legacy directory must make cleanup fail");
+    assert!(matches!(
+        error,
+        OutpostError::IoAt { path, source }
+            if path == legacy_path && source.kind() == std::io::ErrorKind::PermissionDenied
+    ));
+    assert!(source.registry_path().is_file());
+    assert!(legacy_path.is_file());
+
+    let loaded = source
+        .registry()
+        .expect("retry cleanup from current registry");
+    assert_eq!(loaded.entries().len(), 1);
+    assert!(source.registry_path().is_file());
+    assert!(!legacy_path.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn failed_fresh_registry_migration_keeps_legacy_for_retry() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source");
+    let legacy_path = source.work_tree().join(".outpost/registry.json");
+    fs::create_dir_all(legacy_path.parent().expect("legacy parent")).expect("legacy dir");
+    fs::write(
+        &legacy_path,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "version": 1,
+            "outposts": []
+        }))
+        .expect("legacy registry JSON"),
+    )
+    .expect("legacy registry");
+    let current_path = source.registry_path();
+    let current_dir = current_path.parent().expect("current state parent");
+    fs::create_dir_all(current_dir).expect("current state dir");
+    fs::set_permissions(current_dir, fs::Permissions::from_mode(0o555))
+        .expect("block current write");
+
+    let result = source.registry();
+
+    fs::set_permissions(current_dir, fs::Permissions::from_mode(0o755))
+        .expect("restore current state directory");
+    let error = result.expect_err("non-writable current directory must make migration fail");
+    assert!(matches!(
+        error,
+        OutpostError::IoAt { source, .. }
+            if source.kind() == std::io::ErrorKind::PermissionDenied
+    ));
+    assert!(!current_path.exists());
+    assert!(legacy_path.is_file());
+
+    let loaded = source.registry().expect("retry registry migration");
+    assert!(loaded.entries().is_empty());
+    assert!(current_path.is_file());
+    assert!(!legacy_path.exists());
+}
+
+#[test]
+fn invalid_current_registry_does_not_fall_back_or_clean_legacy() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source");
+    let current_path = source.registry_path();
+    fs::create_dir_all(current_path.parent().expect("current parent")).expect("current dir");
+    fs::write(&current_path, "{\n").expect("invalid current registry");
+    let legacy_path = source.work_tree().join(".outpost/registry.json");
+    fs::create_dir_all(legacy_path.parent().expect("legacy parent")).expect("legacy dir");
+    fs::write(
+        &legacy_path,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "version": 1,
+            "outposts": []
+        }))
+        .expect("legacy registry JSON"),
+    )
+    .expect("legacy registry");
+
+    let error = source
+        .registry()
+        .expect_err("invalid current registry must remain authoritative");
+
+    assert!(matches!(error, OutpostError::BadRegistry { path, .. } if path == current_path));
+    assert!(current_path.is_file());
+    assert!(legacy_path.is_file());
+}
+
+#[test]
+fn malformed_legacy_registry_is_retained_without_current_state() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source");
+    let legacy_path = source.work_tree().join(".outpost/registry.json");
+    fs::create_dir_all(legacy_path.parent().expect("legacy parent")).expect("legacy dir");
+    fs::write(&legacy_path, "{\n").expect("malformed legacy registry");
+
+    let error = source
+        .registry()
+        .expect_err("malformed legacy registry must be reported");
+
+    assert!(matches!(error, OutpostError::BadRegistry { path, .. } if path == legacy_path));
+    assert!(!source.registry_path().exists());
+    assert!(legacy_path.is_file());
+}
+
+#[test]
+fn source_config_migration_succeeds_independently_of_bad_legacy_registry() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source");
+    let container = fixture.root.join("outposts");
+    fs::create_dir(&container).expect("container");
+    let legacy_dir = source.work_tree().join(".outpost");
+    let legacy_config = legacy_dir.join("config.json");
+    let legacy_registry = legacy_dir.join("registry.json");
+    fs::create_dir_all(&legacy_dir).expect("legacy dir");
+    fs::write(
+        &legacy_config,
+        format!(
+            "{{\"version\":1,\"outpost_container\":{}}}",
+            serde_json::to_string(&container).expect("container json")
+        ),
+    )
+    .expect("legacy config");
+    fs::write(&legacy_registry, "{\n").expect("malformed legacy registry");
+
+    source
+        .config()
+        .get(ConfigKey::OutpostContainer)
+        .expect("config migration succeeds");
+    let registry_error = source
+        .registry()
+        .expect_err("malformed registry remains independent");
+
+    assert!(source.config_path().is_file());
+    assert!(!legacy_config.exists());
+    assert!(matches!(
+        registry_error,
+        OutpostError::BadRegistry { path, .. } if path == legacy_registry
+    ));
+    assert!(!source.registry_path().exists());
+    assert!(legacy_registry.is_file());
 }
 
 #[test]

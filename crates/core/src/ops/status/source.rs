@@ -143,8 +143,7 @@ fn metadata_integrity_error(
     error: OutpostError,
 ) -> OutpostError {
     match error {
-        OutpostError::GitFailed { .. }
-        | OutpostError::BadMetadata { .. }
+        OutpostError::BadMetadata { .. }
         | OutpostError::NotAnOutpost(_)
         | OutpostError::InvalidRefName { .. } => integrity_error(source_path, outpost_path),
         other => other,
