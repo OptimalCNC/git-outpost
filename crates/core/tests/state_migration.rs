@@ -11,6 +11,8 @@ use outpost_core::{
     SourceStateStore,
 };
 
+const EMPTY_LEGACY_REGISTRY: &str = r#"{"version":1,"outposts":[]}"#;
+
 #[test]
 fn source_state_paths_are_under_the_exact_git_directory() {
     let fixture = AbcFixture::new();
@@ -422,18 +424,22 @@ fn legacy_registry_is_migrated_and_removed() {
     fs::create_dir_all(legacy_path.parent().expect("legacy parent")).expect("legacy dir");
     let entry =
         RegistryEntry::new(outpost.clone(), RemoteName::parse("local").unwrap()).expect("entry");
-    let legacy = serde_json::json!({
-        "version": 1,
-        "outposts": [{
-            "path": entry.path,
-            "created_at": entry.created_at,
-            "remote_name": "local",
-            "locked": false,
-            "lock_reason": null,
-            "locked_at": null
-        }]
-    });
-    fs::write(&legacy_path, serde_json::to_vec_pretty(&legacy).unwrap()).expect("legacy registry");
+    let legacy = format!(
+        r#"{{
+  "version": 1,
+  "outposts": [{{
+    "path": {path},
+    "created_at": {created_at},
+    "remote_name": "local",
+    "locked": false,
+    "lock_reason": null,
+    "locked_at": null
+  }}]
+}}"#,
+        path = serde_json::to_string(&entry.path).expect("path JSON"),
+        created_at = serde_json::to_string(&entry.created_at).expect("created-at JSON"),
+    );
+    fs::write(&legacy_path, legacy).expect("legacy registry");
 
     let loaded = source.registry().expect("migrate registry");
     assert_eq!(loaded.entries().len(), 1);
@@ -448,15 +454,7 @@ fn current_registry_cleans_legacy_file_left_by_previous_migration() {
     fixture.add_outpost("C").expect("outpost");
     let legacy_path = source.work_tree().join(".outpost/registry.json");
     fs::create_dir_all(legacy_path.parent().expect("legacy parent")).expect("legacy dir");
-    fs::write(
-        &legacy_path,
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "version": 1,
-            "outposts": []
-        }))
-        .unwrap(),
-    )
-    .expect("stale legacy registry");
+    fs::write(&legacy_path, EMPTY_LEGACY_REGISTRY).expect("stale legacy registry");
 
     let loaded = source.registry().expect("read current registry");
 
@@ -475,15 +473,7 @@ fn current_registry_cleanup_failure_keeps_both_states_and_retries() {
     let legacy_path = source.work_tree().join(".outpost/registry.json");
     let legacy_dir = legacy_path.parent().expect("legacy parent");
     fs::create_dir_all(legacy_dir).expect("legacy dir");
-    fs::write(
-        &legacy_path,
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "version": 1,
-            "outposts": []
-        }))
-        .expect("legacy registry JSON"),
-    )
-    .expect("legacy registry");
+    fs::write(&legacy_path, EMPTY_LEGACY_REGISTRY).expect("legacy registry");
     fs::set_permissions(legacy_dir, fs::Permissions::from_mode(0o555))
         .expect("block legacy cleanup");
 
@@ -517,15 +507,7 @@ fn failed_fresh_registry_migration_keeps_legacy_for_retry() {
     let source = fixture.source_repo().expect("source");
     let legacy_path = source.work_tree().join(".outpost/registry.json");
     fs::create_dir_all(legacy_path.parent().expect("legacy parent")).expect("legacy dir");
-    fs::write(
-        &legacy_path,
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "version": 1,
-            "outposts": []
-        }))
-        .expect("legacy registry JSON"),
-    )
-    .expect("legacy registry");
+    fs::write(&legacy_path, EMPTY_LEGACY_REGISTRY).expect("legacy registry");
     let current_path = source.registry_path();
     let current_dir = current_path.parent().expect("current state parent");
     fs::create_dir_all(current_dir).expect("current state dir");
@@ -560,15 +542,7 @@ fn invalid_current_registry_does_not_fall_back_or_clean_legacy() {
     fs::write(&current_path, "{\n").expect("invalid current registry");
     let legacy_path = source.work_tree().join(".outpost/registry.json");
     fs::create_dir_all(legacy_path.parent().expect("legacy parent")).expect("legacy dir");
-    fs::write(
-        &legacy_path,
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "version": 1,
-            "outposts": []
-        }))
-        .expect("legacy registry JSON"),
-    )
-    .expect("legacy registry");
+    fs::write(&legacy_path, EMPTY_LEGACY_REGISTRY).expect("legacy registry");
 
     let error = source
         .registry()

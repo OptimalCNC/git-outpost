@@ -171,12 +171,11 @@ fn prune_reports_existing_outpost_whose_source_repo_is_missing() {
     let metadata_path = opened.metadata_path();
     std::fs::write(
         &metadata_path,
-        serde_json::json!({
-            "version": 1,
-            "source_repo": fixture.root.join("missing-source"),
-            "remote_name": "local"
-        })
-        .to_string(),
+        format!(
+            r#"{{"version":1,"source_repo":{},"remote_name":"local"}}"#,
+            serde_json::to_string(&fixture.root.join("missing-source"))
+                .expect("missing source path JSON")
+        ),
     )
     .expect("point outpost source at missing path");
 
