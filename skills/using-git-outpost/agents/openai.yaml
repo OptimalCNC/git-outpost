@@ -2,3 +2,5 @@ interface:
   display_name: "Using Git Outpost"
   short_description: "Detect outposts and choose safe gop workflows"
   default_prompt: "Use $using-git-outpost to identify the current checkout and choose the right gop workflow."
+policy:
+  allow_implicit_invocation: false

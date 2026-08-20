@@ -1,6 +1,7 @@
 ---
 name: using-git-outpost
 description: Use when beginning work in a Git checkout, or when a Git task involves gop, Git Outpost, outposts, worktrees, parallel checkouts, checkout navigation or lifecycle, branch synchronization, or branch publication.
+disable-model-invocation: true
 ---
 
 # Using Git Outpost
