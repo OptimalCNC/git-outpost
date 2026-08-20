@@ -1,22 +1,9 @@
 # Git Outpost Workflows
 
-- [Two-Hop Model](#two-hop-model)
 - [Create an Outpost for Worktree Intent](#create-an-outpost-for-worktree-intent)
 - [Inspect and Navigate](#inspect-and-navigate)
 - [Synchronize and Publish](#synchronize-and-publish)
 - [Context and Lifecycle](#context-and-lifecycle)
-
-## Two-Hop Model
-
-An outpost is a normal clone with its own `.git` directory:
-
-```text
-outpost <-> source repository <-> upstream remote (origin in current gop workflows)
-```
-
-The outpost's source remote is configurable; read `remote:` from `gop status` instead of assuming `local`. Ordinary Git in an outpost covers the direct source hop. `gop` owns outpost lifecycle and explicit two-hop workflows.
-
-Treat a reported remote/source mismatch as a hard stop for synchronization, publication, or destructive lifecycle work: the configured remote and recorded source can otherwise name different repositories. A clean status does not verify missing remotes, push URLs, or push-routing overrides. Before transport or deletion, resolve the outpost source remote's fetch and push destinations and source `origin` as applicable. Every fetch and push route for a logical remote must identify the same intended repository; lookup failure or mismatch is a hard stop. Use an explicit verified remote and refspec for source-only pushes.
 
 ## Create an Outpost for Worktree Intent
 

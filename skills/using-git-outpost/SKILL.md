@@ -7,7 +7,42 @@ description: Use when beginning work in a Git checkout, or when a Git task invol
 
 ## Overview
 
-An outpost is a fast, self-contained local clone of an existing local clone, called the source repository. It serves the same parallel-checkout purpose as a worktree but has its own `.git` directory. `gop` manages this relationship and makes it easy to synchronize or publish through the source to its real upstream remote. Orient once, then use ordinary Git for files and commits and `gop` for checkout topology and that two-hop path.
+Git Outpost provides a worktree-like parallel-checkout workflow using normal
+local clones with their own `.git` directories. Orient once, then use ordinary
+Git for files and commits and `gop` for checkout topology and explicit two-hop
+synchronization and publication.
+
+## Core Model
+
+Git Outpost links three repository roles:
+
+- **Source:** the existing local repository from which `gop` creates and
+  registers outposts.
+- **Outpost:** a self-contained local clone of the source. Its configurable
+  source remote points back to the source repository.
+- **Upstream:** the repository behind the source branch's tracked upstream.
+
+```text
+outpost <-> source repository <-> upstream repository
+```
+
+The current worktree is the checkout against which `gop` runs; it can be the
+source or a managed outpost. In an outpost, read the source remote from
+`remote:` in `gop status` instead of assuming `local`. Read the upstream
+remote, ref, and fetch/push routes from the report's `upstream` fields in
+source context or `source-upstream` fields in outpost context. Ordinary Git in
+an outpost covers the direct source hop. `gop` owns outpost lifecycle and
+explicit two-hop workflows.
+
+Treat a reported remote/source mismatch as a hard stop for synchronization,
+publication, or destructive lifecycle work: the configured remote and
+recorded source can otherwise name different repositories. A clean status does
+not verify missing remotes, push URLs, or push-routing overrides. Before
+transport or deletion, resolve the outpost source remote's fetch and push
+destinations and source `origin` as applicable. Every fetch and push route for
+a logical remote must identify the same intended repository; lookup failure or
+mismatch is a hard stop. Use an explicit verified remote and refspec for
+source-only pushes.
 
 ## Private State
 
@@ -42,20 +77,38 @@ Normal orientation has this exact recipe:
    gop --no-color -C <path> status
    ```
 
-2. Return exactly one state label verbatim:
-   - Exit 0 with first line `context: source`: `SourceContext(report)`.
-   - Exit 0 with first line `context: outpost`: `ManagedOutpostContext(report)` for both `health: ok` and `health: problems`.
-   - Every nonzero result: `Unknown(error)`, preserving the error.
+2. Parse the report and return exactly one state label verbatim:
+   - Exit 0 with first line `context: source` and the required source fields: `SourceContext(report)`.
+   - Exit 0 with first line `context: outpost` and the required outpost fields: `ManagedOutpostContext(report)` for both `health: ok` and `health: problems`.
+   - Every nonzero result or malformed exit-0 report: `Unknown(error)`, preserving the error and any report output.
 
-3. For a successful state, preserve the full report, carry it forward, and end orientation. The report contains local facts and may include degraded health or stale registrations.
+3. For a successful state, preserve the full report and identify all of the
+   following from that same report:
+   - **Current worktree:** its reported path and its `source` or `outpost` role.
+   - **Source:** the reported `source:` path.
+   - **Outpost:** the current `outpost:` path in outpost context; in source
+     context, the complete registered set under `outposts:`, including `none`.
+   - **Upstream:** the remote/ref and route reported by `upstream:`,
+     `upstream-fetch:` and `upstream-push:` in source context, or by
+     `source-upstream:`, `source-upstream-fetch:` and
+     `source-upstream-push:` in outpost context.
+   - **Outpost-to-source link:** the reported `remote:` in outpost context; it
+     is not applicable to the source worktree itself.
+
+   Preserve `none`, `-`, `<unset>`, `<not-applicable>`, and `<unavailable>` as
+   explicit results. Do not infer replacements or run secondary Git probes
+   during normal orientation. The report contains local facts and may include
+   degraded health or stale registrations.
 
 `gop` is required. If it is unavailable, preserve the command error as `Unknown(error)` and stop using this skill.
 
-Orientation is complete only after naming the state.
+Orientation is complete only after naming the state and every applicable
+identity above. `gop status` is the sole authority for normal orientation;
+later `Ready(command)` checks may resolve additional command-specific facts.
 
 ## Choose the Workflow
 
-Read [references/gop-workflows.md](references/gop-workflows.md) when the state is managed or the task concerns `gop`, an outpost, a worktree, or a parallel checkout. For mutations, always load **Context and Lifecycle**; also load **Two-Hop Model** for synchronization, publication, or removal. Then load the section matching the user's purpose.
+Read [references/gop-workflows.md](references/gop-workflows.md) when the state is managed or the task concerns `gop`, an outpost, a worktree, or a parallel checkout. For mutations, always load **Context and Lifecycle**, then load the section matching the user's purpose.
 
 For worktree, parallel-checkout, or outpost-creation tasks, read [Create an Outpost for Worktree Intent](references/gop-workflows.md#create-an-outpost-for-worktree-intent) before constructing the command and use its command forms.
 
