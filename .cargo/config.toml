@@ -1,0 +1,2 @@
+[alias]
+coverage-core = "llvm-cov --package outpost-core --all-features --locked --fail-under-lines 85"

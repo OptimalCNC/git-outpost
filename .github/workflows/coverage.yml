@@ -37,7 +37,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate core coverage
-        run: cargo llvm-cov --package outpost-core --all-features --locked --lcov --output-path lcov.info
+        run: cargo coverage-core --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
