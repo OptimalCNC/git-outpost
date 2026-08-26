@@ -3,6 +3,7 @@
 Documentation: [GitHub Pages](https://optimalcnc.github.io/git-outpost/)
 
 [![CI](https://github.com/OptimalCNC/git-outpost/actions/workflows/ci.yml/badge.svg)](https://github.com/OptimalCNC/git-outpost/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/OptimalCNC/git-outpost/graph/badge.svg)](https://codecov.io/gh/OptimalCNC/git-outpost)
 [![Development](https://github.com/OptimalCNC/git-outpost/actions/workflows/dev.yml/badge.svg)](https://github.com/OptimalCNC/git-outpost/actions/workflows/dev.yml)
 [![Integration](https://github.com/OptimalCNC/git-outpost/actions/workflows/integration.yml/badge.svg)](https://github.com/OptimalCNC/git-outpost/actions/workflows/integration.yml)
 [![Release](https://github.com/OptimalCNC/git-outpost/actions/workflows/release.yml/badge.svg)](https://github.com/OptimalCNC/git-outpost/actions/workflows/release.yml)
