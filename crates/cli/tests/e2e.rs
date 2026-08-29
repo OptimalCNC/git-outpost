@@ -91,8 +91,8 @@ fn open_pty() -> (RawFd, RawFd) {
             &mut master_fd,
             &mut slave_fd,
             std::ptr::null_mut(),
-            std::ptr::null(),
-            std::ptr::null(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         )
     };
     assert_eq!(result, 0, "openpty failed: {}", io::Error::last_os_error());

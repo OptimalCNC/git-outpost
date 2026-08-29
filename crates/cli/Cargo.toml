@@ -24,4 +24,4 @@ serde_json.workspace = true
 tempfile.workspace = true
 
 [target.'cfg(unix)'.dev-dependencies]
-libc = "^0.2"
+libc = "^0.2.182"
