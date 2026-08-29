@@ -49,9 +49,10 @@ struct PtyOutput {
 fn run_with_terminal(mut command: Command, input: &[u8]) -> PtyOutput {
     let (master_fd, slave_fd) = open_pty();
     // SAFETY: open_pty returned fresh owned file descriptors.
-    let mut master = unsafe { File::from_raw_fd(master_fd) };
+    let master = unsafe { File::from_raw_fd(master_fd) };
     // SAFETY: open_pty returned fresh owned file descriptors.
     let slave = unsafe { File::from_raw_fd(slave_fd) };
+    let mut input_writer = master.try_clone().expect("duplicate PTY master for input");
     let slave_stdin = slave.try_clone().expect("duplicate PTY slave for stdin");
     command
         .stdin(Stdio::from(slave_stdin))
@@ -60,20 +61,25 @@ fn run_with_terminal(mut command: Command, input: &[u8]) -> PtyOutput {
 
     let mut child = command.spawn().expect("spawn command on PTY");
     drop(command);
-    master.write_all(input).expect("write PTY input");
-    master.flush().expect("flush PTY input");
-    let status = child.wait().expect("wait for PTY command");
-
-    let mut bytes = Vec::new();
-    let mut buffer = [0_u8; 4096];
-    loop {
-        match master.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(count) => bytes.extend_from_slice(&buffer[..count]),
-            Err(err) if err.raw_os_error() == Some(libc::EIO) => break,
-            Err(err) => panic!("read PTY output: {err}"),
+    let reader = std::thread::spawn(move || {
+        let mut master = master;
+        let mut bytes = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        loop {
+            match master.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(count) => bytes.extend_from_slice(&buffer[..count]),
+                Err(err) if err.raw_os_error() == Some(libc::EIO) => break,
+                Err(err) => panic!("read PTY output: {err}"),
+            }
         }
-    }
+        bytes
+    });
+    input_writer.write_all(input).expect("write PTY input");
+    input_writer.flush().expect("flush PTY input");
+    drop(input_writer);
+    let status = child.wait().expect("wait for PTY command");
+    let bytes = reader.join().expect("join PTY reader");
 
     PtyOutput {
         status,
