@@ -44,6 +44,7 @@ fn e_03_help_lists_commands_and_long_flags() {
     for flag in [
         "--no-color",
         "--remote-name",
+        "--fetch-missing",
         "--reason",
         "--verbose",
         "--force",
@@ -54,7 +55,10 @@ fn e_03_help_lists_commands_and_long_flags() {
     }
 
     for (args, flags) in [
-        (&["add", "--help"][..], &["--remote-name"][..]),
+        (
+            &["add", "--help"][..],
+            &["--remote-name", "--fetch-missing"][..],
+        ),
         (&["list", "--help"][..], &["--verbose"][..]),
         (&["lock", "--help"][..], &["--reason"][..]),
         (&["move", "--help"][..], &["--force"][..]),

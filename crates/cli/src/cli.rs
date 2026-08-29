@@ -5,7 +5,7 @@ use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use outpost_core::ops;
 use outpost_core::{BranchName, ConfigKey, OutpostResult, RemoteName, SourceRemoteRef, SourceRepo};
 
-const ROOT_AFTER_HELP: &str = "Command-specific long flags: --remote-name, --reason, --verbose, --force, --no-branch-cleanup, --dry-run";
+const ROOT_AFTER_HELP: &str = "Command-specific long flags: --remote-name, --fetch-missing, --reason, --verbose, --force, --no-branch-cleanup, --dry-run";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -144,6 +144,10 @@ pub struct AddArgs {
     /// Remote name for the source inside the outpost.
     #[arg(long, default_value = "local", value_name = "NAME")]
     pub remote_name: String,
+
+    /// Fetch a missing target branch from origin without prompting.
+    #[arg(long)]
+    pub fetch_missing: bool,
 }
 
 impl AddArgs {

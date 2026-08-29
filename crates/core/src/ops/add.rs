@@ -27,9 +27,24 @@ pub struct AddOptions {
     pub remote_name: RemoteName,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MissingBranchPolicy {
+    LocalOnly,
+    FetchFromOrigin,
+}
+
 pub fn run(
     source: &SourceRepo,
     opts: AddOptions,
+    reporter: &mut dyn Reporter,
+) -> OutpostResult<Outpost> {
+    run_with_missing_branch(source, opts, MissingBranchPolicy::LocalOnly, reporter)
+}
+
+pub fn run_with_missing_branch(
+    source: &SourceRepo,
+    opts: AddOptions,
+    missing_branch_policy: MissingBranchPolicy,
     reporter: &mut dyn Reporter,
 ) -> OutpostResult<Outpost> {
     let AddOptions {
@@ -40,7 +55,7 @@ pub fn run(
     let destination = resolve_destination(source, &destination)?;
     check_destination_clean(&destination)?;
 
-    let branch = resolve_existing_branch(source, &checkout)?;
+    let branch = resolve_existing_branch(source, &checkout, missing_branch_policy, reporter)?;
 
     source.git().run_check([
         OsString::from("-c"),
@@ -103,13 +118,15 @@ fn resolve_destination(source: &SourceRepo, destination: &Path) -> OutpostResult
 fn resolve_existing_branch(
     source: &SourceRepo,
     checkout: &AddCheckout,
+    missing_branch_policy: MissingBranchPolicy,
+    reporter: &mut dyn Reporter,
 ) -> OutpostResult<BranchName> {
     match checkout {
         AddCheckout::CheckoutExisting { target_branch } => {
-            resolve_target_branch(source, target_branch)
+            resolve_target_branch(source, target_branch, missing_branch_policy, reporter)
         }
         AddCheckout::NewBranch { target_branch, .. } => {
-            resolve_target_branch(source, target_branch)
+            resolve_target_branch(source, target_branch, missing_branch_policy, reporter)
         }
     }
 }
@@ -117,10 +134,26 @@ fn resolve_existing_branch(
 fn resolve_target_branch(
     source: &SourceRepo,
     target_branch: &Option<BranchName>,
+    missing_branch_policy: MissingBranchPolicy,
+    reporter: &mut dyn Reporter,
 ) -> OutpostResult<BranchName> {
     match target_branch {
         Some(branch) => {
-            require_branch_exists(source, branch)?;
+            if !source.branch_exists(branch)? {
+                if missing_branch_policy == MissingBranchPolicy::LocalOnly {
+                    return Err(branch_not_found(source, branch));
+                }
+                let origin = RemoteName::parse("origin")?;
+                reporter.step(
+                    StepKind::SourceFetch,
+                    &format!(
+                        "fetching missing source branch {}/{}",
+                        origin.as_str(),
+                        branch.as_str()
+                    ),
+                );
+                source.materialize_remote_branch(&origin, branch)?;
+            }
             Ok(branch.clone())
         }
         None => {
@@ -137,14 +170,10 @@ fn resolve_target_branch(
     }
 }
 
-fn require_branch_exists(source: &SourceRepo, branch: &BranchName) -> OutpostResult<()> {
-    if source.branch_exists(branch)? {
-        Ok(())
-    } else {
-        Err(OutpostError::BranchNotFound {
-            branch: branch.as_str().to_owned(),
-            repo: source.work_tree().to_path_buf(),
-        })
+fn branch_not_found(source: &SourceRepo, branch: &BranchName) -> OutpostError {
+    OutpostError::BranchNotFound {
+        branch: branch.as_str().to_owned(),
+        repo: source.work_tree().to_path_buf(),
     }
 }
 

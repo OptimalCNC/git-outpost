@@ -42,15 +42,19 @@ Ask only when candidates conflict or the safe location is genuinely ambiguous.
 
 ```bash
 # Existing source branch
-gop -C <source> add <path-or-name> [<target-branch>]
+gop -C <source> add [--fetch-missing] <path-or-name> [<target-branch>]
 
 # New source branch
-gop -C <source> add -b <new-branch> [<path-or-name> [<target-branch>]]
+gop -C <source> add -b <new-branch> [--fetch-missing] [<path-or-name> [<target-branch>]]
 ```
 
-`Ready(add)` records the source, existing or new branch, base branch, final destination, source-remote name, container decision, and destination-safety result.
+`Ready(add)` records the source, existing or new branch, base branch, final destination, source-remote name, container decision, destination-safety result, whether the explicit target exists locally, and any authorization to fetch it from `origin`.
 
 With `-b`, one positional is the destination, not the target branch. Omitting the destination derives a bare name from the branch's final component and therefore requires `outpost-container`. An explicit path bypasses the container.
+
+If an explicit target branch is missing locally, an interactive `gop add` asks before fetching `origin/<target-branch>` and defaults to no. Agent executions are normally non-interactive: pass `--fetch-missing` only when the user's request authorizes fetching that missing branch. Without that authorization, keep the command local-only and report the missing branch rather than adding the flag silently.
+
+An authorized fetch retrieves only the exact branch with tags disabled, adds only its exact `remote.origin.fetch` refspec when absent, and creates the local source branch tracking `origin/<target-branch>` without switching the source checkout. When the branch already exists locally, `--fetch-missing` does not contact `origin`.
 
 Example for recurring checkouts when the source is already on the desired base branch:
 
@@ -70,6 +74,7 @@ After `add`, require `gop status` in the destination, exact destination resoluti
 | --- | --- |
 | New branch `B` at path/name `P` from `S` | `gop add -b B P S` |
 | Existing branch `B` at path/name `P` | `gop add P B` |
+| Branch `B` missing locally, with fetch authorization | `gop add --fetch-missing P B` |
 
 Worktree lifecycle equivalents are co-located under [Context and Lifecycle](#context-and-lifecycle).
 

@@ -13,7 +13,7 @@ use cli::{Cli, Command, ConfigCommand, PathTargetArg, ShellCommand, SourceComman
 use exit::CliResult;
 use outpost_core::selector::OutpostSelector;
 use outpost_core::{
-    ConfigKey, ConfigValue, Outpost, OutpostError, Reporter, SourceRepo, StepKind, ops,
+    BranchName, ConfigKey, ConfigValue, Outpost, OutpostError, Reporter, SourceRepo, StepKind, ops,
 };
 use reporter_impls::StderrReporter;
 
@@ -44,7 +44,29 @@ fn dispatch(cli: Cli) -> CliResult<()> {
     match cli.command {
         Command::Add(args) => {
             let source = require_source("add", &cwd)?;
-            let outpost = ops::add::run(&source, args.to_options(&cwd, &source)?, &mut reporter)?;
+            let opts = args.to_options(&cwd, &source)?;
+            let missing_branch_policy = if terminal_prompts_available() {
+                let mut prompt = TerminalMissingBranchPrompt;
+                add_missing_branch_policy(
+                    &source,
+                    &opts.checkout,
+                    args.fetch_missing,
+                    MissingBranchPromptMode::Interactive(&mut prompt),
+                )?
+            } else {
+                add_missing_branch_policy(
+                    &source,
+                    &opts.checkout,
+                    args.fetch_missing,
+                    MissingBranchPromptMode::Unavailable,
+                )?
+            };
+            let outpost = ops::add::run_with_missing_branch(
+                &source,
+                opts,
+                missing_branch_policy,
+                &mut reporter,
+            )?;
             output::print_added(&outpost);
         }
         Command::Pull(_) => {
@@ -144,7 +166,7 @@ fn dispatch(cli: Cli) -> CliResult<()> {
                     opts,
                     ops::remove::BranchCleanupMode::Disabled,
                 )?
-            } else if cleanup_prompts_available() {
+            } else if terminal_prompts_available() {
                 let status = gh::GhStatus::detect(&source);
                 let provider = status.provider();
                 let mut prompt = TerminalBranchCleanupPrompt;
@@ -285,8 +307,79 @@ fn print_shell_install_report(report: shell::ShellInstallReport, action: ShellIn
     println!("script: {}", report.script_file.display());
 }
 
-fn cleanup_prompts_available() -> bool {
+fn terminal_prompts_available() -> bool {
     io::stdin().is_terminal() && io::stderr().is_terminal()
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum AddTargetBranch {
+    Implicit,
+    Local,
+    Missing(BranchName),
+}
+
+trait MissingBranchPrompt {
+    fn confirm_fetch(&mut self, branch: &BranchName) -> bool;
+}
+
+enum MissingBranchPromptMode<'a> {
+    Interactive(&'a mut dyn MissingBranchPrompt),
+    Unavailable,
+}
+
+fn add_missing_branch_policy(
+    source: &SourceRepo,
+    checkout: &ops::add::AddCheckout,
+    fetch_missing: bool,
+    prompt_mode: MissingBranchPromptMode<'_>,
+) -> CliResult<ops::add::MissingBranchPolicy> {
+    let target_branch = match checkout {
+        ops::add::AddCheckout::CheckoutExisting { target_branch }
+        | ops::add::AddCheckout::NewBranch { target_branch, .. } => target_branch.as_ref(),
+    };
+    let target = match target_branch {
+        None => AddTargetBranch::Implicit,
+        Some(branch) if source.branch_exists(branch)? => AddTargetBranch::Local,
+        Some(branch) => AddTargetBranch::Missing(branch.clone()),
+    };
+
+    Ok(decide_missing_branch_policy(
+        target,
+        fetch_missing,
+        prompt_mode,
+    ))
+}
+
+fn decide_missing_branch_policy(
+    target: AddTargetBranch,
+    fetch_missing: bool,
+    prompt_mode: MissingBranchPromptMode<'_>,
+) -> ops::add::MissingBranchPolicy {
+    match (target, fetch_missing, prompt_mode) {
+        (AddTargetBranch::Local, true, _) | (AddTargetBranch::Missing(_), true, _) => {
+            ops::add::MissingBranchPolicy::FetchFromOrigin
+        }
+        (AddTargetBranch::Missing(branch), false, MissingBranchPromptMode::Interactive(prompt)) => {
+            if prompt.confirm_fetch(&branch) {
+                ops::add::MissingBranchPolicy::FetchFromOrigin
+            } else {
+                ops::add::MissingBranchPolicy::LocalOnly
+            }
+        }
+        _ => ops::add::MissingBranchPolicy::LocalOnly,
+    }
+}
+
+struct TerminalMissingBranchPrompt;
+
+impl MissingBranchPrompt for TerminalMissingBranchPrompt {
+    fn confirm_fetch(&mut self, branch: &BranchName) -> bool {
+        prompt_yes_no(&format!(
+            "Branch '{}' does not exist locally. Fetch 'origin/{}' and create a tracking branch? [y/N] ",
+            branch.as_str(),
+            branch.as_str()
+        ))
+    }
 }
 
 struct TerminalBranchCleanupPrompt;
@@ -466,5 +559,100 @@ fn contextual_outpost_selector(
                 .unwrap_or_else(|| OutpostSelector::from_path(outpost.work_tree().to_path_buf()));
             Ok((outpost.source_repo()?, path))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestMissingBranchPrompt {
+        response: bool,
+        prompted: Vec<BranchName>,
+    }
+
+    impl MissingBranchPrompt for TestMissingBranchPrompt {
+        fn confirm_fetch(&mut self, branch: &BranchName) -> bool {
+            self.prompted.push(branch.clone());
+            self.response
+        }
+    }
+
+    #[test]
+    fn missing_branch_decision_prompts_only_for_unapproved_missing_branches() {
+        let branch = BranchName::parse("feature/remote-only").expect("valid branch");
+        let mut prompt = TestMissingBranchPrompt {
+            response: true,
+            prompted: Vec::new(),
+        };
+
+        assert_eq!(
+            decide_missing_branch_policy(
+                AddTargetBranch::Implicit,
+                true,
+                MissingBranchPromptMode::Interactive(&mut prompt),
+            ),
+            ops::add::MissingBranchPolicy::LocalOnly
+        );
+        assert!(prompt.prompted.is_empty());
+
+        assert_eq!(
+            decide_missing_branch_policy(
+                AddTargetBranch::Missing(branch.clone()),
+                true,
+                MissingBranchPromptMode::Interactive(&mut prompt),
+            ),
+            ops::add::MissingBranchPolicy::FetchFromOrigin
+        );
+        assert!(prompt.prompted.is_empty());
+
+        assert_eq!(
+            decide_missing_branch_policy(
+                AddTargetBranch::Missing(branch.clone()),
+                false,
+                MissingBranchPromptMode::Interactive(&mut prompt),
+            ),
+            ops::add::MissingBranchPolicy::FetchFromOrigin
+        );
+        assert_eq!(prompt.prompted, vec![branch.clone()]);
+
+        prompt.response = false;
+        assert_eq!(
+            decide_missing_branch_policy(
+                AddTargetBranch::Missing(branch.clone()),
+                false,
+                MissingBranchPromptMode::Interactive(&mut prompt),
+            ),
+            ops::add::MissingBranchPolicy::LocalOnly
+        );
+        assert_eq!(prompt.prompted, vec![branch.clone(), branch.clone()]);
+
+        assert_eq!(
+            decide_missing_branch_policy(
+                AddTargetBranch::Missing(branch),
+                false,
+                MissingBranchPromptMode::Unavailable,
+            ),
+            ops::add::MissingBranchPolicy::LocalOnly
+        );
+        assert_eq!(prompt.prompted.len(), 2);
+    }
+
+    #[test]
+    fn explicit_fetch_authorization_survives_a_local_preflight_result() {
+        let mut prompt = TestMissingBranchPrompt {
+            response: false,
+            prompted: Vec::new(),
+        };
+
+        assert_eq!(
+            decide_missing_branch_policy(
+                AddTargetBranch::Local,
+                true,
+                MissingBranchPromptMode::Interactive(&mut prompt),
+            ),
+            ops::add::MissingBranchPolicy::FetchFromOrigin
+        );
+        assert!(prompt.prompted.is_empty());
     }
 }

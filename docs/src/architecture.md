@@ -508,6 +508,8 @@ impl SourceRepo {
     /// tests in `crates/core/tests/*.rs` can call it.
     #[cfg(any(test, feature = "test-helpers"))]
     pub fn test_invoker(&self) -> &GitInvoker;
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub fn git_argv_log_for_tests(&self) -> Vec<Vec<OsString>>;
     pub fn current_branch(&self) -> OutpostResult<BranchName>;
     pub fn checked_out_branches(&self) -> OutpostResult<Vec<BranchName>>;   // includes worktrees
     pub fn checked_out_worktree_for(&self, branch: &BranchName) -> OutpostResult<Option<PathBuf>>;
@@ -518,6 +520,14 @@ impl SourceRepo {
     /// `None` if the branch has no upstream tracking configured.
     pub fn upstream_for(&self, branch: &BranchName) -> OutpostResult<Option<UpstreamRef>>;
     pub fn branch_exists(&self, branch: &BranchName) -> OutpostResult<bool>;
+    /// Fetch exactly one branch, persist its exact fetch refspec when absent,
+    /// and create a local branch tracking the fetched remote branch without
+    /// switching the source checkout.
+    pub fn materialize_remote_branch(
+        &self,
+        remote: &RemoteName,
+        branch: &BranchName,
+    ) -> OutpostResult<()>;
     /// Fast-forward a source branch from `origin/<branch>` without
     /// switching the source checkout. Used by `gop pull` and
     /// `gop source pull`.
@@ -544,6 +554,18 @@ consistent.
 out in the source repo and any of its worktrees. This is what
 `ops::push` uses to decide whether the target branch is safe to push
 to (see §5.9.8).
+
+`materialize_remote_branch` runs the following source-side sequence:
+
+1. `git fetch --no-tags <remote>
+   +refs/heads/<branch>:refs/remotes/<remote>/<branch>`.
+2. Add that exact forced refspec to `remote.<remote>.fetch` only when it is
+   not already present.
+3. `git branch --track <branch> <remote>/<branch>`.
+
+The exact refspec and `--no-tags` keep an authorized missing-branch fetch
+limited to the requested branch. The final command creates tracking state
+without changing any source worktree's checkout.
 
 ### 5.5 `outpost.rs` — `Outpost`
 
@@ -906,9 +928,9 @@ other Git failures propagate.
 
 ### 5.9 `ops/` — one module per command
 
-Each `ops/<cmd>.rs` exports a single entry function. Returning typed
-structs (rather than printing) lets the CLI layer control formatting
-and lets tests assert on values.
+Each `ops/<cmd>.rs` exports a narrow command entry surface. Returning typed
+structs (rather than printing) lets the CLI layer control formatting and lets
+tests assert on values.
 
 #### 5.9.0 Cross-repo visibility — the `Reporter` event sink
 
@@ -987,14 +1009,29 @@ pub struct AddOptions {
     pub remote_name: RemoteName,                    // defaults to "local"
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MissingBranchPolicy {
+    LocalOnly,
+    FetchFromOrigin,
+}
+
 pub fn run(
     source: &SourceRepo,
     opts: AddOptions,
     reporter: &mut dyn Reporter,
 ) -> OutpostResult<Outpost>;
+
+pub fn run_with_missing_branch(
+    source: &SourceRepo,
+    opts: AddOptions,
+    missing_branch_policy: MissingBranchPolicy,
+    reporter: &mut dyn Reporter,
+) -> OutpostResult<Outpost>;
 ```
 
-`run` performs (in order):
+`run` is the library-safe local-only entry point; it delegates to
+`run_with_missing_branch` with `MissingBranchPolicy::LocalOnly`.
+`run_with_missing_branch` performs (in order):
 
 1. Validate destination is empty/absent and, when it is inside another Git
    work tree, ignored by that containing repo (`safety::check_destination_clean`).
@@ -1002,10 +1039,18 @@ pub fn run(
    read `source.current_branch()`. A detached or unborn source `HEAD`
    makes omitted targets return `BranchNotFound { branch: "HEAD" }`.
    All add modes operate on branches, not arbitrary revisions:
-   - `CheckoutExisting { target_branch }`: require the branch exists in
-     the source.
-   - `NewBranch { name, target_branch }`: require the target branch
-     exists in the source. Creating `name` still happens after clone.
+   - For either checkout variant, an explicit branch that exists locally is
+     used without network access.
+   - If an explicit branch is absent and the policy is `LocalOnly`, return
+     `BranchNotFound` before cloning.
+   - If an explicit branch is absent and the policy is `FetchFromOrigin`,
+     emit one `SourceFetch` event and call
+     `source.materialize_remote_branch(origin, branch)` before cloning.
+     The refspec config and tracking-branch creation are internal local Git
+     operations covered by the §5.9.0 exemption, so they do not add a
+     separate `ConfigChange` event.
+   - For `NewBranch { name, target_branch }`, creating `name` still happens
+     after clone.
 3. Run `git -c protocol.file.allow=user clone --no-shared
    -- <source.work_tree> <destination>`. The `protocol.file.allow=user`
    override is required for local-file clones on Git ≥ 2.38.1
@@ -1043,12 +1088,15 @@ pub fn run(
 9. Return the outpost via `source.outpost_at(destination)` so the
    resulting `Outpost` inherits `source.env`.
 
-**No partial-add rollback.** Once step 3 starts, later failures may
-leave C on disk. If step 6 succeeds but step 8 fails, C exists with
-metadata but is unregistered. Documented behavior: the user may remove
-the directory and retry. This is a deliberate trade-off: rollback
-requires either two-phase clone-then-rename or careful cleanup that
-itself can fail.
+**No partial-add rollback.** Authorized source-branch materialization happens
+before clone and is not rolled back. A later materialization failure may leave
+the fetched remote-tracking ref, the exact persisted fetch refspec, or both in
+B while C does not exist. After materialization completes, clone or a later add
+failure also leaves the local tracking branch in B and may leave C on disk. If
+step 6 succeeds but step 8 fails, C exists with metadata but is unregistered.
+Documented behavior: the user repairs or removes the partial state and retries.
+This is a deliberate trade-off: rollback requires either transactional staging
+or careful cleanup that itself can fail.
 
 **Operations from C to B use `metadata.remote_name`-aware arguments.**
 Specifically, all outpost-side `git fetch <remote_name>` and
@@ -1706,6 +1754,10 @@ pub struct AddArgs {
     /// Remote name for the source inside the outpost.
     #[arg(long, default_value = "local")]
     pub remote_name: String,
+
+    /// Fetch a missing target branch from origin without prompting.
+    #[arg(long)]
+    pub fetch_missing: bool,
 }
 
 #[derive(Args)]
@@ -1793,6 +1845,15 @@ pub struct UnlockArgs {
     pub outpost_path: Option<PathBuf>,
 }
 ```
+
+`--fetch-missing` applies only to an explicit target branch. The CLI first
+checks whether that branch exists locally. If it is missing and both stdin and
+stderr are terminals, the CLI prompts with a default-no choice; without a
+terminal it remains local-only. Passing `--fetch-missing` explicitly selects
+`FetchFromOrigin` without prompting. That authorization is preserved even
+when CLI preflight sees the branch locally, so a later Core recheck cannot
+lose consent if the branch disappears; Core still performs no fetch while the
+branch exists.
 
 Conversion from CLI args to `core::ops::*::Options` lives in
 `crates/cli/src/cli.rs` next to the `Args` definitions. That is where
@@ -1908,7 +1969,7 @@ it records no branch ownership provenance.
 
 ---
 
-## 8. Worked Example: `gop add ../C`
+## 8. Worked Example: `gop add ../C [<target-branch>]`
 
 1. `main.rs` parses argv into `AddArgs` and constructs a
    `StderrReporter`.
@@ -1923,12 +1984,22 @@ it records no branch ownership provenance.
    or fails before cloning if that config is absent. For `gop add -b
    feature/foo` with no path argument, the CLI derives the bare name `foo`
    before calling the same destination resolver.
-4. `ops::add::run(&source, opts, &mut reporter)` is called.
-5. `run` validates destination via `safety::check_destination_clean`.
-6. It resolves and validates the target branch before creating C:
-   omitted targets read B's current branch, detached/unborn `HEAD`
-   returns `BranchNotFound`, and explicit targets must exist in B.
-7. It runs:
+4. For an explicit target, CLI checks whether the branch exists locally and
+   selects `MissingBranchPolicy`: `--fetch-missing` authorizes
+   `FetchFromOrigin`; otherwise a terminal prompt defaults to no, and
+   non-interactive execution remains `LocalOnly`. An omitted target is always
+   local-only.
+5. `ops::add::run_with_missing_branch(&source, opts, policy, &mut reporter)`
+   is called. Library callers using `ops::add::run` receive `LocalOnly`.
+6. Core validates destination via `safety::check_destination_clean`.
+7. It resolves and validates the target branch before creating C. Omitted
+   targets read B's current branch and detached/unborn `HEAD` returns
+   `BranchNotFound`. An explicit missing branch returns `BranchNotFound` under
+   `LocalOnly`; under `FetchFromOrigin`, Core emits `SourceFetch`, fetches only
+   `origin/<target-branch>` with tags disabled, persists only that exact fetch
+   refspec when absent, and creates the source tracking branch without
+   switching B.
+8. It runs:
    ```
    git -c protocol.file.allow=user clone --no-shared --
        <source.work_tree-canonical> <destination>
@@ -1936,20 +2007,20 @@ it records no branch ownership provenance.
    The `protocol.file.allow=user` override is required for local-file
    clones on Git ≥ 2.38.1 (CVE-2022-39253). The `--` prevents flag
    injection from a maliciously named source path.
-8. Inside C, it ensures the source remote has the requested name
+9. Inside C, it ensures the source remote has the requested name
    (renames `origin` to `<remote_name>` if they differ).
-9. It applies `AddCheckout` via the recipes in §5.9.1 step 5.
+10. It applies `AddCheckout` via the recipes in §5.9.1 step 5.
    `git switch` is preferred over `git checkout` because it is
    unambiguous about branch-vs-pathspec; no `--` is needed. Validated
    `BranchName` values prevent argv injection.
-10. It creates one `RegistryEntry`, then initializes C's typed
+11. It creates one `RegistryEntry`, then initializes C's typed
     `metadata.json` through `OutpostStateStore`. Outpost ID aliases are derived
     later from the source path and registered outpost path.
-11. It runs
+12. It runs
     `git -C <source> config --local receive.denyCurrentBranch updateInstead`.
-12. It opens `RegistryMut`, adds the same entry for the canonicalized
+13. It opens `RegistryMut`, adds the same entry for the canonicalized
     destination, and saves.
-13. Returns `source.outpost_at(destination)` so the resulting
+14. Returns `source.outpost_at(destination)` so the resulting
     `Outpost` inherits `source.env` (closes the env-leakage gap
     that a bare `Outpost::at` would create — see §5.4).
 
@@ -2191,6 +2262,7 @@ test.
 | C-20 | After `add`, B retains the legacy local-exclude compatibility entry and current Git-dir state is absent from `git -C B status --porcelain`; `git clean -fdx` leaves it intact. |
 | C-21 | With `outpost-container` configured, `add C main` resolves C under that container. |
 | C-22 | With `outpost-container` configured, `add ../C main` still treats `../C` as an explicit path. |
+| C-23 | Authorized add of a remote-only branch fetches exactly that branch with `--no-tags`, persists only its exact fetch refspec when absent, creates a source branch tracking `origin/<branch>` without switching B, and reports `SourceFetch`; unrelated branches and tags remain absent. |
 
 ### 11.3 Integration: `list` (`crates/core/tests/list.rs`)
 
@@ -2344,6 +2416,9 @@ in §11.13.
 | E-15 | Representative deferred or removed CLI surfaces are rejected with clap usage errors, including `--json`, `--quiet`, `list --all`, `prune --expire`, and pull strategy flags. |
 | E-16 | `gop config set/get/list/show/unset outpost-container` uses `<source-git-dir>/outpost/config.json`, prints the documented stdout formats, rejects non-directory values, and never writes source `git config outpost.container`. |
 | E-17 | `gop add <name>` resolves through the Git-dir config document; explicit `gop add <path>` remains path-based. |
+| E-18 | Non-interactive `gop add --fetch-missing ../C <remote-only-branch>` materializes the source tracking branch and creates C; without the flag it returns `BranchNotFound` without fetching. |
+| E-19 | On Unix PTYs, a missing explicit branch prompts with a default-no choice: Enter and `n` decline, while `y` authorizes the fetch and add. |
+| E-20 | `gop add --fetch-missing ../C <local-branch>` succeeds without contacting an unavailable `origin`. |
 | H-01 | `git-outpost --help` renders `git-outpost` as the program name. |
 | H-02 | `gop --help` renders `gop` as the program name. |
 | H-03 | `git outpost -h` renders `git outpost` (or `git-outpost`) as the program name — pin whichever clap produces, but assert it does **not** say `gop`. Git itself intercepts `git outpost --help` as a manpage request before external command dispatch. |
@@ -2357,6 +2432,8 @@ Tests run on Linux, macOS, and Windows in CI. Implications:
 - E-09 uses `strip-ansi-escapes`, not literal `\x1b[`.
 - The fixture's empty config files use `tempfile::NamedTempFile` —
   not `/dev/null` (Windows-incompatible).
+- E-19 uses `libc::openpty` on Unix and is excluded on Windows; the ordinary
+  non-interactive fetch-consent paths remain cross-platform E2E coverage.
 - Binary-name tests (E-01) check for `.exe` suffix on Windows.
 - Path comparisons in tests canonicalize both sides (macOS APFS is
   case-insensitive by default).
@@ -2379,6 +2456,7 @@ Pin to compatible-version ranges (`^x.y` style); MSRV is **Rust 1.75**.
 | `sha2` | 0.10 | Namespaced SHA-256 generation for derived outpost ID aliases. |
 | `fs_extra` | 1.3 | Cross-platform recursive directory copy in test E-07. |
 | `tempfile` | 3 | Test fixtures and atomic registry writes. |
+| `libc` | 0.2 | Unix-only PTY-backed CLI prompt integration tests. |
 | `assert_cmd` | 2 | CLI integration tests. |
 | `predicates` | 3 | Stdout matchers in CLI tests. |
 | `strip-ansi-escapes` | 0.2 | E-09 and similar. |
@@ -2405,9 +2483,12 @@ pins 2.38.1 to catch regressions.
 
 These are documented as accepted trade-offs for v1:
 
-1. **No partial-add rollback.** If `gop add` fails after `git
-   clone` succeeded but before metadata/registry are written, C exists
-   in a partial state. The user removes the directory and retries.
+1. **No partial-add rollback.** Authorized missing-branch materialization can
+   leave B with a fetched remote-tracking ref, an exact fetch refspec, or a
+   local tracking branch if a later materialization, clone, or add step fails.
+   If `gop add` fails after `git clone` succeeds but before metadata/registry
+   are written, C exists in a partial state. The user repairs or removes the
+   partial state and retries.
 2. **Registry concurrency.** Two simultaneous `gop` invocations writing
    the registry race; later writer wins. Single-user CLI; file locking
    is post-MVP (OQ-2).

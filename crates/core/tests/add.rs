@@ -6,7 +6,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use common::fixture::AbcFixture;
-use outpost_core::ops::add::{AddCheckout, AddOptions, run};
+use outpost_core::ops::add::{
+    AddCheckout, AddOptions, MissingBranchPolicy, run, run_with_missing_branch,
+};
 use outpost_core::{
     BranchName, Outpost, OutpostError, OutpostResult, RemoteName, Reporter, SourceRepo, StepKind,
 };
@@ -55,6 +57,171 @@ fn add_existing_branch_checks_out_branch_and_tracks_local_remote() {
         .expect("outpost branch should track source remote");
     assert_eq!(tracking.remote.as_str(), "local");
     assert_eq!(tracking.merge_ref.as_str(), "refs/heads/feature/add");
+}
+
+#[test]
+fn add_fetches_one_remote_only_branch_and_materializes_source_tracking() {
+    let fixture = AbcFixture::new();
+    let branch = fixture
+        .create_source_branch("feature/remote-only")
+        .expect("source branch");
+    let source_git = fixture.invoker(&fixture.source);
+    source_git
+        .run_check(["switch", branch.as_str()])
+        .expect("switch to remote-only branch");
+    source_git
+        .run_check(["commit", "--allow-empty", "-m", "remote-only commit"])
+        .expect("commit remote-only history");
+    source_git
+        .run_check(["tag", "remote-only-tag"])
+        .expect("tag remote-only history");
+    source_git
+        .run_check(["switch", "main"])
+        .expect("restore source checkout");
+    fixture.push_source_branch(&branch).expect("publish branch");
+    source_git
+        .run_check(["push", "origin", "refs/tags/remote-only-tag"])
+        .expect("publish tag");
+    let unrelated = fixture
+        .create_source_branch("feature/not-requested")
+        .expect("unrelated source branch");
+    fixture
+        .push_source_branch(&unrelated)
+        .expect("publish unrelated branch");
+    fixture
+        .delete_source_branch(&branch)
+        .expect("remove local branch");
+    fixture
+        .delete_source_branch(&unrelated)
+        .expect("remove unrelated local branch");
+    source_git
+        .run_check(["tag", "-d", "remote-only-tag"])
+        .expect("remove local tag");
+    source_git
+        .run_check([
+            "update-ref",
+            "-d",
+            "refs/remotes/origin/feature/remote-only",
+        ])
+        .expect("remove remote-tracking branch");
+    source_git
+        .run_check([
+            "update-ref",
+            "-d",
+            "refs/remotes/origin/feature/not-requested",
+        ])
+        .expect("remove unrelated remote-tracking branch");
+    source_git
+        .run_check(["config", "--unset-all", "remote.origin.fetch"])
+        .expect("clear broad fetch refspec");
+    source_git
+        .run_check([
+            "config",
+            "--add",
+            "remote.origin.fetch",
+            "+refs/heads/main:refs/remotes/origin/main",
+        ])
+        .expect("configure narrow main fetch");
+
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    let mut reporter = RecordingReporter::default();
+    let outpost = run_with_missing_branch(
+        &source,
+        AddOptions {
+            destination: destination.clone(),
+            checkout: AddCheckout::CheckoutExisting {
+                target_branch: Some(branch.clone()),
+            },
+            remote_name: RemoteName::parse("local").expect("remote name"),
+        },
+        MissingBranchPolicy::FetchFromOrigin,
+        &mut reporter,
+    )
+    .expect("add remote-only branch");
+
+    let fetch_argv = source
+        .git_argv_log_for_tests()
+        .into_iter()
+        .filter(|argv| argv.first().is_some_and(|arg| arg == "fetch"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        fetch_argv,
+        vec![vec![
+            OsString::from("fetch"),
+            OsString::from("--no-tags"),
+            OsString::from("origin"),
+            OsString::from(
+                "+refs/heads/feature/remote-only:refs/remotes/origin/feature/remote-only"
+            ),
+        ]]
+    );
+
+    assert_eq!(
+        source
+            .current_branch()
+            .expect("source current branch")
+            .as_str(),
+        "main"
+    );
+    let source_tracking = source
+        .upstream_for(&branch)
+        .expect("source tracking")
+        .expect("materialized branch should track origin");
+    assert_eq!(source_tracking.remote.as_str(), "origin");
+    assert_eq!(
+        source_tracking.merge_ref.as_str(),
+        "refs/heads/feature/remote-only"
+    );
+    assert_eq!(
+        source_git
+            .run_capture(["config", "--get-all", "remote.origin.fetch"])
+            .expect("fetch refspecs"),
+        "+refs/heads/main:refs/remotes/origin/main\n+refs/heads/feature/remote-only:refs/remotes/origin/feature/remote-only"
+    );
+    assert!(
+        !source_git
+            .run_status([
+                "show-ref",
+                "--verify",
+                "--quiet",
+                "refs/remotes/origin/feature/not-requested",
+            ])
+            .expect("check unrelated remote-tracking branch")
+    );
+    assert!(
+        !source_git
+            .run_status([
+                "show-ref",
+                "--verify",
+                "--quiet",
+                "refs/tags/remote-only-tag",
+            ])
+            .expect("check remote tag")
+    );
+    assert_eq!(
+        outpost
+            .current_branch()
+            .expect("outpost current branch")
+            .as_str(),
+        "feature/remote-only"
+    );
+    let outpost_tracking = outpost
+        .upstream_tracking()
+        .expect("outpost tracking")
+        .expect("outpost should track source remote");
+    assert_eq!(outpost_tracking.remote.as_str(), "local");
+    assert_eq!(
+        outpost_tracking.merge_ref.as_str(),
+        "refs/heads/feature/remote-only"
+    );
+    assert!(
+        reporter
+            .steps
+            .iter()
+            .any(|(kind, _)| *kind == StepKind::SourceFetch),
+        "remote materialization should report its fetch"
+    );
 }
 
 #[test]
