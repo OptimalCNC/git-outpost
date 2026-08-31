@@ -119,12 +119,15 @@ This is a Cargo workspace with the implementation split between:
 - `crates/core`: Git Outpost library logic.
 - `crates/cli`: CLI parsing, output, and binary entry points.
 
-Before opening a pull request, run:
+Core line coverage must remain at or above 85%. Install the coverage tool once,
+then run all checks before opening a pull request:
 
 ```bash
+cargo install cargo-llvm-cov
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked
 cargo test --workspace --locked
+cargo coverage-core
 ```
 
 Development details are in [docs/src/architecture.md](docs/src/architecture.md),
