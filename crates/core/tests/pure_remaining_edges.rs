@@ -115,7 +115,8 @@ fn selector_normalizes_missing_intermediate_components() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("other").expect("outpost");
     let source = fixture.source_repo().expect("source repo");
-    let selector = OutpostSelector::from_cli_arg(&fixture.root, PathBuf::from("missing/../other"));
+    let root = fs::canonicalize(&fixture.root).expect("canonical fixture root");
+    let selector = OutpostSelector::from_cli_arg(&root, PathBuf::from("missing/../other"));
 
     let resolved = resolve_entry(&source, &selector).expect("normalized path selector");
 
@@ -129,6 +130,7 @@ fn selector_normalizes_missing_intermediate_components() {
 fn selector_handles_empty_and_single_component_path_forms() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");
+    let root = fs::canonicalize(&fixture.root).expect("canonical fixture root");
 
     let empty = OutpostSelector::from_path(PathBuf::new());
     let err = resolve_entry(&source, &empty).expect_err("empty path has no registry entry");
@@ -136,9 +138,9 @@ fn selector_handles_empty_and_single_component_path_forms() {
         matches!(err, OutpostError::RegistryEntryNotFound(path) if path.as_os_str().is_empty())
     );
 
-    let current = OutpostSelector::from_cli_arg(&fixture.root, PathBuf::from("."));
+    let current = OutpostSelector::from_cli_arg(&root, PathBuf::from("."));
     let err = resolve_entry(&source, &current).expect_err("current directory is not an outpost");
-    assert!(matches!(err, OutpostError::RegistryEntryNotFound(path) if path == fixture.root));
+    assert!(matches!(err, OutpostError::RegistryEntryNotFound(path) if path == root));
 }
 
 #[cfg(unix)]
@@ -150,7 +152,9 @@ fn selector_treats_non_utf8_cli_value_as_explicit_path() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");
     let value = PathBuf::from(OsString::from_vec(b"bad-\xff".to_vec()));
-    let expected = fixture.root.join(&value);
+    let expected = fs::canonicalize(&fixture.root)
+        .expect("canonical fixture root")
+        .join(&value);
     let selector = OutpostSelector::from_cli_arg(&fixture.root, value);
 
     let err = resolve_entry(&source, &selector).expect_err("missing non-utf8 path");

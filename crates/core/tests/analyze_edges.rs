@@ -757,7 +757,9 @@ fn invalid_provider_oid_syntax_is_an_unavailable_probe_error() {
 fn malformed_selector_returns_public_error() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");
-    let missing = fixture.root.join("does-not-exist");
+    let missing = fs::canonicalize(&fixture.root)
+        .expect("canonical fixture root")
+        .join("does-not-exist");
 
     let error = analyze::run(
         &source,

@@ -150,9 +150,10 @@ fn selector_resolves_explicit_relative_path_and_reports_missing_bare_path() {
 
     let missing = OutpostSelector::from_cli_arg(&fixture.root, PathBuf::from("missing"));
     let err = resolve_entry(&source, &missing).expect_err("missing path selector");
-    assert!(
-        matches!(err, OutpostError::RegistryEntryNotFound(path) if path == fixture.root.join("missing"))
-    );
+    let expected = fs::canonicalize(&fixture.root)
+        .expect("canonical fixture root")
+        .join("missing");
+    assert!(matches!(err, OutpostError::RegistryEntryNotFound(path) if path == expected));
 }
 
 #[cfg(unix)]
