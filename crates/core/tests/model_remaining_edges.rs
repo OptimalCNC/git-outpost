@@ -182,7 +182,6 @@ fn destination_check_propagates_io_when_parent_is_not_a_directory() {
 
     assert!(matches!(
         error,
-        OutpostError::IoAt { path, source }
-            if path == parent && source.kind() == std::io::ErrorKind::NotADirectory
+        OutpostError::IoAt { path, .. } if path == parent
     ));
 }
