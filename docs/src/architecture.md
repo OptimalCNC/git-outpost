@@ -520,10 +520,10 @@ impl SourceRepo {
     /// `None` if the branch has no upstream tracking configured.
     pub fn upstream_for(&self, branch: &BranchName) -> OutpostResult<Option<UpstreamRef>>;
     pub fn branch_exists(&self, branch: &BranchName) -> OutpostResult<bool>;
-    /// Fetch exactly one branch, persist its exact fetch refspec when absent,
-    /// and create a local branch tracking the fetched remote branch without
-    /// switching the source checkout.
-    pub fn materialize_remote_branch(
+    /// Internal add helper: fetch exactly one branch, persist its exact fetch
+    /// refspec when absent, and create a local branch tracking the fetched
+    /// remote branch without switching the source checkout.
+    pub(crate) fn materialize_remote_branch(
         &self,
         remote: &RemoteName,
         branch: &BranchName,
@@ -555,7 +555,8 @@ out in the source repo and any of its worktrees. This is what
 `ops::push` uses to decide whether the target branch is safe to push
 to (see §5.9.8).
 
-`materialize_remote_branch` runs the following source-side sequence:
+The internal `materialize_remote_branch` helper runs the following source-side
+sequence:
 
 1. `git fetch --no-tags <remote>
    +refs/heads/<branch>:refs/remotes/<remote>/<branch>`.
@@ -1009,10 +1010,14 @@ pub struct AddOptions {
     pub remote_name: RemoteName,                    // defaults to "local"
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MissingBranchPolicy {
+pub trait MissingBranchAuthorizer {
+    fn authorize_fetch_from_origin(&mut self, branch: &BranchName) -> bool;
+}
+
+pub enum MissingBranchAuthorization<'a> {
     LocalOnly,
-    FetchFromOrigin,
+    AllowFetchFromOrigin,
+    Ask(&'a mut dyn MissingBranchAuthorizer),
 }
 
 pub fn run(
@@ -1024,13 +1029,13 @@ pub fn run(
 pub fn run_with_missing_branch(
     source: &SourceRepo,
     opts: AddOptions,
-    missing_branch_policy: MissingBranchPolicy,
+    missing_branch_authorization: MissingBranchAuthorization<'_>,
     reporter: &mut dyn Reporter,
 ) -> OutpostResult<Outpost>;
 ```
 
 `run` is the library-safe local-only entry point; it delegates to
-`run_with_missing_branch` with `MissingBranchPolicy::LocalOnly`.
+`run_with_missing_branch` with `MissingBranchAuthorization::LocalOnly`.
 `run_with_missing_branch` performs (in order):
 
 1. Validate destination is empty/absent and, when it is inside another Git
@@ -1040,12 +1045,17 @@ pub fn run_with_missing_branch(
    makes omitted targets return `BranchNotFound { branch: "HEAD" }`.
    All add modes operate on branches, not arbitrary revisions:
    - For either checkout variant, an explicit branch that exists locally is
-     used without network access.
-   - If an explicit branch is absent and the policy is `LocalOnly`, return
-     `BranchNotFound` before cloning.
-   - If an explicit branch is absent and the policy is `FetchFromOrigin`,
-     emit one `SourceFetch` event and call
-     `source.materialize_remote_branch(origin, branch)` before cloning.
+     used without consulting the authorizer or accessing the network.
+   - If an explicit branch is absent and the authorization is `LocalOnly`,
+     return `BranchNotFound` before cloning.
+   - `AllowFetchFromOrigin` preauthorizes materialization. `Ask` consults its
+     authorizer only for an explicit branch that Core finds missing; declining
+     returns `BranchNotFound` before cloning.
+   - After authorization, Core rechecks local branch existence so a branch
+     created during consultation is used without contacting `origin`.
+   - If the explicit branch remains absent and fetching is authorized, emit
+     one `SourceFetch` event and call the internal
+     `source.materialize_remote_branch(origin, branch)` helper before cloning.
      The refspec config and tracking-branch creation are internal local Git
      operations covered by the §5.9.0 exemption, so they do not add a
      separate `ConfigChange` event.
@@ -1846,14 +1856,13 @@ pub struct UnlockArgs {
 }
 ```
 
-`--fetch-missing` applies only to an explicit target branch. The CLI first
-checks whether that branch exists locally. If it is missing and both stdin and
-stderr are terminals, the CLI prompts with a default-no choice; without a
-terminal it remains local-only. Passing `--fetch-missing` explicitly selects
-`FetchFromOrigin` without prompting. That authorization is preserved even
-when CLI preflight sees the branch locally, so a later Core recheck cannot
-lose consent if the branch disappears; Core still performs no fetch while the
-branch exists.
+`--fetch-missing` applies only to an explicit target branch. The CLI selects an
+authorization source without inspecting repository branch state: the flag
+selects `AllowFetchFromOrigin`; an interactive stdin and stderr select `Ask`
+with a default-no terminal authorizer; otherwise the command remains
+`LocalOnly`. Core validates the destination, checks whether the explicit target
+exists locally, and consults the authorizer only when it is missing. Existing
+and omitted target branches neither prompt nor contact `origin`.
 
 Conversion from CLI args to `core::ops::*::Options` lives in
 `crates/cli/src/cli.rs` next to the `Args` definitions. That is where
@@ -1984,21 +1993,22 @@ it records no branch ownership provenance.
    or fails before cloning if that config is absent. For `gop add -b
    feature/foo` with no path argument, the CLI derives the bare name `foo`
    before calling the same destination resolver.
-4. For an explicit target, CLI checks whether the branch exists locally and
-   selects `MissingBranchPolicy`: `--fetch-missing` authorizes
-   `FetchFromOrigin`; otherwise a terminal prompt defaults to no, and
-   non-interactive execution remains `LocalOnly`. An omitted target is always
-   local-only.
-5. `ops::add::run_with_missing_branch(&source, opts, policy, &mut reporter)`
-   is called. Library callers using `ops::add::run` receive `LocalOnly`.
+4. CLI selects `MissingBranchAuthorization` without probing Git:
+   `--fetch-missing` selects `AllowFetchFromOrigin`; otherwise an interactive
+   terminal supplies the default-no authorizer through `Ask`, and
+   non-interactive execution selects `LocalOnly`.
+5. `ops::add::run_with_missing_branch(&source, opts, authorization,
+   &mut reporter)` is called. Library callers using `ops::add::run` receive
+   `LocalOnly`.
 6. Core validates destination via `safety::check_destination_clean`.
 7. It resolves and validates the target branch before creating C. Omitted
    targets read B's current branch and detached/unborn `HEAD` returns
-   `BranchNotFound`. An explicit missing branch returns `BranchNotFound` under
-   `LocalOnly`; under `FetchFromOrigin`, Core emits `SourceFetch`, fetches only
-   `origin/<target-branch>` with tags disabled, persists only that exact fetch
-   refspec when absent, and creates the source tracking branch without
-   switching B.
+   `BranchNotFound`. Existing explicit targets bypass authorization. For a
+   missing explicit target, Core either returns `BranchNotFound`, or obtains
+   authorization and rechecks local existence before emitting `SourceFetch`,
+   fetching only `origin/<target-branch>` with tags disabled, persisting only
+   that exact fetch refspec when absent, and creating the source tracking
+   branch without switching B.
 8. It runs:
    ```
    git -c protocol.file.allow=user clone --no-shared --
@@ -2262,7 +2272,9 @@ test.
 | C-20 | After `add`, B retains the legacy local-exclude compatibility entry and current Git-dir state is absent from `git -C B status --porcelain`; `git clean -fdx` leaves it intact. |
 | C-21 | With `outpost-container` configured, `add C main` resolves C under that container. |
 | C-22 | With `outpost-container` configured, `add ../C main` still treats `../C` as an explicit path. |
-| C-23 | Authorized add of a remote-only branch fetches exactly that branch with `--no-tags`, persists only its exact fetch refspec when absent, creates a source branch tracking `origin/<branch>` without switching B, and reports `SourceFetch`; unrelated branches and tags remain absent. |
+| C-23 | With `Ask` authorization, Core asks once before adding a remote-only branch, then fetches exactly that branch with `--no-tags`, persists only its exact fetch refspec when absent, creates a source branch tracking `origin/<branch>` without switching B, and reports `SourceFetch`; unrelated branches and tags remain absent. |
+| C-24 | Core does not consult a missing-branch authorizer for an existing explicit local branch. |
+| C-25 | Destination validation failure precedes missing-branch authorization. |
 
 ### 11.3 Integration: `list` (`crates/core/tests/list.rs`)
 

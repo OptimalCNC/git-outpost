@@ -353,7 +353,7 @@ impl SourceRepo {
         self.git.run_check(args)
     }
 
-    pub fn materialize_remote_branch(
+    pub(crate) fn materialize_remote_branch(
         &self,
         remote: &RemoteName,
         branch: &BranchName,

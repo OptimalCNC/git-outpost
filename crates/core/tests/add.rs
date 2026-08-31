@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 
 use common::fixture::AbcFixture;
 use outpost_core::ops::add::{
-    AddCheckout, AddOptions, MissingBranchPolicy, run, run_with_missing_branch,
+    AddCheckout, AddOptions, MissingBranchAuthorization, MissingBranchAuthorizer, run,
+    run_with_missing_branch,
 };
 use outpost_core::{
     BranchName, Outpost, OutpostError, OutpostResult, RemoteName, Reporter, SourceRepo, StepKind,
@@ -126,6 +127,7 @@ fn add_fetches_one_remote_only_branch_and_materializes_source_tracking() {
     let source = fixture.source_repo().expect("source repo");
     let destination = fixture.root.join("C");
     let mut reporter = RecordingReporter::default();
+    let mut authorizer = RecordingMissingBranchAuthorizer::new(true);
     let outpost = run_with_missing_branch(
         &source,
         AddOptions {
@@ -135,27 +137,12 @@ fn add_fetches_one_remote_only_branch_and_materializes_source_tracking() {
             },
             remote_name: RemoteName::parse("local").expect("remote name"),
         },
-        MissingBranchPolicy::FetchFromOrigin,
+        MissingBranchAuthorization::Ask(&mut authorizer),
         &mut reporter,
     )
     .expect("add remote-only branch");
 
-    let fetch_argv = source
-        .git_argv_log_for_tests()
-        .into_iter()
-        .filter(|argv| argv.first().is_some_and(|arg| arg == "fetch"))
-        .collect::<Vec<_>>();
-    assert_eq!(
-        fetch_argv,
-        vec![vec![
-            OsString::from("fetch"),
-            OsString::from("--no-tags"),
-            OsString::from("origin"),
-            OsString::from(
-                "+refs/heads/feature/remote-only:refs/remotes/origin/feature/remote-only"
-            ),
-        ]]
-    );
+    assert_eq!(authorizer.requests, vec![branch.clone()]);
 
     assert_eq!(
         source
@@ -222,6 +209,38 @@ fn add_fetches_one_remote_only_branch_and_materializes_source_tracking() {
             .any(|(kind, _)| *kind == StepKind::SourceFetch),
         "remote materialization should report its fetch"
     );
+}
+
+#[test]
+fn add_does_not_request_missing_branch_authorization_for_existing_local_branch() {
+    let fixture = AbcFixture::new();
+    let branch = fixture
+        .create_source_branch("feature/local")
+        .expect("source branch");
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    let mut authorizer = RecordingMissingBranchAuthorizer::new(false);
+    let mut reporter = RecordingReporter::default();
+
+    let outpost = run_with_missing_branch(
+        &source,
+        AddOptions {
+            destination,
+            checkout: AddCheckout::CheckoutExisting {
+                target_branch: Some(branch.clone()),
+            },
+            remote_name: RemoteName::parse("local").expect("remote name"),
+        },
+        MissingBranchAuthorization::Ask(&mut authorizer),
+        &mut reporter,
+    )
+    .expect("add existing local branch");
+
+    assert_eq!(
+        outpost.current_branch().expect("outpost current branch"),
+        branch
+    );
+    assert!(authorizer.requests.is_empty());
 }
 
 #[test]
@@ -307,6 +326,38 @@ fn add_rejects_existing_file() {
     assert!(
         matches!(err, OutpostError::DestinationExists(path) if path == canonical_missing(&destination))
     );
+}
+
+#[test]
+fn add_validates_destination_before_requesting_missing_branch_authorization() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    fs::write(&destination, "content").expect("destination file");
+    let missing = BranchName::parse("feature/missing").expect("missing branch");
+    let mut authorizer = RecordingMissingBranchAuthorizer::new(true);
+    let mut reporter = RecordingReporter::default();
+
+    let err = expect_error(
+        run_with_missing_branch(
+            &source,
+            AddOptions {
+                destination: destination.clone(),
+                checkout: AddCheckout::CheckoutExisting {
+                    target_branch: Some(missing),
+                },
+                remote_name: RemoteName::parse("local").expect("remote name"),
+            },
+            MissingBranchAuthorization::Ask(&mut authorizer),
+            &mut reporter,
+        ),
+        "invalid destination should fail before authorization",
+    );
+
+    assert!(
+        matches!(err, OutpostError::DestinationExists(path) if path == canonical_missing(&destination))
+    );
+    assert!(authorizer.requests.is_empty());
 }
 
 #[test]
@@ -794,6 +845,27 @@ fn remote_url_path(fixture: &AbcFixture, repo: &Path, remote: &str) -> PathBuf {
 struct RecordingReporter {
     steps: Vec<(StepKind, String)>,
     warnings: Vec<String>,
+}
+
+struct RecordingMissingBranchAuthorizer {
+    response: bool,
+    requests: Vec<BranchName>,
+}
+
+impl RecordingMissingBranchAuthorizer {
+    fn new(response: bool) -> Self {
+        Self {
+            response,
+            requests: Vec::new(),
+        }
+    }
+}
+
+impl MissingBranchAuthorizer for RecordingMissingBranchAuthorizer {
+    fn authorize_fetch_from_origin(&mut self, branch: &BranchName) -> bool {
+        self.requests.push(branch.clone());
+        self.response
+    }
 }
 
 impl Reporter for RecordingReporter {
