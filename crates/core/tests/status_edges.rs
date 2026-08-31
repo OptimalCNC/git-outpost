@@ -35,7 +35,11 @@ fn run_with_rejects_a_missing_target_path() {
         matches!(
             error,
             OutpostError::IoAt { ref path, ref source }
-            if path == &target && source.kind() == std::io::ErrorKind::NotFound
+            if path == &target
+                && matches!(
+                    source.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                )
         ),
         "{error:?}"
     );

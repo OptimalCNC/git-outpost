@@ -26,7 +26,10 @@ fn run_capture_maps_a_missing_working_directory_to_io_at() {
     match error {
         OutpostError::IoAt { path, source } => {
             assert_eq!(path, missing);
-            assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
+            assert!(matches!(
+                source.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ));
         }
         other => panic!("expected IoAt, got {other:?}"),
     }

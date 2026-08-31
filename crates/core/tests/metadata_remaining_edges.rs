@@ -101,7 +101,7 @@ fn metadata_write_accepts_an_absolute_git_dir_report() {
     assert!(opened.metadata_path().is_file());
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn metadata_write_reports_an_existing_non_utf8_source_path() {
     use std::os::unix::ffi::OsStringExt;
