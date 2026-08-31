@@ -236,8 +236,9 @@ The remainder of this document uses `gop` because it keeps examples short.
 ```text
 gop [<global-options>] <command> [<args>...]
 
-gop add [--remote-name <name>] <path-or-name> [<target-branch>]
-gop add -b <new-branch> [--remote-name <name>]
+gop add [--fetch-missing] [--remote-name <name>]
+        <path-or-name> [<target-branch>]
+gop add -b <new-branch> [--fetch-missing] [--remote-name <name>]
         [<path-or-name> [<target-branch>]]
 gop config set outpost-container <path>
 gop config get outpost-container
@@ -311,8 +312,8 @@ additional working-directory-specific behavior to explain.
 
 Forms:
 
-- `gop add [--remote-name <name>] <path-or-name> [<target-branch>]`
-- `gop add -b <new-branch> [--remote-name <name>] [<path-or-name> [<target-branch>]]`
+- `gop add [--fetch-missing] [--remote-name <name>] <path-or-name> [<target-branch>]`
+- `gop add -b <new-branch> [--fetch-missing] [--remote-name <name>] [<path-or-name> [<target-branch>]]`
 
 Create a self-contained outpost from the current repository. The outpost is a
 normal local clone with its own `.git` directory; the current repository is
@@ -343,6 +344,18 @@ with `-b`, it is always `<path-or-name>`, not `<target-branch>`.
 `add` uses the source repository's current branch. The command does not switch
 the source repository's checkout.
 
+When an explicit `<target-branch>` is missing locally, an interactive terminal
+asks whether to fetch `origin/<target-branch>` and create the local source
+branch with that upstream. The prompt defaults to no. Non-interactive callers
+do not fetch unless they pass `--fetch-missing`, which grants the same consent
+without prompting. Existing local branches never prompt or contact `origin`,
+even when the flag is present.
+
+An approved fetch requests only the exact branch from `origin`, disables tag
+fetching, and adds only that branch's source-to-remote-tracking refspec to the
+source repository's `remote.origin.fetch` values when it is not already there.
+The source checkout remains on its current branch.
+
 Default checkout behavior:
 
 - Without `-b`, check out an existing source-repo branch in the outpost. The
@@ -362,6 +375,10 @@ rejected in the MVP.
 
 `--remote-name <name>` uses `<name>` for the source repository remote inside
 the outpost. Defaults to `local`.
+
+`--fetch-missing` permits an explicit target branch that is absent from the
+source repository to be fetched from `origin` without a prompt. It has no
+network effect when the target branch already exists locally.
 
 `gop add` initializes `<outpost-git-dir>/outpost/metadata.json`, updates the
 source registry under `<source-git-dir>/outpost/registry.json`, and retains the

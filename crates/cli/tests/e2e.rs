@@ -1,10 +1,108 @@
 mod common;
 
+use std::fs;
+#[cfg(unix)]
+use std::fs::File;
+#[cfg(unix)]
+use std::io::{self, Read, Write};
+#[cfg(unix)]
+use std::os::fd::{FromRawFd, RawFd};
 use std::path::Path;
+#[cfg(unix)]
+use std::process::{Command, ExitStatus, Stdio};
 
 fn git_ok(fixture: &common::CliFixture, repo: &Path, args: &[&str]) {
     let output = common::run(fixture.git(repo).args(args));
     common::assert_success(&output, "git fixture setup");
+}
+
+fn prepare_remote_only_branch(fixture: &common::CliFixture, branch: &str) {
+    let remote_ref = format!("refs/remotes/origin/{branch}");
+    git_ok(fixture, &fixture.source, &["branch", branch]);
+    git_ok(fixture, &fixture.source, &["push", "origin", branch]);
+    git_ok(fixture, &fixture.source, &["branch", "-D", branch]);
+    git_ok(fixture, &fixture.source, &["update-ref", "-d", &remote_ref]);
+    git_ok(
+        fixture,
+        &fixture.source,
+        &["config", "--unset-all", "remote.origin.fetch"],
+    );
+    git_ok(
+        fixture,
+        &fixture.source,
+        &[
+            "config",
+            "--add",
+            "remote.origin.fetch",
+            "+refs/heads/main:refs/remotes/origin/main",
+        ],
+    );
+}
+
+#[cfg(unix)]
+struct PtyOutput {
+    status: ExitStatus,
+    stderr: String,
+}
+
+#[cfg(unix)]
+fn run_with_terminal(mut command: Command, input: &[u8]) -> PtyOutput {
+    let (master_fd, slave_fd) = open_pty();
+    // SAFETY: open_pty returned fresh owned file descriptors.
+    let master = unsafe { File::from_raw_fd(master_fd) };
+    // SAFETY: open_pty returned fresh owned file descriptors.
+    let slave = unsafe { File::from_raw_fd(slave_fd) };
+    let mut input_writer = master.try_clone().expect("duplicate PTY master for input");
+    let slave_stdin = slave.try_clone().expect("duplicate PTY slave for stdin");
+    command
+        .stdin(Stdio::from(slave_stdin))
+        .stderr(Stdio::from(slave))
+        .stdout(Stdio::null());
+
+    let mut child = command.spawn().expect("spawn command on PTY");
+    drop(command);
+    let reader = std::thread::spawn(move || {
+        let mut master = master;
+        let mut bytes = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        loop {
+            match master.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(count) => bytes.extend_from_slice(&buffer[..count]),
+                Err(err) if err.raw_os_error() == Some(libc::EIO) => break,
+                Err(err) => panic!("read PTY output: {err}"),
+            }
+        }
+        bytes
+    });
+    input_writer.write_all(input).expect("write PTY input");
+    input_writer.flush().expect("flush PTY input");
+    drop(input_writer);
+    let status = child.wait().expect("wait for PTY command");
+    let bytes = reader.join().expect("join PTY reader");
+
+    PtyOutput {
+        status,
+        stderr: String::from_utf8_lossy(&bytes).into_owned(),
+    }
+}
+
+#[cfg(unix)]
+fn open_pty() -> (RawFd, RawFd) {
+    let mut master_fd = -1;
+    let mut slave_fd = -1;
+    // SAFETY: the output pointers are valid and the optional parameters may be null.
+    let result = unsafe {
+        libc::openpty(
+            &mut master_fd,
+            &mut slave_fd,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(result, 0, "openpty failed: {}", io::Error::last_os_error());
+    (master_fd, slave_fd)
 }
 
 fn source_status(fixture: &common::CliFixture) -> String {
@@ -728,6 +826,232 @@ fn add_new_branch_with_two_positionals_keeps_second_as_target_branch() {
     assert_eq!(
         fixture.git_capture(&target_outpost, ["branch", "--show-current"]),
         "feature/foo"
+    );
+}
+
+#[test]
+fn add_fetch_missing_materializes_the_positional_remote_only_branch() {
+    let fixture = common::CliFixture::new();
+    let branch = "feature/remote-only";
+    let outpost = fixture.outpost("C");
+    prepare_remote_only_branch(&fixture, branch);
+
+    let add = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "add",
+        "--fetch-missing",
+        "../C",
+        branch,
+    ]));
+
+    common::assert_success(&add, "gop add --fetch-missing");
+    assert_eq!(
+        fixture.git_capture(&fixture.source, ["branch", "--show-current"]),
+        "main"
+    );
+    assert_eq!(
+        fixture.git_capture(
+            &fixture.source,
+            [
+                "rev-parse",
+                "--abbrev-ref",
+                "feature/remote-only@{upstream}"
+            ],
+        ),
+        "origin/feature/remote-only"
+    );
+    assert_eq!(
+        fixture.git_capture(
+            &fixture.source,
+            ["config", "--get-all", "remote.origin.fetch"]
+        ),
+        "+refs/heads/main:refs/remotes/origin/main\n+refs/heads/feature/remote-only:refs/remotes/origin/feature/remote-only"
+    );
+    assert_eq!(
+        fixture.git_capture(&outpost, ["branch", "--show-current"]),
+        branch
+    );
+    assert_eq!(
+        fixture.git_capture(
+            &outpost,
+            [
+                "rev-parse",
+                "--abbrev-ref",
+                "feature/remote-only@{upstream}"
+            ],
+        ),
+        "local/feature/remote-only"
+    );
+}
+
+#[test]
+fn add_missing_branch_without_flag_is_local_only_when_non_interactive() {
+    let fixture = common::CliFixture::new();
+    let branch = "feature/remote-only";
+    let outpost = fixture.outpost("C");
+    prepare_remote_only_branch(&fixture, branch);
+
+    let add = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .args(["add", "../C", branch]),
+    );
+
+    common::assert_failure_code(&add, 5, "non-interactive gop add missing branch");
+    assert!(common::stderr(&add).contains("branch not found: feature/remote-only"));
+    assert!(!outpost.exists());
+    assert_eq!(
+        fixture.git_capture(&fixture.source, ["branch", "--show-current"]),
+        "main"
+    );
+    assert_eq!(
+        fixture.git_capture(
+            &fixture.source,
+            ["config", "--get-all", "remote.origin.fetch"]
+        ),
+        "+refs/heads/main:refs/remotes/origin/main"
+    );
+    let local_branch = common::run(fixture.git(&fixture.source).args([
+        "show-ref",
+        "--verify",
+        "--quiet",
+        "refs/heads/feature/remote-only",
+    ]));
+    assert!(!local_branch.status.success());
+    let remote_tracking_branch = common::run(fixture.git(&fixture.source).args([
+        "show-ref",
+        "--verify",
+        "--quiet",
+        "refs/remotes/origin/feature/remote-only",
+    ]));
+    assert!(!remote_tracking_branch.status.success());
+}
+
+#[cfg(unix)]
+#[test]
+fn add_missing_branch_prompt_declines_enter_and_explicit_no() {
+    let fixture = common::CliFixture::new();
+    let branch = "feature/remote-only";
+    let outpost = fixture.outpost("C");
+    prepare_remote_only_branch(&fixture, branch);
+
+    let mut command = fixture.gop();
+    command
+        .current_dir(&fixture.source)
+        .args(["add", "../C", branch]);
+    let add = run_with_terminal(command, b"\n");
+
+    assert_eq!(add.status.code(), Some(5), "stderr:\n{}", add.stderr);
+    assert!(
+        add.stderr.contains(
+            "Branch 'feature/remote-only' does not exist locally. Fetch 'origin/feature/remote-only' and create a tracking branch? [y/N]"
+        ),
+        "stderr:\n{}",
+        add.stderr
+    );
+    assert!(
+        add.stderr.contains("branch not found: feature/remote-only"),
+        "stderr:\n{}",
+        add.stderr
+    );
+
+    let mut command = fixture.gop();
+    command
+        .current_dir(&fixture.source)
+        .args(["add", "../C", branch]);
+    let explicit_no = run_with_terminal(command, b"n\n");
+    assert_eq!(
+        explicit_no.status.code(),
+        Some(5),
+        "stderr:\n{}",
+        explicit_no.stderr
+    );
+    assert!(
+        explicit_no.stderr.contains(
+            "Branch 'feature/remote-only' does not exist locally. Fetch 'origin/feature/remote-only' and create a tracking branch? [y/N]"
+        ),
+        "stderr:\n{}",
+        explicit_no.stderr
+    );
+    assert!(!outpost.exists());
+    assert!(
+        !fixture
+            .git(&fixture.source)
+            .args([
+                "show-ref",
+                "--verify",
+                "--quiet",
+                "refs/heads/feature/remote-only",
+            ])
+            .status()
+            .expect("check source branch")
+            .success()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn add_missing_branch_prompt_fetches_after_yes() {
+    let fixture = common::CliFixture::new();
+    let branch = "feature/remote-only";
+    let outpost = fixture.outpost("C");
+    prepare_remote_only_branch(&fixture, branch);
+
+    let mut command = fixture.gop();
+    command
+        .current_dir(&fixture.source)
+        .args(["add", "../C", branch]);
+    let add = run_with_terminal(command, b"y\n");
+
+    assert!(add.status.success(), "stderr:\n{}", add.stderr);
+    assert!(
+        add.stderr.contains(
+            "Branch 'feature/remote-only' does not exist locally. Fetch 'origin/feature/remote-only' and create a tracking branch? [y/N]"
+        ),
+        "stderr:\n{}",
+        add.stderr
+    );
+    assert_eq!(
+        fixture.git_capture(&fixture.source, ["branch", "--show-current"]),
+        "main"
+    );
+    assert_eq!(
+        fixture.git_capture(&outpost, ["branch", "--show-current"]),
+        branch
+    );
+    assert_eq!(
+        fixture.git_capture(
+            &fixture.source,
+            [
+                "rev-parse",
+                "--abbrev-ref",
+                "feature/remote-only@{upstream}",
+            ],
+        ),
+        "origin/feature/remote-only"
+    );
+}
+
+#[test]
+fn add_fetch_missing_does_not_contact_origin_for_an_existing_local_branch() {
+    let fixture = common::CliFixture::new();
+    let branch = "feature/local-only";
+    let outpost = fixture.outpost("C");
+    git_ok(&fixture, &fixture.source, &["branch", branch]);
+    fs::rename(&fixture.upstream, fixture.root.join("origin-offline.git"))
+        .expect("make origin unavailable");
+
+    let add = common::run(fixture.gop().current_dir(&fixture.source).args([
+        "add",
+        "--fetch-missing",
+        "../C",
+        branch,
+    ]));
+
+    common::assert_success(&add, "gop add existing branch with --fetch-missing");
+    assert_eq!(
+        fixture.git_capture(&outpost, ["branch", "--show-current"]),
+        branch
     );
 }
 

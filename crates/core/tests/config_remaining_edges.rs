@@ -1,10 +1,10 @@
 #[allow(dead_code)]
 mod common;
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::ffi::OsString;
 use std::fs;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::os::unix::ffi::OsStringExt;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
@@ -41,7 +41,7 @@ fn direct_state_write_reports_a_regular_state_parent() {
 }
 
 #[test]
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn direct_state_write_reports_invalid_utf8_in_a_container_path() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source");

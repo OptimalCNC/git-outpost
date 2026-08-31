@@ -90,10 +90,13 @@ fn metadata_write_accepts_an_absolute_git_dir_report() {
     let fixture = AbcFixture::new();
     let outpost_path = fixture.add_outpost("C").expect("outpost");
     let opened = Outpost::at_with(&outpost_path, &fixture.git_env).expect("opened outpost");
-    let git = fixture.invoker(&outpost_path).with_env(
-        OsString::from("GIT_DIR"),
-        opened.git_dir().as_os_str().to_os_string(),
-    );
+    let absolute_git_dir = fixture
+        .invoker(&outpost_path)
+        .run_capture(["rev-parse", "--absolute-git-dir"])
+        .expect("absolute Git dir");
+    let git = fixture
+        .invoker(&outpost_path)
+        .with_env(OsString::from("GIT_DIR"), absolute_git_dir);
 
     metadata(canonical(&fixture.source))
         .write(&git)
@@ -101,7 +104,7 @@ fn metadata_write_accepts_an_absolute_git_dir_report() {
     assert!(opened.metadata_path().is_file());
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn metadata_write_reports_an_existing_non_utf8_source_path() {
     use std::os::unix::ffi::OsStringExt;

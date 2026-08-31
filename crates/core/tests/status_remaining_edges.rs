@@ -150,6 +150,7 @@ fn configured_source_path_that_is_not_a_repository_propagates_not_a_repo() {
     let outpost = fixture.add_outpost("C").expect("add outpost");
     let file = fixture.root.join("source-directory");
     fs::create_dir(&file).expect("source directory");
+    let expected = canonical(&file);
     edit_current_metadata(&outpost, |metadata| {
         metadata["source_repo"] = serde_json::Value::String(file.to_string_lossy().into_owned());
     });
@@ -157,7 +158,7 @@ fn configured_source_path_that_is_not_a_repository_propagates_not_a_repo() {
     let error = run_with(&outpost, &fixture.git_env).expect_err("non-repository source");
 
     assert!(
-        matches!(error, OutpostError::NotARepo(ref path) if path == &file),
+        matches!(error, OutpostError::NotARepo(ref path) if path == &expected),
         "{error:?}"
     );
 }

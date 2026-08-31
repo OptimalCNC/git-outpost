@@ -37,6 +37,17 @@ cd ../my-change
 git status
 ```
 
+Check out a branch that may exist only on `origin`:
+
+```bash
+gop add ../review-docs docs/review-update
+```
+
+When the branch is missing locally, an interactive terminal asks before
+fetching it. Non-interactive callers must grant that consent explicitly with
+`--fetch-missing`; otherwise `add` remains local-only and fails without
+fetching.
+
 Enable shell navigation in the current shell:
 
 ```bash

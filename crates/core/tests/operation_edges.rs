@@ -18,6 +18,7 @@ fn add_propagates_destination_parent_canonicalization_failure() {
     let source = fixture.source_repo().expect("source repo");
     let parent = fixture.root.join("not-a-directory");
     fs::write(&parent, "file").expect("parent file");
+    let expected_parent = fs::canonicalize(&parent).expect("canonical parent file");
     let destination = parent.join("C");
 
     let err = expect_error(
@@ -35,7 +36,7 @@ fn add_propagates_destination_parent_canonicalization_failure() {
         "file parent should fail",
     );
 
-    assert!(matches!(err, OutpostError::IoAt { path, .. } if path == parent));
+    assert!(matches!(err, OutpostError::IoAt { path, .. } if path == expected_parent));
     assert!(!destination.exists());
 }
 

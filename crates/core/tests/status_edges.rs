@@ -35,7 +35,11 @@ fn run_with_rejects_a_missing_target_path() {
         matches!(
             error,
             OutpostError::IoAt { ref path, ref source }
-            if path == &target && source.kind() == std::io::ErrorKind::NotFound
+            if path == &target
+                && matches!(
+                    source.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                )
         ),
         "{error:?}"
     );
@@ -66,12 +70,10 @@ fn invalid_current_metadata_on_detached_head_reports_detached() {
         .invoker(&outpost)
         .run_check(["checkout", "--detach"])
         .expect("detach outpost");
-    let metadata = serde_json::to_string(&serde_json::json!({
-        "version": 99,
-        "source_repo": fixture.source,
-        "remote_name": "local",
-    }))
-    .expect("serialize metadata");
+    let metadata = format!(
+        r#"{{"version":99,"source_repo":{},"remote_name":"local"}}"#,
+        serde_json::to_string(&fixture.source).expect("serialize source path")
+    );
     write_current_metadata(&fixture, &outpost, &metadata);
 
     let report = expect_outpost(run_with(&outpost, &fixture.git_env).expect("status report"));

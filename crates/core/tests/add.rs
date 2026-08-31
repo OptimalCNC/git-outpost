@@ -6,7 +6,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use common::fixture::AbcFixture;
-use outpost_core::ops::add::{AddCheckout, AddOptions, run};
+use outpost_core::ops::add::{
+    AddCheckout, AddOptions, MissingBranchAuthorization, MissingBranchAuthorizer, run,
+    run_with_missing_branch,
+};
 use outpost_core::{
     BranchName, Outpost, OutpostError, OutpostResult, RemoteName, Reporter, SourceRepo, StepKind,
 };
@@ -55,6 +58,189 @@ fn add_existing_branch_checks_out_branch_and_tracks_local_remote() {
         .expect("outpost branch should track source remote");
     assert_eq!(tracking.remote.as_str(), "local");
     assert_eq!(tracking.merge_ref.as_str(), "refs/heads/feature/add");
+}
+
+#[test]
+fn add_fetches_one_remote_only_branch_and_materializes_source_tracking() {
+    let fixture = AbcFixture::new();
+    let branch = fixture
+        .create_source_branch("feature/remote-only")
+        .expect("source branch");
+    let source_git = fixture.invoker(&fixture.source);
+    source_git
+        .run_check(["switch", branch.as_str()])
+        .expect("switch to remote-only branch");
+    source_git
+        .run_check(["commit", "--allow-empty", "-m", "remote-only commit"])
+        .expect("commit remote-only history");
+    source_git
+        .run_check(["tag", "remote-only-tag"])
+        .expect("tag remote-only history");
+    source_git
+        .run_check(["switch", "main"])
+        .expect("restore source checkout");
+    fixture.push_source_branch(&branch).expect("publish branch");
+    source_git
+        .run_check(["push", "origin", "refs/tags/remote-only-tag"])
+        .expect("publish tag");
+    let unrelated = fixture
+        .create_source_branch("feature/not-requested")
+        .expect("unrelated source branch");
+    fixture
+        .push_source_branch(&unrelated)
+        .expect("publish unrelated branch");
+    fixture
+        .delete_source_branch(&branch)
+        .expect("remove local branch");
+    fixture
+        .delete_source_branch(&unrelated)
+        .expect("remove unrelated local branch");
+    source_git
+        .run_check(["tag", "-d", "remote-only-tag"])
+        .expect("remove local tag");
+    source_git
+        .run_check([
+            "update-ref",
+            "-d",
+            "refs/remotes/origin/feature/remote-only",
+        ])
+        .expect("remove remote-tracking branch");
+    source_git
+        .run_check([
+            "update-ref",
+            "-d",
+            "refs/remotes/origin/feature/not-requested",
+        ])
+        .expect("remove unrelated remote-tracking branch");
+    source_git
+        .run_check(["config", "--unset-all", "remote.origin.fetch"])
+        .expect("clear broad fetch refspec");
+    source_git
+        .run_check([
+            "config",
+            "--add",
+            "remote.origin.fetch",
+            "+refs/heads/main:refs/remotes/origin/main",
+        ])
+        .expect("configure narrow main fetch");
+
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    let mut reporter = RecordingReporter::default();
+    let mut authorizer = RecordingMissingBranchAuthorizer::new(true);
+    let outpost = run_with_missing_branch(
+        &source,
+        AddOptions {
+            destination: destination.clone(),
+            checkout: AddCheckout::CheckoutExisting {
+                target_branch: Some(branch.clone()),
+            },
+            remote_name: RemoteName::parse("local").expect("remote name"),
+        },
+        MissingBranchAuthorization::Ask(&mut authorizer),
+        &mut reporter,
+    )
+    .expect("add remote-only branch");
+
+    assert_eq!(authorizer.requests, vec![branch.clone()]);
+
+    assert_eq!(
+        source
+            .current_branch()
+            .expect("source current branch")
+            .as_str(),
+        "main"
+    );
+    let source_tracking = source
+        .upstream_for(&branch)
+        .expect("source tracking")
+        .expect("materialized branch should track origin");
+    assert_eq!(source_tracking.remote.as_str(), "origin");
+    assert_eq!(
+        source_tracking.merge_ref.as_str(),
+        "refs/heads/feature/remote-only"
+    );
+    assert_eq!(
+        source_git
+            .run_capture(["config", "--get-all", "remote.origin.fetch"])
+            .expect("fetch refspecs"),
+        "+refs/heads/main:refs/remotes/origin/main\n+refs/heads/feature/remote-only:refs/remotes/origin/feature/remote-only"
+    );
+    assert!(
+        !source_git
+            .run_status([
+                "show-ref",
+                "--verify",
+                "--quiet",
+                "refs/remotes/origin/feature/not-requested",
+            ])
+            .expect("check unrelated remote-tracking branch")
+    );
+    assert!(
+        !source_git
+            .run_status([
+                "show-ref",
+                "--verify",
+                "--quiet",
+                "refs/tags/remote-only-tag",
+            ])
+            .expect("check remote tag")
+    );
+    assert_eq!(
+        outpost
+            .current_branch()
+            .expect("outpost current branch")
+            .as_str(),
+        "feature/remote-only"
+    );
+    let outpost_tracking = outpost
+        .upstream_tracking()
+        .expect("outpost tracking")
+        .expect("outpost should track source remote");
+    assert_eq!(outpost_tracking.remote.as_str(), "local");
+    assert_eq!(
+        outpost_tracking.merge_ref.as_str(),
+        "refs/heads/feature/remote-only"
+    );
+    assert!(
+        reporter
+            .steps
+            .iter()
+            .any(|(kind, _)| *kind == StepKind::SourceFetch),
+        "remote materialization should report its fetch"
+    );
+}
+
+#[test]
+fn add_does_not_request_missing_branch_authorization_for_existing_local_branch() {
+    let fixture = AbcFixture::new();
+    let branch = fixture
+        .create_source_branch("feature/local")
+        .expect("source branch");
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    let mut authorizer = RecordingMissingBranchAuthorizer::new(false);
+    let mut reporter = RecordingReporter::default();
+
+    let outpost = run_with_missing_branch(
+        &source,
+        AddOptions {
+            destination,
+            checkout: AddCheckout::CheckoutExisting {
+                target_branch: Some(branch.clone()),
+            },
+            remote_name: RemoteName::parse("local").expect("remote name"),
+        },
+        MissingBranchAuthorization::Ask(&mut authorizer),
+        &mut reporter,
+    )
+    .expect("add existing local branch");
+
+    assert_eq!(
+        outpost.current_branch().expect("outpost current branch"),
+        branch
+    );
+    assert!(authorizer.requests.is_empty());
 }
 
 #[test]
@@ -140,6 +326,38 @@ fn add_rejects_existing_file() {
     assert!(
         matches!(err, OutpostError::DestinationExists(path) if path == canonical_missing(&destination))
     );
+}
+
+#[test]
+fn add_validates_destination_before_requesting_missing_branch_authorization() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let destination = fixture.root.join("C");
+    fs::write(&destination, "content").expect("destination file");
+    let missing = BranchName::parse("feature/missing").expect("missing branch");
+    let mut authorizer = RecordingMissingBranchAuthorizer::new(true);
+    let mut reporter = RecordingReporter::default();
+
+    let err = expect_error(
+        run_with_missing_branch(
+            &source,
+            AddOptions {
+                destination: destination.clone(),
+                checkout: AddCheckout::CheckoutExisting {
+                    target_branch: Some(missing),
+                },
+                remote_name: RemoteName::parse("local").expect("remote name"),
+            },
+            MissingBranchAuthorization::Ask(&mut authorizer),
+            &mut reporter,
+        ),
+        "invalid destination should fail before authorization",
+    );
+
+    assert!(
+        matches!(err, OutpostError::DestinationExists(path) if path == canonical_missing(&destination))
+    );
+    assert!(authorizer.requests.is_empty());
 }
 
 #[test]
@@ -627,6 +845,27 @@ fn remote_url_path(fixture: &AbcFixture, repo: &Path, remote: &str) -> PathBuf {
 struct RecordingReporter {
     steps: Vec<(StepKind, String)>,
     warnings: Vec<String>,
+}
+
+struct RecordingMissingBranchAuthorizer {
+    response: bool,
+    requests: Vec<BranchName>,
+}
+
+impl RecordingMissingBranchAuthorizer {
+    fn new(response: bool) -> Self {
+        Self {
+            response,
+            requests: Vec::new(),
+        }
+    }
+}
+
+impl MissingBranchAuthorizer for RecordingMissingBranchAuthorizer {
+    fn authorize_fetch_from_origin(&mut self, branch: &BranchName) -> bool {
+        self.requests.push(branch.clone());
+        self.response
+    }
 }
 
 impl Reporter for RecordingReporter {

@@ -43,12 +43,10 @@ fn metadata_validation_reports_version_path_remote_and_json_errors() {
     let cases = [
         ("{".to_owned(), None),
         (
-            serde_json::to_string(&serde_json::json!({
-                "version": 2,
-                "source_repo": source_path,
-                "remote_name": "local",
-            }))
-            .expect("serialize invalid-version metadata"),
+            format!(
+                r#"{{"version":2,"source_repo":{},"remote_name":"local"}}"#,
+                serde_json::to_string(&source_path).expect("serialize source path")
+            ),
             Some("unsupported metadata version 2"),
         ),
         (
@@ -56,12 +54,10 @@ fn metadata_validation_reports_version_path_remote_and_json_errors() {
             Some("source_repo must be an absolute path"),
         ),
         (
-            serde_json::to_string(&serde_json::json!({
-                "version": 1,
-                "source_repo": source_path,
-                "remote_name": "bad remote",
-            }))
-            .expect("serialize invalid-remote metadata"),
+            format!(
+                r#"{{"version":1,"source_repo":{},"remote_name":"bad remote"}}"#,
+                serde_json::to_string(&source_path).expect("serialize source path")
+            ),
             Some("invalid ref name: bad remote"),
         ),
     ];
@@ -86,13 +82,10 @@ fn metadata_unknown_fields_are_rejected_without_legacy_fallback() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("outpost");
     let opened = Outpost::at_with(&outpost, &fixture.git_env).expect("opened outpost");
-    let contents = serde_json::to_string(&serde_json::json!({
-        "version": 1,
-        "source_repo": canonical(&fixture.source),
-        "remote_name": "local",
-        "extra": true,
-    }))
-    .expect("serialize unknown-field metadata");
+    let contents = format!(
+        r#"{{"version":1,"source_repo":{},"remote_name":"local","extra":true}}"#,
+        serde_json::to_string(&canonical(&fixture.source)).expect("serialize source path")
+    );
     metadata_json(&opened.metadata_path(), &contents);
 
     let error = match Outpost::at_with(&outpost, &fixture.git_env) {

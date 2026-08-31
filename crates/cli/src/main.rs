@@ -13,7 +13,7 @@ use cli::{Cli, Command, ConfigCommand, PathTargetArg, ShellCommand, SourceComman
 use exit::CliResult;
 use outpost_core::selector::OutpostSelector;
 use outpost_core::{
-    ConfigKey, ConfigValue, Outpost, OutpostError, Reporter, SourceRepo, StepKind, ops,
+    BranchName, ConfigKey, ConfigValue, Outpost, OutpostError, Reporter, SourceRepo, StepKind, ops,
 };
 use reporter_impls::StderrReporter;
 
@@ -44,7 +44,21 @@ fn dispatch(cli: Cli) -> CliResult<()> {
     match cli.command {
         Command::Add(args) => {
             let source = require_source("add", &cwd)?;
-            let outpost = ops::add::run(&source, args.to_options(&cwd, &source)?, &mut reporter)?;
+            let opts = args.to_options(&cwd, &source)?;
+            let mut authorizer = TerminalMissingBranchAuthorizer;
+            let missing_branch_authorization = if args.fetch_missing {
+                ops::add::MissingBranchAuthorization::AllowFetchFromOrigin
+            } else if terminal_prompts_available() {
+                ops::add::MissingBranchAuthorization::Ask(&mut authorizer)
+            } else {
+                ops::add::MissingBranchAuthorization::LocalOnly
+            };
+            let outpost = ops::add::run_with_missing_branch(
+                &source,
+                opts,
+                missing_branch_authorization,
+                &mut reporter,
+            )?;
             output::print_added(&outpost);
         }
         Command::Pull(_) => {
@@ -144,7 +158,7 @@ fn dispatch(cli: Cli) -> CliResult<()> {
                     opts,
                     ops::remove::BranchCleanupMode::Disabled,
                 )?
-            } else if cleanup_prompts_available() {
+            } else if terminal_prompts_available() {
                 let status = gh::GhStatus::detect(&source);
                 let provider = status.provider();
                 let mut prompt = TerminalBranchCleanupPrompt;
@@ -285,8 +299,20 @@ fn print_shell_install_report(report: shell::ShellInstallReport, action: ShellIn
     println!("script: {}", report.script_file.display());
 }
 
-fn cleanup_prompts_available() -> bool {
+fn terminal_prompts_available() -> bool {
     io::stdin().is_terminal() && io::stderr().is_terminal()
+}
+
+struct TerminalMissingBranchAuthorizer;
+
+impl ops::add::MissingBranchAuthorizer for TerminalMissingBranchAuthorizer {
+    fn authorize_fetch_from_origin(&mut self, branch: &BranchName) -> bool {
+        prompt_yes_no(&format!(
+            "Branch '{}' does not exist locally. Fetch 'origin/{}' and create a tracking branch? [y/N] ",
+            branch.as_str(),
+            branch.as_str()
+        ))
+    }
 }
 
 struct TerminalBranchCleanupPrompt;

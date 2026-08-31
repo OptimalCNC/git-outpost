@@ -16,7 +16,12 @@ fn invoker_applies_its_cwd_and_environment_to_the_child() {
     assert_eq!(
         git.run_capture(["context"])
             .expect("fake git should succeed"),
-        format!("cwd={}\nenv=per-invoker-value", fake.cwd.to_string_lossy())
+        format!(
+            "cwd={}\nenv=per-invoker-value",
+            fs::canonicalize(&fake.cwd)
+                .expect("canonical working directory")
+                .to_string_lossy()
+        )
     );
 }
 

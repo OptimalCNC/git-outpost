@@ -27,9 +27,33 @@ pub struct AddOptions {
     pub remote_name: RemoteName,
 }
 
+pub trait MissingBranchAuthorizer {
+    fn authorize_fetch_from_origin(&mut self, branch: &BranchName) -> bool;
+}
+
+pub enum MissingBranchAuthorization<'a> {
+    LocalOnly,
+    AllowFetchFromOrigin,
+    Ask(&'a mut dyn MissingBranchAuthorizer),
+}
+
 pub fn run(
     source: &SourceRepo,
     opts: AddOptions,
+    reporter: &mut dyn Reporter,
+) -> OutpostResult<Outpost> {
+    run_with_missing_branch(
+        source,
+        opts,
+        MissingBranchAuthorization::LocalOnly,
+        reporter,
+    )
+}
+
+pub fn run_with_missing_branch(
+    source: &SourceRepo,
+    opts: AddOptions,
+    missing_branch_authorization: MissingBranchAuthorization<'_>,
     reporter: &mut dyn Reporter,
 ) -> OutpostResult<Outpost> {
     let AddOptions {
@@ -40,7 +64,8 @@ pub fn run(
     let destination = resolve_destination(source, &destination)?;
     check_destination_clean(&destination)?;
 
-    let branch = resolve_existing_branch(source, &checkout)?;
+    let branch =
+        resolve_existing_branch(source, &checkout, missing_branch_authorization, reporter)?;
 
     source.git().run_check([
         OsString::from("-c"),
@@ -103,24 +128,57 @@ fn resolve_destination(source: &SourceRepo, destination: &Path) -> OutpostResult
 fn resolve_existing_branch(
     source: &SourceRepo,
     checkout: &AddCheckout,
+    missing_branch_authorization: MissingBranchAuthorization<'_>,
+    reporter: &mut dyn Reporter,
 ) -> OutpostResult<BranchName> {
     match checkout {
-        AddCheckout::CheckoutExisting { target_branch } => {
-            resolve_target_branch(source, target_branch)
-        }
-        AddCheckout::NewBranch { target_branch, .. } => {
-            resolve_target_branch(source, target_branch)
-        }
+        AddCheckout::CheckoutExisting { target_branch } => resolve_target_branch(
+            source,
+            target_branch,
+            missing_branch_authorization,
+            reporter,
+        ),
+        AddCheckout::NewBranch { target_branch, .. } => resolve_target_branch(
+            source,
+            target_branch,
+            missing_branch_authorization,
+            reporter,
+        ),
     }
 }
 
 fn resolve_target_branch(
     source: &SourceRepo,
     target_branch: &Option<BranchName>,
+    mut missing_branch_authorization: MissingBranchAuthorization<'_>,
+    reporter: &mut dyn Reporter,
 ) -> OutpostResult<BranchName> {
     match target_branch {
         Some(branch) => {
-            require_branch_exists(source, branch)?;
+            if !source.branch_exists(branch)? {
+                let authorized = match &mut missing_branch_authorization {
+                    MissingBranchAuthorization::LocalOnly => false,
+                    MissingBranchAuthorization::AllowFetchFromOrigin => true,
+                    MissingBranchAuthorization::Ask(authorizer) => {
+                        authorizer.authorize_fetch_from_origin(branch)
+                    }
+                };
+                if !authorized {
+                    return Err(branch_not_found(source, branch));
+                }
+                if !source.branch_exists(branch)? {
+                    let origin = RemoteName::parse("origin")?;
+                    reporter.step(
+                        StepKind::SourceFetch,
+                        &format!(
+                            "fetching missing source branch {}/{}",
+                            origin.as_str(),
+                            branch.as_str()
+                        ),
+                    );
+                    source.materialize_remote_branch(&origin, branch)?;
+                }
+            }
             Ok(branch.clone())
         }
         None => {
@@ -137,14 +195,10 @@ fn resolve_target_branch(
     }
 }
 
-fn require_branch_exists(source: &SourceRepo, branch: &BranchName) -> OutpostResult<()> {
-    if source.branch_exists(branch)? {
-        Ok(())
-    } else {
-        Err(OutpostError::BranchNotFound {
-            branch: branch.as_str().to_owned(),
-            repo: source.work_tree().to_path_buf(),
-        })
+fn branch_not_found(source: &SourceRepo, branch: &BranchName) -> OutpostError {
+    OutpostError::BranchNotFound {
+        branch: branch.as_str().to_owned(),
+        repo: source.work_tree().to_path_buf(),
     }
 }
 

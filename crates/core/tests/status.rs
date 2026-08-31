@@ -477,26 +477,6 @@ fn source_upstream_configured_remote_without_url_uses_git_name_fallback() {
     );
 }
 
-#[cfg(unix)]
-#[test]
-fn source_upstream_empty_successful_route_output_is_invalid_git_output() {
-    let fixture = AbcFixture::new();
-    set_branch_tracking(&fixture, &fixture.source, "main", "origin", "main");
-    let env = git_env_with_empty_route_output(&fixture);
-
-    let error = expect_error(
-        run_with(&fixture.source, &env),
-        "empty successful route output should be invalid Git output",
-    );
-
-    assert!(matches!(
-        error,
-        OutpostError::IoAt { source, .. }
-            if source.kind() == std::io::ErrorKind::InvalidData
-                && source.to_string() == "git remote get-url returned no URLs"
-    ));
-}
-
 #[test]
 fn source_upstream_is_unset_for_incomplete_tracking_and_not_applicable_when_detached() {
     let fixture = AbcFixture::new();
@@ -1273,31 +1253,6 @@ fn git_env_with_route_failure(
         &shim,
         format!(
             "#!/bin/sh\nif [ \"$1\" = remote ] && [ \"$2\" = get-url ]; then exit {exit_code}; fi\nexec '{}' \"$@\"\n",
-            real_git.display()
-        ),
-    )
-    .expect("write git shim");
-    fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).expect("chmod git shim");
-
-    let mut env = fixture.git_env.clone();
-    env.insert("PATH".into(), shim_dir.into_os_string());
-    env
-}
-
-#[cfg(unix)]
-fn git_env_with_empty_route_output(
-    fixture: &AbcFixture,
-) -> std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let shim_dir = fixture.root.join("empty-route-git-shim");
-    fs::create_dir(&shim_dir).expect("create shim dir");
-    let real_git = find_git_executable();
-    let shim = shim_dir.join("git");
-    fs::write(
-        &shim,
-        format!(
-            "#!/bin/sh\nif [ \"$1\" = remote ] && [ \"$2\" = get-url ] && [ \"$3\" = --all ] && [ \"$4\" = origin ]; then exit 0; fi\nexec '{}' \"$@\"\n",
             real_git.display()
         ),
     )

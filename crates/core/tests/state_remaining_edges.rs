@@ -10,10 +10,6 @@ use outpost_core::{
     SourceStateStore,
 };
 
-fn canonical(path: &Path) -> PathBuf {
-    fs::canonicalize(path).expect("canonical path")
-}
-
 #[test]
 fn raw_metadata_read_rejects_invalid_managed_boolean() {
     let fixture = AbcFixture::new();
@@ -26,7 +22,7 @@ fn raw_metadata_read_rejects_invalid_managed_boolean() {
     assert!(matches!(
         error,
         OutpostError::BadMetadata { outpost, reason }
-            if outpost == canonical(&fixture.source)
+            if outpost == fixture.source
                 && reason == "invalid outpost.managed value: maybe"
     ));
 }

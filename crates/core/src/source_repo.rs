@@ -353,6 +353,39 @@ impl SourceRepo {
         self.git.run_check(args)
     }
 
+    pub(crate) fn materialize_remote_branch(
+        &self,
+        remote: &RemoteName,
+        branch: &BranchName,
+    ) -> OutpostResult<()> {
+        let remote_tracking_ref = format!("refs/remotes/{}/{}", remote.as_str(), branch.as_str());
+        let fetch_refspec = format!("+refs/heads/{}:{remote_tracking_ref}", branch.as_str());
+        self.git
+            .run_check(["fetch", "--no-tags", remote.as_str(), &fetch_refspec])?;
+
+        let fetch_key = format!("remote.{}.fetch", remote.as_str());
+        let already_configured =
+            if self
+                .git
+                .run_status(["config", "--local", "--get-all", &fetch_key])?
+            {
+                self.git
+                    .run_capture(["config", "--local", "--get-all", &fetch_key])?
+                    .lines()
+                    .any(|configured| configured == fetch_refspec)
+            } else {
+                false
+            };
+        if !already_configured {
+            self.git
+                .run_check(["config", "--local", "--add", &fetch_key, &fetch_refspec])?;
+        }
+
+        let remote_branch = format!("{}/{}", remote.as_str(), branch.as_str());
+        self.git
+            .run_check(["branch", "--track", branch.as_str(), &remote_branch])
+    }
+
     fn remote_head_branch(&self, remote: &RemoteName) -> OutpostResult<Option<BranchName>> {
         let output = self
             .git
