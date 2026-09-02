@@ -191,13 +191,15 @@ mod tests {
 
         initialize(&git, &metadata).expect("initialize metadata");
         let error = initialize(&git, &metadata).expect_err("metadata must not be replaced");
+        let expected_path = fs::canonicalize(outpost.join(".git"))
+            .expect("canonical git dir")
+            .join("outpost/metadata.json");
 
-        assert!(matches!(
-            error,
-            OutpostError::IoAt { path, source }
-                if path == outpost.join(".git/outpost/metadata.json")
-                    && source.kind() == std::io::ErrorKind::AlreadyExists
-        ));
+        let OutpostError::IoAt { path, source } = error else {
+            panic!("expected path-qualified I/O error");
+        };
+        assert_eq!(path, expected_path);
+        assert_eq!(source.kind(), std::io::ErrorKind::AlreadyExists);
     }
 
     fn init_repo(path: &Path) {
