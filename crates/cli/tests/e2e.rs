@@ -1339,14 +1339,14 @@ fn list_prints_id_column_and_lifecycle_accepts_id_prefix() {
     let stdout = common::stdout(&list);
     let first_line = stdout.lines().next().expect("list line");
     let columns = first_line.split('\t').collect::<Vec<_>>();
-    assert!(
-        columns.len() >= 5,
-        "list output should include id, path, branch, state, and ahead/behind columns:\n{stdout}"
-    );
+    assert_eq!(columns.len(), 4, "unexpected list columns:\n{stdout}");
     let id_prefix = columns[0];
     assert_eq!(id_prefix.len(), 5);
     assert!(id_prefix.chars().all(|ch| ch.is_ascii_hexdigit()));
     assert_eq!(columns[1], outpost_display);
+    let head = fixture.git_capture(&outpost, ["rev-parse", "HEAD"]);
+    assert_eq!(columns[2], &head[..12]);
+    assert_eq!(columns[3], "[main]");
 
     let lock = common::run(
         fixture

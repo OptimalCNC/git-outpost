@@ -495,10 +495,14 @@ shows one outpost per line and should include:
 
 - shortest unique derived outpost ID prefix, minimum 5 hex characters
 - outpost path
-- current branch
-- dirty or clean state
-- ahead/behind state relative to the local source repository
-- whether the outpost path still exists
+- the first 12 hexadecimal characters of the outpost's `HEAD`
+- the current branch, or a detached-`HEAD` annotation
+- registry lock, missing-path, and reverse-link integrity annotations
+
+`list` reads local registry, Git identity, and outpost metadata only. It does
+not scan working-tree changes, calculate ahead/behind relationships, fetch,
+contact remotes, update refs, or refresh the index. Use `gop status` when
+working-tree or relationship state is needed.
 
 With `-v`, include lock reasons and other human-readable annotations. Stable
 machine-readable list output is deferred until the fields have settled.
@@ -506,7 +510,7 @@ machine-readable list output is deferred until the fields have settled.
 Example:
 
 ```text
-abc12	/path/to/outpost	main	clean	ahead 0, behind 0	locked
+abc12	/path/to/outpost	e20c165518ea	[main]	(locked)
 ```
 
 When run in a managed outpost, `list` resolves the source repository from

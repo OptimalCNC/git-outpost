@@ -19,34 +19,22 @@ fn list_reports_detached_outpost_without_branch_or_comparison() {
         .run_check(["checkout", "--detach"])
         .expect("detach outpost");
     let source = fixture.source_repo().expect("source repo");
+    let expected_oid = fixture
+        .invoker(&outpost_path)
+        .run_capture(["rev-parse", "HEAD"])
+        .expect("detached HEAD");
 
     let summaries = list::run(&source).expect("list detached outpost");
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].path, canonical(&outpost_path));
-    assert!(summaries[0].current_branch.is_none());
-    assert!(summaries[0].ahead_behind.is_none());
-    assert_eq!(summaries[0].state, list::OutpostState::Clean);
-}
-
-#[test]
-fn list_suppresses_comparison_when_outpost_has_no_tracking() {
-    let fixture = AbcFixture::new();
-    let outpost_path = fixture.add_outpost("C").expect("add outpost");
-    fixture
-        .invoker(&outpost_path)
-        .run_check(["config", "--local", "--unset", "branch.main.remote"])
-        .expect("remove tracking remote");
-    let source = fixture.source_repo().expect("source repo");
-
-    let summaries = list::run(&source).expect("list untracked outpost");
-
     assert_eq!(
-        summaries[0].current_branch.as_ref().map(BranchName::as_str),
-        Some("main")
+        summaries[0].state,
+        list::OutpostState::Present {
+            head_oid: expected_oid,
+            head: list::OutpostHead::Detached,
+        }
     );
-    assert!(summaries[0].ahead_behind.is_none());
-    assert_eq!(summaries[0].state, list::OutpostState::Clean);
 }
 
 #[test]

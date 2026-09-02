@@ -4,8 +4,8 @@ mod common;
 use std::fs;
 
 use common::fixture::AbcFixture;
-use outpost_core::ops::list::{OutpostState, run};
-use outpost_core::{OutpostError, SourceRepo};
+use outpost_core::ops::list::{OutpostHead, OutpostState, run};
+use outpost_core::{OutpostError, RegistryEntry, RemoteName, SourceRepo};
 
 #[test]
 fn list_empty_source_returns_no_summaries() {
@@ -62,67 +62,50 @@ fn list_includes_short_unique_outpost_id_prefixes() {
 #[test]
 fn list_reports_current_branch_for_each_outpost() {
     let fixture = AbcFixture::new();
-    fixture.add_outpost("C").expect("add C");
+    let outpost = fixture.add_outpost("C").expect("add C");
     let source = fixture.source_repo().expect("source repo");
+    let expected_oid = fixture
+        .invoker(&outpost)
+        .run_capture(["rev-parse", "HEAD"])
+        .expect("outpost HEAD");
 
     let summaries = run(&source).expect("list summaries");
 
     assert_eq!(summaries.len(), 1);
-    assert_eq!(
-        summaries[0]
-            .current_branch
-            .as_ref()
-            .expect("current branch")
-            .as_str(),
-        "main"
-    );
-    assert_eq!(summaries[0].state, OutpostState::Clean);
+    match &summaries[0].state {
+        OutpostState::Present {
+            head_oid,
+            head: OutpostHead::Attached(branch),
+        } => {
+            assert_eq!(head_oid, &expected_oid);
+            assert_eq!(branch.as_str(), "main");
+        }
+        state => panic!("expected attached outpost, got {state:?}"),
+    }
 }
 
 #[test]
-fn list_reports_dirty_for_untracked_outpost_file() {
-    let fixture = AbcFixture::new();
-    fixture.dirty_outpost("C").expect("dirty C");
-    let source = fixture.source_repo().expect("source repo");
-
-    let summaries = run(&source).expect("list summaries");
-
-    assert_eq!(summaries.len(), 1);
-    assert_eq!(summaries[0].state, OutpostState::Dirty);
-}
-
-#[test]
-fn list_reports_outpost_ahead_of_source() {
+fn list_does_not_fetch_or_change_source_tracking_ref() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add C");
-    fixture
-        .commit_in_outpost(&outpost, "outpost commit")
-        .expect("commit in outpost");
-    let source = fixture.source_repo().expect("source repo");
-
-    let summaries = run(&source).expect("list summaries");
-
-    assert_eq!(summaries.len(), 1);
-    let ahead_behind = summaries[0].ahead_behind.expect("ahead behind");
-    assert_eq!(ahead_behind.ahead, 1);
-    assert_eq!(ahead_behind.behind, 0);
-}
-
-#[test]
-fn list_reports_outpost_behind_source() {
-    let fixture = AbcFixture::new();
-    fixture.add_outpost("C").expect("add C");
-    fixture
+    let tracking_ref = "refs/remotes/local/main";
+    let before = fixture
+        .invoker(&outpost)
+        .run_capture(["rev-parse", tracking_ref])
+        .expect("tracking ref before list");
+    let source_head = fixture
         .commit_in_source("source commit")
         .expect("commit in source");
+    assert_ne!(before, source_head);
     let source = fixture.source_repo().expect("source repo");
 
-    let summaries = run(&source).expect("list summaries");
+    run(&source).expect("list summaries");
 
-    assert_eq!(summaries.len(), 1);
-    let ahead_behind = summaries[0].ahead_behind.expect("ahead behind");
-    assert_eq!(ahead_behind.ahead, 0);
-    assert_eq!(ahead_behind.behind, 1);
+    let after = fixture
+        .invoker(&outpost)
+        .run_capture(["rev-parse", tracking_ref])
+        .expect("tracking ref after list");
+    assert_eq!(after, before);
 }
 
 #[test]
@@ -137,7 +120,6 @@ fn list_reports_missing_registered_outpost() {
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].path, canonical_missing(&outpost));
     assert_eq!(summaries[0].state, OutpostState::Missing);
-    assert!(summaries[0].current_branch.is_none());
 }
 
 #[test]
@@ -152,7 +134,6 @@ fn list_reports_not_managed_registered_path() {
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].state, OutpostState::NotManaged);
-    assert!(summaries[0].current_branch.is_none());
 }
 
 #[test]
@@ -169,7 +150,30 @@ fn list_reports_wrong_source_outpost_as_not_managed() {
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].state, OutpostState::NotManaged);
-    assert!(summaries[0].current_branch.is_none());
+}
+
+#[test]
+fn list_reports_registry_remote_mismatch_as_not_managed() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+    let source = fixture.source_repo().expect("source repo");
+    let mut registry = source.registry_mut().expect("registry mut");
+    assert!(registry.remove_by_path(&outpost).expect("remove entry"));
+    registry
+        .add(
+            RegistryEntry::new(
+                outpost,
+                RemoteName::parse("different").expect("remote name"),
+            )
+            .expect("registry entry"),
+        )
+        .expect("add mismatched entry");
+    registry.save().expect("save registry");
+
+    let summaries = run(&source).expect("list summaries");
+
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].state, OutpostState::NotManaged);
 }
 
 #[test]

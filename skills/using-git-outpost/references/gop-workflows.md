@@ -86,14 +86,18 @@ Worktree lifecycle equivalents are co-located under [Context and Lifecycle](#con
 | File-level changes | `git status` | Ordinary working-tree status |
 | Source path | `gop path src` | Prints the associated source path |
 | Registered outpost path | `gop path <path-or-id>` | Prints a live managed path |
-| Registered outposts | `gop list` | May fetch each live outpost's source-tracking ref; comparison failures display `-` |
+| Registered outposts | `gop list` | Local read-only checkout identity; does not scan changes, fetch, or update refs or state |
 | Broader state and source-branch cleanup evidence | `gop analyze [<outpost>]` | May fetch refs and contact GitHub |
 
 Use `gop path` plus the execution tool's working-directory option for agent navigation. Binary `gop cd` only prints shell-integration guidance unless the calling shell has installed the wrapper.
 
 For `gop path` and shell-backed `gop cd`, the exact token `src` is reserved for the source. Use an explicit path such as `./src` or `../src` to navigate to an outpost named `src`; lifecycle selectors do not reserve it.
 
-Source status supplies the local outpost layout for orientation and container choice. When the task specifically requires the fetching comparisons from `gop list`, first verify that each existing registered outpost's local metadata and effective fetch routes identify the source. Treat `-` as an unavailable comparison and exit 0 as listing success, not proof that every ref refreshed.
+Source status supplies the local outpost layout for orientation and container
+choice. `gop list` supplies registered paths, `HEAD` identities, branches,
+locks, and missing or not-managed annotations. It does not establish
+working-tree cleanliness or ahead/behind relationships; use `gop status` for
+those local diagnostics.
 
 For a temporary wrapper, evaluate `gop shell init <bash|zsh>` in the current shell. Persistent `gop shell install <bash|zsh>` writes a generated script and a managed startup-file block; `uninstall` removes those managed artifacts. For either mutation, `Ready(command)` names the shell, startup file, script path, and expected postconditions. After install, inspect both files and verify wrapper discovery in a matching shell. Uninstall completion is the absence of the managed block and generated script; manually pasted init snippets remain user-owned and may keep wrapper discovery active.
 

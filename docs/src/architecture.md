@@ -1117,23 +1117,35 @@ outpost's metadata; there is no hardcoded `local`.
 
 ```rust
 pub struct OutpostSummary {
+    pub display_id: String,
     pub path: PathBuf,
-    pub current_branch: Option<BranchName>,           // None if missing or detached
     pub state: OutpostState,
-    pub ahead_behind: Option<AheadBehind>,            // None if missing or no upstream
     pub locked: bool,
     pub lock_reason: Option<String>,
 }
 
-pub enum OutpostState { Clean, Dirty, Missing, NotManaged }
+pub enum OutpostState {
+    Present { head_oid: String, head: OutpostHead },
+    Missing,
+    NotManaged,
+}
+
+pub enum OutpostHead { Attached(BranchName), Detached }
 
 pub fn run(source: &SourceRepo) -> OutpostResult<Vec<OutpostSummary>>;
 ```
 
-The core operation always lists from a `SourceRepo`. CLI dispatch lets
-`list` run from either the source repository or a managed outpost: it
-resolves the effective cwd after global `-C` processing, and when that
-cwd is a managed outpost, it reads the typed outpost metadata to open its
+The source registry determines inclusion and output order. Live entries are
+inspected concurrently, using at most eight workers, and each uses one local
+`git rev-parse` invocation to read the canonical worktree, exact Git directory,
+`HEAD` object ID, and attached branch or detached state. Reverse-link safety is
+then checked from the outpost metadata's source path and remote name. Missing
+paths and failed integrity checks remain visible as annotations.
+
+`list` does not inspect working-tree changes, calculate ahead/behind state,
+fetch, contact remotes, update refs, refresh the index, or write Git Outpost
+state. CLI dispatch lets it run from either the source repository or a managed
+outpost: after global `-C` processing, an outpost invocation resolves its
 recorded source before calling `ops::list::run(&source)`.
 
 #### 5.9.3 `ops/status.rs`
@@ -2282,14 +2294,15 @@ test.
 |---|---|
 | L-01 | Empty source repo: `list` returns `[]`. |
 | L-02 | After three `add`s, `list` returns three summaries with correct paths. |
-| L-03 | `list` reports current branch for each outpost. |
-| L-04 | `list` reports `Dirty` after `echo > C/x.txt` (untracked file alone is enough). |
-| L-05 | `list` reports `(ahead, behind) = (1, 0)` after one commit in C. |
-| L-06 | `list` reports `(0, 1)` after one commit in B. |
-| L-07 | `list` flags an outpost whose directory was deleted as `Missing`. |
-| L-08 | `list` flags an outpost whose current metadata is absent as `NotManaged` rather than crashing. |
-| L-09 | `list` outside a source repo returns `NotARepo`. |
-| L-10 | `ops::list::run` includes `lock_reason` in returned `OutpostSummary` values for locked outposts; CLI `-v` only controls formatting. |
+| L-03 | `list` returns minimum-length unique ID prefixes for registered outposts. |
+| L-04 | `list` reports each live outpost's `HEAD` object ID and attached branch. |
+| L-05 | `list` does not fetch or change an outpost's source-tracking ref. |
+| L-06 | `list` flags an outpost whose directory was deleted as `Missing`. |
+| L-07 | `list` flags an outpost whose metadata is absent as `NotManaged` rather than crashing. |
+| L-08 | `list` flags metadata recorded for a different source as `NotManaged`. |
+| L-09 | `list` flags a registry/metadata remote-name mismatch as `NotManaged`. |
+| L-10 | `list` outside a source repo returns `NotARepo`. |
+| L-11 | `ops::list::run` includes `lock_reason` in returned `OutpostSummary` values for locked outposts; CLI `-v` only controls formatting. |
 
 ### 11.4 Integration: `lock` / `move` / `unlock` (`crates/core/tests/lock_move_unlock.rs`)
 

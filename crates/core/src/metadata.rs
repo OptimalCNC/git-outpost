@@ -126,6 +126,13 @@ pub(crate) fn current_store_at_git(git: &GitInvoker) -> OutpostResult<GitDirOutp
     Ok(GitDirOutpostStore::new(git.cwd().to_path_buf(), git_dir))
 }
 
+pub(crate) fn read_current_metadata(
+    work_tree: &Path,
+    git_dir: &Path,
+) -> OutpostResult<MetadataState> {
+    GitDirOutpostStore::new(work_tree.to_path_buf(), git_dir.to_path_buf()).read_current()
+}
+
 #[derive(Clone)]
 pub(crate) struct GitDirOutpostStore {
     work_tree: PathBuf,

@@ -22,20 +22,36 @@ pub fn print_added(outpost: &outpost_core::Outpost) {
 
 pub fn print_list(summaries: &[ops::list::OutpostSummary], verbose: bool) {
     for summary in summaries {
-        let branch = summary
-            .current_branch
-            .as_ref()
-            .map(|branch| branch.as_str())
-            .unwrap_or("-");
-        println!(
-            "{}\t{}\t{}\t{}\t{}{}",
-            summary.display_id,
-            summary.path.display(),
-            branch,
-            list_state(summary.state),
-            format_ahead_behind(summary.ahead_behind),
-            lock_suffix(summary.locked)
-        );
+        match &summary.state {
+            ops::list::OutpostState::Present { head_oid, head } => {
+                let head = match head {
+                    ops::list::OutpostHead::Attached(branch) => {
+                        format!("[{}]", branch.as_str())
+                    }
+                    ops::list::OutpostHead::Detached => "(detached HEAD)".to_owned(),
+                };
+                println!(
+                    "{}\t{}\t{}\t{}{}",
+                    summary.display_id,
+                    summary.path.display(),
+                    short_list_oid(head_oid),
+                    head,
+                    lock_suffix(summary.locked)
+                );
+            }
+            ops::list::OutpostState::Missing => println!(
+                "{}\t{}\t-\t(missing){}",
+                summary.display_id,
+                summary.path.display(),
+                lock_suffix(summary.locked)
+            ),
+            ops::list::OutpostState::NotManaged => println!(
+                "{}\t{}\t-\t(not managed){}",
+                summary.display_id,
+                summary.path.display(),
+                lock_suffix(summary.locked)
+            ),
+        }
         if verbose {
             if let Some(reason) = &summary.lock_reason {
                 println!("  lock-reason: {reason}");
@@ -357,17 +373,12 @@ pub fn print_prune(report: &ops::prune::PruneReport, verbose: bool) {
     println!("locked: {}", report.locked_entries.len());
 }
 
-fn list_state(state: ops::list::OutpostState) -> &'static str {
-    match state {
-        ops::list::OutpostState::Clean => "clean",
-        ops::list::OutpostState::Dirty => "dirty",
-        ops::list::OutpostState::Missing => "missing",
-        ops::list::OutpostState::NotManaged => "not-managed",
-    }
+fn short_list_oid(oid: &str) -> &str {
+    oid.get(..12).unwrap_or(oid)
 }
 
 fn lock_suffix(locked: bool) -> &'static str {
-    if locked { "\tlocked" } else { "" }
+    if locked { "\t(locked)" } else { "" }
 }
 
 fn format_ahead_behind(value: Option<AheadBehind>) -> String {

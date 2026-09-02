@@ -35,6 +35,10 @@ impl BranchName {
         }
     }
 
+    pub(crate) fn from_validated_git_output(name: String) -> Self {
+        Self(name)
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
