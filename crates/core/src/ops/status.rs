@@ -2,12 +2,11 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use crate::metadata::{MetadataState, MigratingOutpostStore, RawMetadata};
+use crate::metadata::{self, Metadata, MetadataState};
 use crate::outpost::AheadBehind;
 use crate::source_repo::{
     SourceRepo, canonicalize_path, invoker_at, is_dirty, read_optional_config,
 };
-use crate::state::OutpostStateStore;
 use crate::{BranchName, GitInvoker, OutpostError, OutpostResult, RefName, RemoteName};
 
 mod routes;
@@ -154,9 +153,7 @@ pub enum SourceUpstreamStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigProblem {
-    MissingSourceRepoConfig,
     SourceMissing(PathBuf),
-    MissingRemoteNameConfig,
     LocalRemoteMismatch {
         configured: PathBuf,
         actual: PathBuf,
@@ -192,26 +189,13 @@ pub fn run_with(
 ) -> OutpostResult<StatusReport> {
     let (outpost_path, git_dir) = discover_location(target_path, env)?;
     let git = invoker_at(&outpost_path, env);
-    let store = MigratingOutpostStore::new(outpost_path.clone(), git_dir, git.clone());
-    match store.read_metadata()? {
+    match metadata::read(&git_dir)? {
         MetadataState::Absent => source::build(outpost_path, &git, env).map(StatusReport::Source),
-        MetadataState::Valid(metadata) => report_from_raw(
-            outpost_path,
-            RawMetadata {
-                managed: Some(true),
-                source_repo: Some(metadata.source_repo),
-                remote_name: Some(metadata.remote_name),
-            },
-            &git,
-            env,
-        )
-        .map(StatusReport::Outpost),
-        MetadataState::Invalid(problem) => {
-            if let Some(raw) = problem.legacy {
-                report_from_raw(outpost_path, raw, &git, env).map(StatusReport::Outpost)
-            } else {
-                report_from_invalid_metadata(outpost_path, problem, &git).map(StatusReport::Outpost)
-            }
+        MetadataState::Valid(metadata) => {
+            report_from_metadata(outpost_path, metadata, &git, env).map(StatusReport::Outpost)
+        }
+        MetadataState::Invalid(reason) => {
+            report_from_invalid_metadata(outpost_path, reason, &git).map(StatusReport::Outpost)
         }
     }
 }
@@ -239,7 +223,7 @@ fn discover_location(
 
 fn report_from_invalid_metadata(
     outpost_path: PathBuf,
-    problem: crate::metadata::MetadataProblems,
+    reason: String,
     git: &GitInvoker,
 ) -> OutpostResult<OutpostStatus> {
     let current_branch = current_branch_or_detached(git)?;
@@ -259,54 +243,42 @@ fn report_from_invalid_metadata(
         outpost_dirty,
         source_ahead_behind_upstream: None,
         outpost_ahead_behind_source: None,
-        problems: vec![ConfigProblem::InvalidMetadata {
-            reason: problem.reason,
-        }],
+        problems: vec![ConfigProblem::InvalidMetadata { reason }],
     })
 }
 
-fn report_from_raw(
+fn report_from_metadata(
     outpost_path: PathBuf,
-    raw: RawMetadata,
+    metadata: Metadata,
     git: &GitInvoker,
     env: &BTreeMap<OsString, OsString>,
 ) -> OutpostResult<OutpostStatus> {
     let mut problems = Vec::new();
-    let source_path = match raw.source_repo {
-        Some(path) => Some(canonicalize_existing_or_missing(&path)?),
-        None => {
-            problems.push(ConfigProblem::MissingSourceRepoConfig);
-            None
-        }
-    };
-    if raw.remote_name.is_none() {
-        problems.push(ConfigProblem::MissingRemoteNameConfig);
+    let source_path = canonicalize_existing_or_missing(&metadata.source_repo)?;
+    let source_present = path_is_present(&source_path)?;
+    if !source_present {
+        problems.push(ConfigProblem::SourceMissing(source_path.clone()));
     }
-
-    let source_present = source_path
-        .as_ref()
-        .map(|path| path_is_present(path))
-        .transpose()?
-        .unwrap_or(false);
-    if let Some(path) = source_path.as_ref().filter(|_| !source_present) {
-        problems.push(ConfigProblem::SourceMissing(path.clone()));
-    }
-    let remote_name = raw.remote_name;
+    let remote_name = metadata.remote_name;
     let current_branch = current_branch_or_detached(git)?;
     let outpost_dirty = is_dirty(git)?;
     let mut source_ahead_behind_upstream = None;
     let mut outpost_ahead_behind_source = None;
     let mut source_upstream = SourceUpstreamStatus::Unavailable;
 
-    if let Some(source_path) = source_path.as_ref().filter(|_| source_present) {
-        let source = SourceRepo::at_with(source_path, env)?;
-        if let Some(remote_name) = remote_name.as_ref() {
-            check_local_remote(git, &outpost_path, source_path, remote_name, &mut problems)?;
-        }
+    if source_present {
+        let source = SourceRepo::at_with(&source_path, env)?;
+        check_local_remote(
+            git,
+            &outpost_path,
+            &source_path,
+            &remote_name,
+            &mut problems,
+        )?;
         check_registry(&source, &outpost_path, &mut problems)?;
 
         if let Some(branch) = current_branch.as_ref() {
-            let source_git = invoker_at(source_path, env);
+            let source_git = invoker_at(&source_path, env);
             let source_branch_ref = format!("refs/heads/{}", branch.as_str());
             let source_branch_exists = ref_exists(&source_git, &source_branch_ref)?;
             if !source_branch_exists {
@@ -315,10 +287,8 @@ fn report_from_raw(
                 });
             }
 
-            if let Some(remote_name) = remote_name.as_ref() {
-                outpost_ahead_behind_source =
-                    ahead_behind_outpost_source(git, branch, remote_name, &mut problems)?;
-            }
+            outpost_ahead_behind_source =
+                ahead_behind_outpost_source(git, branch, &remote_name, &mut problems)?;
 
             if source_branch_exists {
                 source_upstream = read_source_upstream(&source_git, branch, &mut problems)?;
@@ -329,10 +299,10 @@ fn report_from_raw(
         }
     }
 
-    let source = match source_path {
-        None => SourceLocation::Unconfigured,
-        Some(path) if source_present => SourceLocation::Present(path),
-        Some(path) => SourceLocation::Missing(path),
+    let source = if source_present {
+        SourceLocation::Present(source_path)
+    } else {
+        SourceLocation::Missing(source_path)
     };
     let head = match current_branch {
         Some(branch) => OutpostHeadStatus::Attached {
@@ -345,7 +315,7 @@ fn report_from_raw(
     Ok(OutpostStatus {
         outpost_path,
         source,
-        remote_name,
+        remote_name: Some(remote_name),
         head,
         outpost_dirty,
         source_ahead_behind_upstream,
@@ -619,40 +589,4 @@ fn canonicalize_remote_path(outpost_path: &Path, value: &str) -> OutpostResult<P
         outpost_path.join(path)
     };
     canonicalize_existing_or_missing(&path)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn report_from_raw_records_missing_metadata_problems() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        crate::GitInvoker::at(temp.path())
-            .run_check(["init", "--initial-branch=main"])
-            .expect("init repo");
-
-        let report = report_from_raw(
-            temp.path().to_path_buf(),
-            RawMetadata {
-                managed: Some(true),
-                source_repo: None,
-                remote_name: None,
-            },
-            &crate::GitInvoker::at(temp.path()),
-            &BTreeMap::new(),
-        )
-        .expect("report");
-
-        assert_eq!(report.source, SourceLocation::Unconfigured);
-        assert_eq!(report.remote_name, None);
-        assert!(matches!(report.head, OutpostHeadStatus::Attached { .. }));
-        assert_eq!(
-            report.problems,
-            vec![
-                ConfigProblem::MissingSourceRepoConfig,
-                ConfigProblem::MissingRemoteNameConfig,
-            ]
-        );
-    }
 }

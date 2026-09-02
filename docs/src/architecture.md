@@ -27,7 +27,7 @@ repository by editors, devcontainers, and CLIs.
 object store, not hiding Git behavior, not requiring a particular hosting
 provider.
 
-## Current State Storage (v0.5)
+## State Storage
 
 All private Git Outpost state is rooted at the exact per-worktree Git
 directory returned by `git rev-parse --git-dir`:
@@ -38,43 +38,15 @@ directory returned by `git rev-parse --git-dir`:
 <git-dir>/outpost/metadata.json  # outpost-to-source reverse link
 ```
 
-`SourceRepo` and `Outpost` retain canonical worktree and exact Git-directory
-facts in `RepositoryLocation`; no state path is derived from the worktree or
-the shared `git-common-dir`. Linked worktrees consequently own independent
-source state. The files are Git administrative data, survive `git clean -fdx`,
-and are not visible to ignored-file listings.
+`SourceRepo` and `Outpost` retain the canonical worktree and exact Git directory
+directly. State paths are not derived from the worktree or the shared
+`git-common-dir`, so linked worktrees own independent source state. The files
+are Git administrative data, survive `git clean -fdx`, and are not visible to
+ignored-file listings.
 
-The public state seams are role-specific and typed:
-
-```rust
-pub trait SourceStateStore {
-    fn read_config(&self) -> OutpostResult<Stored<SourceConfig>>;
-    fn write_config(&self, config: &SourceConfig) -> OutpostResult<()>;
-    fn read_registry(&self) -> OutpostResult<Stored<Registry>>;
-    fn write_registry(&self, registry: &Registry) -> OutpostResult<()>;
-}
-
-pub trait OutpostStateStore {
-    fn read_metadata(&self) -> OutpostResult<MetadataState>;
-    fn initialize_metadata(&self, metadata: &OutpostMetadata) -> OutpostResult<()>;
-}
-```
-
-`GitDirSourceStore` and `GitDirOutpostStore` are the normal implementations.
-Temporary `MigratingSourceStore` and `MigratingOutpostStore` Adapters wrap
-those implementations and read legacy `<worktree>/.outpost/*.json` files or
-local `outpost.*` Git configuration only when the corresponding new document
-is absent. A present invalid new document is authoritative and never falls
-back. Valid legacy state is atomically copied, re-read, and compared; the
-Adapter then removes only the corresponding legacy file or known local Git
-keys. Reads of valid current state retry cleanup left by an earlier migration.
-The composition points (`SourceRepo::state_store`, outpost discovery, and
-status) are the only long-lived migration coupling.
-
-`gop status` may make only these local migration changes. Its output and
-source/outpost classification remain unchanged for valid legacy state; no
-unrelated worktree files, refs, topology, standard Git configuration, network,
-or other unrelated state is changed.
+`ConfigStore`, `Registry`, and the metadata module each own the schema and I/O
+for their document. `gop status` reads those documents and does not write state,
+refs, topology, standard Git configuration, or network state.
 
 ---
 
@@ -132,9 +104,7 @@ git-outpost/                       # repo root
 │   │   │   ├── source_repo.rs       # SourceRepo type + helpers
 │   │   │   ├── outpost.rs           # Outpost type + helpers
 │   │   │   ├── config.rs            # typed source config façade and JSON schema
-│   │   │   ├── metadata.rs          # typed outpost metadata and current store
-│   │   │   ├── source_state.rs      # source current/migration Adapters
-│   │   │   ├── state.rs             # role-specific state Interfaces and paths
+│   │   │   ├── metadata.rs          # typed outpost metadata and JSON reader/initializer
 │   │   │   ├── outpost_id.rs        # derived registry-scoped outpost ID aliases
 │   │   │   ├── registry.rs          # typed source registry façade and schema
 │   │   │   ├── safety.rs            # dirty/divergence/path checks
@@ -481,7 +451,6 @@ pub struct SourceRepo {
     work_tree: PathBuf,        // canonicalized
     git_dir: PathBuf,          // canonicalized; from `git rev-parse --git-dir` (worktree-specific for worktrees)
     git_common_dir: PathBuf,   // canonicalized; from `git rev-parse --git-common-dir` (shared across worktrees)
-    location: RepositoryLocation,
     git: GitInvoker,
     env: BTreeMap<OsString, OsString>,    // remembered for child SourceRepo/Outpost construction
 }
@@ -532,9 +501,8 @@ impl SourceRepo {
     /// switching the source checkout. Used by `gop pull` and
     /// `gop source pull`.
     pub fn fast_forward_branch_from_origin(&self, branch: &BranchName) -> OutpostResult<()>;
-    pub fn state_store(&self) -> impl SourceStateStore + '_;
     pub fn registry(&self) -> OutpostResult<Registry>;
-    pub fn registry_mut(&self) -> OutpostResult<RegistryMut<'_>>;          // borrows self for the lifetime of the guard
+    pub fn registry_mut(&self) -> OutpostResult<RegistryMut>;
     pub fn registry_path(&self) -> PathBuf;                                // <git_dir>/outpost/registry.json
     pub fn config_path(&self) -> PathBuf;                                  // <git_dir>/outpost/config.json
 }
@@ -574,7 +542,6 @@ without changing any source worktree's checkout.
 pub struct Outpost {
     work_tree: PathBuf,        // canonicalized
     git_dir: PathBuf,          // canonicalized
-    location: RepositoryLocation,
     git: GitInvoker,
     metadata: Metadata,
     env: BTreeMap<OsString, OsString>,    // remembered for child SourceRepo construction
@@ -588,7 +555,6 @@ impl Outpost {
     pub fn work_tree(&self) -> &Path;
     pub fn git_dir(&self) -> &Path;
     pub fn metadata_path(&self) -> PathBuf;                             // <git_dir>/outpost/metadata.json
-    pub fn state_store(&self) -> impl OutpostStateStore + '_;
     pub fn metadata(&self) -> &Metadata;
     pub fn source_repo(&self) -> OutpostResult<SourceRepo>;            // resolves stored path; threads self.env; SourceMissing if gone
     pub fn current_branch(&self) -> OutpostResult<BranchName>;
@@ -617,68 +583,33 @@ don't slip through review.
 
 ### 5.6 `metadata.rs`
 
-The normal implementation reads and writes the strict current metadata
-document. The temporary migration Adapter is the only implementation that
-reads the released `outpost.*` Git-config keys. A compatibility raw type is
-retained as a diagnostic bridge for legacy status reports, while operations
-use validated values:
+The metadata module reads and initializes the strict metadata document.
+Operations use validated values:
 
 ```rust
-/// Legacy diagnostic representation, used only inside the migration Adapter.
-pub struct RawMetadata {
-    pub managed: Option<bool>,
-    pub source_repo: Option<PathBuf>,
-    pub remote_name: Option<RemoteName>,
-}
-
-/// Validated current metadata. All fields are present; document presence is
-/// the managed marker. Constructed only after strict parsing or valid legacy
-/// conversion.
+/// Validated metadata. All fields are present; document presence is
+/// the managed marker. Constructed only after strict parsing.
 pub struct Metadata {
     pub source_repo: PathBuf,           // canonicalized when written
     pub remote_name: RemoteName,
 }
 
-impl RawMetadata {
-    /// Reads each legacy key independently using `git config --local --get
-    /// <key>`. Global and system configuration is never consulted.
-    ///
-    /// **Distinguishes** the two `git config` exit codes: 1 (key not
-    /// present) yields `None` for that field; 128 (e.g., not in a Git
-    /// repo) propagates as `NotARepo` / `GitFailed`. Uses
-    /// `GitInvoker::run_status`'s contract (§5.2): exit 0 → present,
-    /// exit 1 → absent, anything else → real error.
-    pub fn read(git: &GitInvoker) -> OutpostResult<Self>;
+pub(crate) enum MetadataState {
+    Absent,
+    Valid(Metadata),
+    Invalid(String),
 }
 
-impl Metadata {
-    /// Promotes a legacy `RawMetadata` to a validated current `Metadata`.
-    /// Missing/false markers are unmanaged; a true marker with incomplete or
-    /// invalid fields is damaged legacy state.
-    pub fn from_raw(outpost: &Path, raw: RawMetadata) -> OutpostResult<Self>;
-
-    /// Compatibility helper that atomically replaces the current metadata
-    /// document; it never writes legacy keys. Typed initialization through
-    /// `OutpostStateStore` is the no-clobber creation operation.
-    pub fn write(&self, git: &GitInvoker) -> OutpostResult<()>;
-}
+pub(crate) fn read(git_dir: &Path) -> OutpostResult<MetadataState>;
+pub(crate) fn initialize(git: &GitInvoker, metadata: &Metadata) -> OutpostResult<()>;
+pub(crate) fn metadata_path(git_dir: &Path) -> PathBuf;
 ```
-
-Legacy keys (migration input only):
-
-```
-outpost.managed       bool ("true"/"false")
-outpost.sourceRepo    absolute canonicalized path
-outpost.remoteName    remote name (defaults to "local")
-```
-
-A test asserts that a globally-set `outpost.managed=true` does **not** make
-an unmanaged repo appear managed.
 
 **Layering:**
-- `Outpost::at` reads `MetadataState` through the migrating Adapter. It maps
-  `Absent` to `NotAnOutpost`, valid metadata to `Outpost`, and invalid current
-  metadata to `BadMetadata` without consulting legacy state.
+- `Outpost::at` reads the document below the exact Git directory. It maps an
+  absent document to `NotAnOutpost`, valid metadata to `Outpost`, and invalid
+  metadata to `BadMetadata`.
+- `ops::add` initializes the document with an atomic no-clobber write.
 - `ops::status::run` retains an invalid state as an outpost report with an
   `InvalidMetadata` problem so branch and dirtiness facts remain available.
 
@@ -700,10 +631,9 @@ source checkout's private Git directory. Outposts added from different sibling
 worktrees therefore have separate registries, matching the concrete source
 path stored in each outpost's metadata document.
 
-On first write, `registry.rs` creates `<source.git_dir>/outpost/`. The
-implementation retains the released local-exclude entry for legacy
-`.outpost/` artifacts, but the current registry itself needs no ignore rule and
-is not copied by `git clone <source> <outpost>`.
+On first write, `registry.rs` creates `<source.git_dir>/outpost/`. The registry
+is Git administrative data and is not copied by
+`git clone <source> <outpost>`.
 
 JSON shape:
 
@@ -760,14 +690,13 @@ impl Registry {
 /// returned guard is ignored entirely. Callers should always
 /// `let mut g = source.registry_mut()?; g.add(...); g.save()?;`.
 #[must_use = "RegistryMut changes are persisted only on save()"]
-pub struct RegistryMut<'src> {
-    source: &'src SourceRepo,
+pub struct RegistryMut {
     inner: Registry,
     dirty: bool,
     saved: bool,
 }
 
-impl<'src> RegistryMut<'src> {
+impl RegistryMut {
     pub fn add(&mut self, entry: RegistryEntry) -> OutpostResult<()>;     // dedup by canonical path; sets dirty
     pub fn update_path(&mut self, old: &Path, new: PathBuf) -> OutpostResult<()>; // move support; preserves lock fields
     pub fn lock(&mut self, path: &Path, reason: Option<String>) -> OutpostResult<()>;
@@ -777,7 +706,7 @@ impl<'src> RegistryMut<'src> {
     pub fn save(mut self) -> OutpostResult<()>;                           // consumes guard; sets saved
 }
 
-impl<'src> Drop for RegistryMut<'src> {
+impl Drop for RegistryMut {
     fn drop(&mut self) {
         if self.dirty && !self.saved {
             debug_assert!(false, "RegistryMut dropped with unsaved changes");
@@ -787,8 +716,8 @@ impl<'src> Drop for RegistryMut<'src> {
 }
 ```
 
-`Registry::save()` must ensure the registry directory exists and the
-ignore entry is installed before writing the JSON file.
+`Registry::save()` must ensure the registry directory exists before writing
+the JSON file.
 
 `Registry::save()` writes via `tempfile::NamedTempFile::persist`,
 which uses `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING` on Windows
@@ -894,7 +823,7 @@ path. It:
 2. Calls `source.outpost_at(candidate)` (an internal helper that
    threads the source's env into `Outpost::at_with`) — fails with
    `NotAnOutpost` if `metadata.json` is absent and with `BadMetadata` if the
-   current document is invalid.
+   document is invalid.
 3. Reads the outpost's typed `metadata.source_repo`, canonicalizes it,
    then opens that path as a `SourceRepo` (using `source`'s env) and
    verifies its `work_tree` equals `source.work_tree()`.
@@ -1083,8 +1012,9 @@ pub fn run_with_missing_branch(
      branch in B **without switching B's checkout**. Then
      `git fetch <remote_name> <name>` in C and `git switch <name>` so
      C tracks `<remote_name>/<name>`.
-6. Initialize `<destination-git-dir>/outpost/metadata.json` through
-   `OutpostStateStore` with the canonical source path and parsed remote name.
+6. Atomically initialize `<destination-git-dir>/outpost/metadata.json` with the
+   canonical source path and parsed remote name, without replacing an existing
+   document.
 7. Emit
    `reporter.step(ConfigChange, "configuring source <B>: receive.denyCurrentBranch=updateInstead")`,
    then run on the **source repo**:
@@ -1093,8 +1023,7 @@ pub fn run_with_missing_branch(
    (see §5.9.8). The visibility line is mandatory because Principle 4
    covers config writes to other repos, not only fetch/push.
 8. Open `RegistryMut`, add the canonicalized path and `remote_name`,
-   then save. Saving creates `<source-git-dir>/outpost/registry.json` and
-   retains the local ignore compatibility entry for legacy `.outpost/` files.
+   then save. Saving creates `<source-git-dir>/outpost/registry.json`.
 9. Return the outpost via `source.outpost_at(destination)` so the
    resulting `Outpost` inherits `source.env`.
 
@@ -1247,9 +1176,7 @@ pub enum SourceUpstreamStatus {
 }
 
 pub enum ConfigProblem {
-    MissingSourceRepoConfig,
     SourceMissing(PathBuf),
-    MissingRemoteNameConfig,
     LocalRemoteMismatch { configured: PathBuf, actual: PathBuf },
     SourceBranchMissing { branch: BranchName },
     OutpostSourceTrackingUnavailable { branch: BranchName },
@@ -1257,6 +1184,7 @@ pub enum ConfigProblem {
     SourceUpstreamRouteUnavailable { remote: RemoteName },
     NotInRegistry,
     PushWouldFail { branch: BranchName },
+    InvalidMetadata { reason: String },
 }
 
 pub fn run(target_path: &Path) -> OutpostResult<StatusReport>;
@@ -1275,13 +1203,15 @@ nonempty and de-duplicated; fetch and push remain separate facts until the
 renderer chooses to collapse equal routes.
 
 `run_with` discovers and canonicalizes the work tree and exact Git directory,
-then reads `MetadataState` through the migrating Adapter. `Absent` selects
+then reads `MetadataState` through `metadata::read`. `Absent` selects
 `StatusReport::Source`, valid metadata selects `StatusReport::Outpost`, and a
-present invalid current document selects a degraded outpost report with an
-`InvalidMetadata` problem; it never falls back to legacy values. The outpost
-path retains degraded reporting and cached local ahead/behind comparisons.
+present invalid document selects an exit-zero degraded outpost report with
+exactly one `InvalidMetadata` problem. That invalid-metadata report retains the
+outpost path, local branch, and dirtiness while source, remote, and both
+comparisons are unavailable. Valid metadata always contains both the source
+path and remote name. Status is read-only.
 `SourceLocation` and `OutpostHeadStatus` encode when source and source-upstream
-facts can apply. A first status may write only equivalent migrated state.
+facts can apply.
 
 The private `source` implementation constructs source reports from local Git
 state, source configuration, and the source registry. The registry is
@@ -1928,20 +1858,14 @@ from `argv[0]` at runtime (§6.1).
 
 | What | Where | Read with | Written with |
 |---|---|---|---|
-| Outpost reverse-link metadata | `<outpost-git-dir>/outpost/metadata.json` | `OutpostStateStore::read_metadata` | `OutpostStateStore::initialize_metadata` with atomic no-clobber write |
-| Source-repo registry of outposts | `<source-git-dir>/outpost/registry.json` | `SourceStateStore::read_registry` | `SourceStateStore::write_registry` with atomic replacement |
-| Source-owned Git Outpost config (`outpost-container`) | `<source-git-dir>/outpost/config.json` | `SourceStateStore::read_config` | `SourceStateStore::write_config` with atomic replacement |
+| Outpost reverse-link metadata | `<outpost-git-dir>/outpost/metadata.json` | `Outpost::at` and `ops::status` | atomic no-clobber initialization by `gop add` |
+| Source-repo registry of outposts | `<source-git-dir>/outpost/registry.json` | `Registry::load` | `RegistryMut::save` with atomic replacement |
+| Source-owned Git Outpost config (`outpost-container`) | `<source-git-dir>/outpost/config.json` | `ConfigStore::get`, `list`, and `show` | `ConfigStore::set` and `unset` with atomic replacement |
 | Per-outpost remote pointing at source | `<outpost>/.git/config` `remote.<remote_name>.url` | `git remote get-url <remote_name>` | created by `git clone` as `origin`, then `git remote rename origin <remote_name>` when needed |
 | `receive.denyCurrentBranch=updateInstead` on source | `<source>/.git/config` | `git config --local --get receive.denyCurrentBranch` | `git config --local receive.denyCurrentBranch updateInstead` |
 
-Legacy `outpost.*` reads and cleanup are explicitly `--local`-scoped and
-confined to the migration Adapter. Cleanup unsets only `outpost.managed`,
-`outpost.sourceRepo`, and `outpost.remoteName`; current private state does not
-use Git config.
 `receive.denyCurrentBranch` remains ordinary local Git configuration and is
-also explicitly `--local`-scoped. A globally-set legacy
-`outpost.managed=true` therefore cannot make an unmanaged repository appear
-managed.
+not part of Git Outpost's private JSON state.
 
 All paths stored in source-owned config or registry files are canonicalized
 before storage and canonicalized again on lookup — so case-insensitive
@@ -1949,15 +1873,11 @@ filesystems (macOS APFS) and symlink prefixes don't cause spurious
 "not in registry" failures.
 
 The source registry and source-owned Git Outpost config are stored below the
-source's exact Git directory. After each legacy `.outpost/` document is
-successfully migrated and verified, the Adapter removes that JSON file while
-leaving the directory, other files, and local ignore compatibility entry in
-place. It refuses cleanup through a symlinked `.outpost/` directory or of a
-non-regular legacy path. There is no global `~/.config/gop/` file in MVP. A
+source's exact Git directory. There is no global `~/.config/gop/` file in MVP. A
 `--all` listing across multiple source repositories is post-MVP (§14).
 
 `core::config` owns the source config schema, supported-key allowlist, and
-load/save policy. The current schema is strict and versioned:
+load/save policy. The schema is strict and versioned:
 
 ```json
 {
@@ -1971,20 +1891,16 @@ unsupported versions, malformed JSON, unknown config keys, relative stored
 paths, and non-directory `outpost_container` values fail as config errors.
 `set outpost-container` accepts an existing directory and stores its canonical
 absolute path. `unset outpost-container` removes the value while leaving a
-valid versioned config file. Source-owned config never reads from or writes to
-the source repository's `.git/config`; current outpost metadata is a strict
-JSON document in the outpost's exact Git directory. Legacy keys are read only
-by migration and are never written by `add` or metadata initialization.
+valid versioned config file. Outpost metadata is a strict JSON document in the
+outpost's exact Git directory.
 
 Cleanup boundary: per-outpost registry entries are managed lifecycle
 state: `remove` deletes the entry for the removed outpost, and `prune`
 removes entries when their registered outpost path is missing.
-Current metadata is removed only as part of deleting the outpost directory.
+Metadata is removed only as part of deleting the outpost directory.
 Source-local setup and policy state is not cleaned up by `remove` or `prune`:
-the Git-dir state files, legacy local-ignore compatibility entry,
-`receive.denyCurrentBranch=updateInstead`, and unproven or declined branches
-are left in place. The migration Adapter separately removes known legacy files
-and keys after verified migration. `remove` may delete source and upstream
+the Git-dir state files, `receive.denyCurrentBranch=updateInstead`, and
+unproven or declined branches are left in place. `remove` may delete source and upstream
 branches only through the prompt-and-proof cleanup path described in §5.9.12;
 it records no branch ownership provenance.
 
@@ -2035,9 +1951,9 @@ it records no branch ownership provenance.
    `git switch` is preferred over `git checkout` because it is
    unambiguous about branch-vs-pathspec; no `--` is needed. Validated
    `BranchName` values prevent argv injection.
-11. It creates one `RegistryEntry`, then initializes C's typed
-    `metadata.json` through `OutpostStateStore`. Outpost ID aliases are derived
-    later from the source path and registered outpost path.
+11. It creates one `RegistryEntry`, then atomically initializes C's typed
+    `metadata.json` without clobbering an existing document. Outpost ID aliases
+    are derived later from the source path and registered outpost path.
 12. It runs
     `git -C <source> config --local receive.denyCurrentBranch updateInstead`.
 13. It opens `RegistryMut`, adds the same entry for the canonicalized
@@ -2117,7 +2033,7 @@ the user sees which file failed.
 
 | Layer | Lives in | Tool | What it covers |
 |---|---|---|---|
-| Unit | `#[cfg(test)] mod tests` inside each `core` source file | `cargo test` | Pure functions: registry parse/serialize, metadata key encoding, error-to-exit mapping, ref-name validation. |
+| Unit | `#[cfg(test)] mod tests` inside each `core` source file | `cargo test` | Pure functions: registry parse/serialize, metadata document parsing and initialization, error-to-exit mapping, ref-name validation. |
 | Integration (core) | `crates/core/tests/*.rs` | `cargo test -p outpost-core --tests` | Real Git operations against tempdir A/B/C built by a shared fixture. Calls into `core::ops::*::run` directly. |
 | Integration (CLI) | `crates/cli/tests/*.rs` | `cargo test -p git-outpost --tests` | Spawns the compiled binary with `assert_cmd`; asserts on stdout/stderr/exit code/color/global flag behavior. |
 | Doc | `cargo test --doc` | doctests | Lightweight, public API examples only. |
@@ -2242,9 +2158,9 @@ test.
 | U-03 | `registry.rs` | `load` on missing file returns empty registry, not error. |
 | U-04 | `registry.rs` | `load` on malformed JSON returns `BadRegistry`. |
 | U-15 | `registry.rs` | Dropping a dirty `RegistryMut` without `save()` trips the unsaved-change Drop guard in test/debug builds. |
-| U-05 | `metadata.rs` | After metadata initialization, strict `metadata.json` contains the typed source and remote values, and no legacy `outpost.*` keys are written. **Behavior, not call count.** |
-| U-06 | `metadata.rs` | A repository with no current document and no true legacy marker is `NotAnOutpost`; valid legacy metadata migrates without deleting its source repository. |
-| U-14 | `metadata.rs` | A globally-set legacy `outpost.managed=true` (in `GIT_CONFIG_GLOBAL`) does **not** make an unmanaged repo appear managed — the legacy Adapter uses `--local`. |
+| U-05 | `metadata.rs` | Metadata initialization writes to the exact Git-directory path and refuses to replace an existing document. **Behavior, not call count.** |
+| U-06 | `outpost.rs` | A repository with no metadata document is `NotAnOutpost`. |
+| U-14 | `metadata.rs` | Metadata parsing rejects unknown document fields. |
 | U-07 | `error.rs` | `Display` for each variant matches snapshot (with hint substituted). |
 | U-08 | `error.rs` | Each `OutpostError` variant maps to the documented exit code. Exhaustive-match guard means a new variant fails compilation if not added. |
 | U-09 | `git.rs` | `GitInvoker::run_check` of a deliberately bad command returns `GitFailed` with the failed argv preserved verbatim. |
@@ -2268,7 +2184,7 @@ test.
 | C-08 | `add ./C` with destination inside an existing repo returns `DestinationInsideRepo` when C is not ignored by that repo. |
 | C-08a | `add ./C` with destination inside an existing repo succeeds when C is ignored by that repo. |
 | C-09 | `add ../C bogus-branch` returns `BranchNotFound`. |
-| C-10 | C contains strict `<git-dir>/outpost/metadata.json` with version, canonical source path, and remote name; no `outpost.*` keys are written. |
+| C-10 | C contains strict `<git-dir>/outpost/metadata.json` with version, canonical source path, and remote name. |
 | C-11a | C's `<remote_name>` remote URL equals B's canonicalized path. |
 | C-11b | C's `.git` is a real directory, not a `.git` file pointer. |
 | C-11c | C has no `objects/info/alternates` file (no `--shared`). |
@@ -2281,7 +2197,7 @@ test.
 | C-17 | `add ../C` when B has no commits is rejected before creating an outpost. |
 | C-18 | `add -b feat ../C missing` returns `BranchNotFound`. |
 | C-19 | `add -b feat ../C main` leaves B's current checkout unchanged when B is on a different branch. |
-| C-20 | After `add`, B retains the legacy local-exclude compatibility entry and current Git-dir state is absent from `git -C B status --porcelain`; `git clean -fdx` leaves it intact. |
+| C-20 | After `add`, Git-directory state is absent from `git -C B status --porcelain`; `git clean -fdx` leaves it intact. |
 | C-21 | With `outpost-container` configured, `add C main` resolves C under that container. |
 | C-22 | With `outpost-container` configured, `add ../C main` still treats `../C` as an explicit path. |
 | C-23 | With `Ask` authorization, Core asks once before adding a remote-only branch, then fetches exactly that branch with `--no-tags`, persists only its exact fetch refspec when absent, creates a source branch tracking `origin/<branch>` without switching B, and reports `SourceFetch`; unrelated branches and tags remain absent. |
@@ -2330,12 +2246,11 @@ test.
 | S-05 | `status` reports commits ahead/behind source. |
 | S-06 | `status` reports B's ahead/behind versus A's `origin`. |
 | S-07 | `ops::status::run(<C path>)` returns a status report for C when the test process cwd is outside C. |
-| S-08 | `status` from a non-managed repo returns `NotAnOutpost`. |
-| S-09 | `status` reports `InvalidMetadata` for a present malformed current document rather than falling back to legacy state. |
+| S-08 | `source_context_succeeds_from_root_and_nested_directory` confirms that status from a non-managed repository returns `StatusReport::Source`. |
+| S-09 | Core status edge tests and CLI E2E confirm that malformed metadata returns exit-zero outpost status with exactly one `InvalidMetadata` problem while retaining local outpost facts and leaving source, remote, and comparisons unavailable. |
 | S-10 | `status` reports `source_present = false` when the valid recorded source directory was moved/deleted. |
 | S-11 | `status` flags `LocalRemoteMismatch` when typed `metadata.source_repo` and `remote.<remote_name>.url` disagree. |
 | S-12 | `status` works correctly on an outpost added with `--remote-name custom` (uses `metadata.remote_name`, not hardcoded `local`, in all `git` invocations). |
-| S-13 | `status` on a legacy outpost whose `outpost.sourceRepo` key is missing reports the unchanged `MissingSourceRepoConfig` diagnostic while migrating no partial document. |
 
 ### 11.6 Integration: `source pull` (`crates/core/tests/source.rs`)
 
@@ -2439,7 +2354,7 @@ in §11.13.
 | E-13 | `gop add --detach ../C main` returns a clap usage error; `--detach` is not in the MVP surface. |
 | E-14 | `gop add ../C -- -evil` returns `InvalidRefName`, not `GitFailed`. |
 | E-15 | Representative deferred or removed CLI surfaces are rejected with clap usage errors, including `--json`, `--quiet`, `list --all`, `prune --expire`, and pull strategy flags. |
-| E-16 | `gop config set/get/list/show/unset outpost-container` uses `<source-git-dir>/outpost/config.json`, prints the documented stdout formats, rejects non-directory values, and never writes source `git config outpost.container`. |
+| E-16 | `gop config set/get/list/show/unset outpost-container` uses `<source-git-dir>/outpost/config.json`, prints the documented stdout formats, and rejects non-directory values. |
 | E-17 | `gop add <name>` resolves through the Git-dir config document; explicit `gop add <path>` remains path-based. |
 | E-18 | Non-interactive `gop add --fetch-missing ../C <remote-only-branch>` materializes the source tracking branch and creates C; without the flag it returns `BranchNotFound` without fetching. |
 | E-19 | On Unix PTYs, a missing explicit branch prompts with a default-no choice: Enter and `n` decline, while `y` authorizes the fetch and add. |

@@ -46,10 +46,10 @@ fn run_with_rejects_a_missing_target_path() {
 }
 
 #[test]
-fn invalid_current_metadata_returns_a_typed_degraded_report() {
+fn invalid_metadata_returns_a_typed_degraded_report() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add outpost");
-    write_current_metadata(&fixture, &outpost, "{");
+    write_metadata(&fixture, &outpost, "{");
 
     let report = expect_outpost(run_with(&outpost, &fixture.git_env).expect("status report"));
 
@@ -63,7 +63,7 @@ fn invalid_current_metadata_returns_a_typed_degraded_report() {
 }
 
 #[test]
-fn invalid_current_metadata_on_detached_head_reports_detached() {
+fn invalid_metadata_on_detached_head_reports_detached() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add outpost");
     fixture
@@ -74,7 +74,7 @@ fn invalid_current_metadata_on_detached_head_reports_detached() {
         r#"{{"version":99,"source_repo":{},"remote_name":"local"}}"#,
         serde_json::to_string(&fixture.source).expect("serialize source path")
     );
-    write_current_metadata(&fixture, &outpost, &metadata);
+    write_metadata(&fixture, &outpost, &metadata);
 
     let report = expect_outpost(run_with(&outpost, &fixture.git_env).expect("status report"));
 
@@ -190,29 +190,7 @@ fn update_instead_source_config_suppresses_push_would_fail() {
     }));
 }
 
-#[test]
-fn missing_source_and_remote_metadata_are_both_reported_without_source_access() {
-    let fixture = AbcFixture::new();
-    let outpost = fixture.add_outpost("C").expect("add outpost");
-    remove_current_metadata(&outpost);
-    set_local_config(&fixture, &outpost, "outpost.managed", "true");
-    unset_local_config(&fixture, &outpost, "outpost.sourceRepo");
-    unset_local_config(&fixture, &outpost, "outpost.remoteName");
-
-    let report = expect_outpost(run_with(&outpost, &fixture.git_env).expect("status report"));
-
-    assert_eq!(report.source, SourceLocation::Unconfigured);
-    assert_eq!(report.remote_name, None);
-    assert_eq!(
-        report.problems,
-        vec![
-            ConfigProblem::MissingSourceRepoConfig,
-            ConfigProblem::MissingRemoteNameConfig,
-        ]
-    );
-}
-
-fn write_current_metadata(fixture: &AbcFixture, outpost: &Path, contents: &str) {
+fn write_metadata(fixture: &AbcFixture, outpost: &Path, contents: &str) {
     let git_dir = fixture
         .invoker(outpost)
         .run_capture(["rev-parse", "--git-dir"])
@@ -228,25 +206,11 @@ fn write_current_metadata(fixture: &AbcFixture, outpost: &Path, contents: &str) 
     fs::write(path, contents).expect("metadata contents");
 }
 
-fn remove_current_metadata(outpost: &Path) {
-    let git_dir = outpost.join(".git");
-    fs::remove_file(git_dir.join("outpost/metadata.json")).expect("remove metadata");
-}
-
 fn set_local_config(fixture: &AbcFixture, repo: &Path, key: &str, value: &str) {
     fixture
         .invoker(repo)
         .run_check(["config", "--local", key, value])
         .expect("set config");
-}
-
-fn unset_local_config(fixture: &AbcFixture, repo: &Path, key: &str) {
-    let result = fixture
-        .invoker(repo)
-        .run_check(["config", "--local", "--unset", key]);
-    if let Err(error) = result {
-        assert!(matches!(error, OutpostError::GitFailed { code: 5, .. }));
-    }
 }
 
 fn expect_outpost(report: StatusReport) -> outpost_core::ops::status::OutpostStatus {

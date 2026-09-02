@@ -94,11 +94,13 @@ fn registry_load_reports_io_error_when_registry_path_is_directory() {
 }
 
 #[test]
-fn registry_save_reports_blocked_state_directory_without_losing_exclude() {
+fn registry_save_reports_blocked_state_directory_without_changing_exclude() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source");
     let outpost_path = fixture.root.join("C");
     fs::create_dir_all(&outpost_path).expect("outpost path");
+    let exclude_path = source.git_dir().join("info/exclude");
+    let exclude_before = fs::read(&exclude_path).expect("local exclude before registry save");
     let mut registry = source.registry_mut().expect("registry mut");
     fs::write(source.git_dir().join("outpost"), "blocking file").expect("block state directory");
     registry
@@ -117,8 +119,10 @@ fn registry_save_reports_blocked_state_directory_without_losing_exclude() {
 
     assert!(matches!(error, OutpostError::IoAt { .. }));
     assert!(!source.registry_path().exists());
-    let exclude = fs::read_to_string(source.local_exclude_path_for_tests()).expect("exclude");
-    assert!(exclude.lines().any(|line| line.trim() == ".outpost/"));
+    assert_eq!(
+        fs::read(&exclude_path).expect("local exclude after registry save"),
+        exclude_before
+    );
 }
 
 #[test]

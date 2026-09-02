@@ -124,11 +124,10 @@ fn inspect_present_entry(source: &SourceRepo, entry: &RegistryEntry) -> Option<O
         return None;
     }
 
-    let metadata =
-        match metadata::read_current_metadata(&snapshot.work_tree, &snapshot.git_dir).ok()? {
-            MetadataState::Valid(metadata) => metadata,
-            MetadataState::Absent | MetadataState::Invalid(_) => return None,
-        };
+    let metadata = match metadata::read(&snapshot.git_dir).ok()? {
+        MetadataState::Valid(metadata) => metadata,
+        MetadataState::Absent | MetadataState::Invalid(_) => return None,
+    };
     let recorded_source = canonicalize_path(&metadata.source_repo).ok()?;
     if recorded_source != source.work_tree() || metadata.remote_name != entry.remote_name {
         return None;

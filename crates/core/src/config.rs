@@ -5,8 +5,6 @@ use std::path::{Path, PathBuf};
 use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 
-use crate::registry::ensure_local_ignore;
-use crate::state::{SourceStateStore, Stored};
 use crate::{OutpostError, OutpostResult, SourceRepo};
 
 const CONFIG_VERSION: u32 = 1;
@@ -45,8 +43,8 @@ pub struct ConfigStore<'src> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SourceConfig {
-    pub outpost_container: Option<PathBuf>,
+pub(crate) struct SourceConfig {
+    outpost_container: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -155,25 +153,19 @@ impl<'src> ConfigStore<'src> {
     }
 
     fn load(&self) -> OutpostResult<SourceConfig> {
-        match self.source.state_store().read_config()? {
-            Stored::Absent => Ok(SourceConfig::empty()),
-            Stored::Present(config) => Ok(config),
-        }
+        Ok(read_file(&self.storage_path())?.unwrap_or_else(SourceConfig::empty))
     }
 
     fn save(&self, config: &SourceConfig) -> OutpostResult<()> {
-        // Keep the released local exclusion harmlessly in place for users who
-        // already rely on it; the new state itself is under Git administration.
-        ensure_local_ignore(&self.source.local_exclude_path())?;
-        self.source.state_store().write_config(config)
+        write_file(&self.storage_path(), config)
     }
 }
 
-pub(crate) fn read_file(path: &Path) -> OutpostResult<Stored<SourceConfig>> {
+pub(crate) fn read_file(path: &Path) -> OutpostResult<Option<SourceConfig>> {
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(Stored::Absent);
+            return Ok(None);
         }
         Err(source) => {
             return Err(OutpostError::IoAt {
@@ -201,18 +193,10 @@ pub(crate) fn read_file(path: &Path) -> OutpostResult<Stored<SourceConfig>> {
         .map(|value| validated_container_for_storage(path, ConfigKey::OutpostContainer, value))
         .transpose()?;
 
-    Ok(Stored::Present(SourceConfig { outpost_container }))
+    Ok(Some(SourceConfig { outpost_container }))
 }
 
 pub(crate) fn write_file(path: &Path, config: &SourceConfig) -> OutpostResult<()> {
-    write_file_inner(path, config, false)
-}
-
-pub(crate) fn write_file_noclobber(path: &Path, config: &SourceConfig) -> OutpostResult<()> {
-    write_file_inner(path, config, true)
-}
-
-fn write_file_inner(path: &Path, config: &SourceConfig, no_clobber: bool) -> OutpostResult<()> {
     let file = ConfigFile::from_config(path, config)?;
     let parent = path.parent().ok_or_else(|| OutpostError::IoAt {
         path: path.to_path_buf(),
@@ -241,18 +225,10 @@ fn write_file_inner(path: &Path, config: &SourceConfig, no_clobber: bool) -> Out
         path: path.to_path_buf(),
         source,
     })?;
-    if no_clobber {
-        temp.persist_noclobber(path)
-            .map_err(|source| OutpostError::IoAt {
-                path: path.to_path_buf(),
-                source: source.error,
-            })?;
-    } else {
-        temp.persist(path).map_err(|source| OutpostError::IoAt {
-            path: path.to_path_buf(),
-            source: source.error,
-        })?;
-    }
+    temp.persist(path).map_err(|source| OutpostError::IoAt {
+        path: path.to_path_buf(),
+        source: source.error,
+    })?;
 
     Ok(())
 }

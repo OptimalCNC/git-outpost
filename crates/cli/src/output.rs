@@ -536,9 +536,7 @@ fn yes_no(value: bool) -> &'static str {
 
 fn format_problem(problem: &ConfigProblem) -> String {
     match problem {
-        ConfigProblem::MissingSourceRepoConfig => "missing source repo config".to_owned(),
         ConfigProblem::SourceMissing(path) => format!("source missing: {}", path.display()),
-        ConfigProblem::MissingRemoteNameConfig => "missing remote name config".to_owned(),
         ConfigProblem::LocalRemoteMismatch { configured, actual } => format!(
             "local remote mismatch: configured {}, actual {}",
             configured.display(),

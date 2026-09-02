@@ -76,9 +76,9 @@ checks where listed; Phase 5 covers whole-binary, e2e, and global CLI behavior.
 | Phase | Status | Scope delivered | Tests in scope | Evidence |
 |---|---|---|---|---|
 | 0 | Done | Cargo workspace skeleton, `error.rs`, `git.rs`, `refname.rs`, `reporter.rs`, fixture | U-07..U-09, U-11, U-12 | `.agents-artifacts/progress/phase-0.md` |
-| 1 | Done | `source_repo.rs`, `outpost.rs`, `metadata.rs` (typed current state plus legacy Adapter), `registry.rs` (incl. Drop guard), `safety.rs`, `ops::add` (incl. add ConfigChange `Reporter` event), `ops::list` | U-01..U-06, U-10, U-13..U-15, C-01..C-20, L-01..L-10 | `.agents-artifacts/progress/phase-1.md` |
+| 1 | Done | `source_repo.rs`, `outpost.rs`, `metadata.rs` (typed Git-directory state), `registry.rs` (incl. Drop guard), `safety.rs`, `ops::add` (incl. add ConfigChange `Reporter` event), `ops::list` | U-01..U-06, U-10, U-13..U-15, C-01..C-20, L-01..L-10 | `.agents-artifacts/progress/phase-1.md` |
 | 2 | Done | `ops::lock`, `ops::move`, `ops::unlock`, `ops::remove`, `ops::prune` | LMU-01..LMU-08, R-01..R-11, Pr-01..Pr-09 | `.agents-artifacts/progress/phase-2.md` |
-| 3 | Done | `ops::status` (typed state reads with legacy migration diagnostics) | S-01..S-13 | `.agents-artifacts/progress/phase-3.md` |
+| 3 | Done | `ops::status` (typed read-only state diagnostics) | S-01..S-12 | `.agents-artifacts/progress/phase-3.md` |
 | 4 | Done | `ops::source`, `ops::pull` (UpstreamRef-driven), `ops::merge`, `ops::rebase`, `ops::push`, sync `Reporter` events | SP-01..SP-05, P-01..P-09, MR-01..MR-06, Pu-01..Pu-10 | `.agents-artifacts/progress/phase-4.md` |
 | 5 | Done | CLI binaries, exit codes, `--no-color`, global `-C`, E2E, cross-platform | E-01..E-15, H-01..H-03 | `.agents-artifacts/progress/phase-5.md` |
 

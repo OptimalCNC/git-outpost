@@ -86,7 +86,7 @@ fn status_keeps_an_absolute_source_path_when_its_parent_is_missing() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("outpost");
     let configured = fixture.root.join("missing-parent").join("source");
-    edit_current_metadata(&outpost, |metadata| {
+    edit_metadata(&outpost, |metadata| {
         metadata["source_repo"] =
             serde_json::Value::String(configured.to_string_lossy().into_owned());
     });
@@ -144,7 +144,7 @@ fn expect_outpost(report: StatusReport) -> outpost_core::ops::status::OutpostSta
     }
 }
 
-fn edit_current_metadata(outpost: &Path, edit: impl FnOnce(&mut serde_json::Value)) {
+fn edit_metadata(outpost: &Path, edit: impl FnOnce(&mut serde_json::Value)) {
     let metadata = Outpost::at(outpost).expect("managed outpost");
     let path = metadata.metadata_path();
     let mut value: serde_json::Value =

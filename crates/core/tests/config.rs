@@ -2,7 +2,7 @@
 mod common;
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use common::fixture::AbcFixture;
 use outpost_core::{ConfigEntry, ConfigKey, ConfigShowEntry, ConfigValue, OutpostError};
@@ -77,12 +77,14 @@ fn set_get_list_show_and_unset_round_trip() {
 }
 
 #[test]
-fn config_save_uses_exact_git_directory_and_keeps_local_ignore_compatibility() {
+fn config_save_uses_exact_git_directory_without_changing_local_exclude() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");
     let container = fixture.root.join("outposts");
     fs::create_dir(&container).expect("container dir");
     let store = source.config();
+    let exclude_path = source.git_dir().join("info/exclude");
+    let exclude_before = fs::read(&exclude_path).expect("local exclude before config save");
 
     store
         .set(
@@ -95,11 +97,9 @@ fn config_save_uses_exact_git_directory_and_keeps_local_ignore_compatibility() {
         store.storage_path(),
         source.git_dir().join("outpost").join("config.json")
     );
-    assert!(
-        fs::read_to_string(source.local_exclude_path_for_tests())
-            .expect("local exclude")
-            .lines()
-            .any(|line| line == ".outpost/")
+    assert_eq!(
+        fs::read(&exclude_path).expect("local exclude after config save"),
+        exclude_before
     );
 }
 
@@ -195,41 +195,6 @@ fn path_values_are_canonicalized_and_non_directories_are_rejected() {
         )
         .expect_err("file is not valid container");
     assert!(matches!(err, OutpostError::InvalidConfigValue { .. }));
-}
-
-#[test]
-fn source_git_config_outpost_container_is_neither_read_nor_written() {
-    let fixture = AbcFixture::new();
-    let legacy = fixture.root.join("legacy");
-    let container = fixture.root.join("outposts");
-    fs::create_dir(&legacy).expect("legacy dir");
-    fs::create_dir(&container).expect("container dir");
-    fixture
-        .invoker(&fixture.source)
-        .run_check([
-            "config",
-            "--local",
-            "outpost.container",
-            legacy.to_str().expect("legacy path"),
-        ])
-        .expect("write legacy git config");
-    let source = fixture.source_repo().expect("source repo");
-    let store = source.config();
-
-    assert_eq!(store.get(ConfigKey::OutpostContainer).unwrap(), None);
-
-    store
-        .set(
-            ConfigKey::OutpostContainer,
-            ConfigValue::OutpostContainer(container),
-        )
-        .expect("set source config");
-
-    let git_value = fixture
-        .invoker(&fixture.source)
-        .run_capture(["config", "--local", "--get", "outpost.container"])
-        .expect("read legacy git config");
-    assert_eq!(PathBuf::from(git_value), legacy);
 }
 
 fn write_config(path: &Path, contents: &str) {

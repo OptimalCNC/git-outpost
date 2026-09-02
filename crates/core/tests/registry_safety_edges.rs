@@ -196,10 +196,10 @@ fn remove_by_path_can_remove_a_recorded_path_after_checkout_disappears() {
 }
 
 #[test]
-fn registry_save_preserves_local_exclude_and_is_idempotent() {
+fn registry_save_does_not_change_local_exclude() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");
-    let exclude = source.local_exclude_path_for_tests();
+    let exclude = source.git_dir().join("info/exclude");
     fs::create_dir_all(exclude.parent().expect("exclude parent")).expect("exclude parent");
     fs::write(&exclude, "keep-this").expect("seed exclude");
 
@@ -213,14 +213,9 @@ fn registry_save_preserves_local_exclude_and_is_idempotent() {
         .expect("reload registry")
         .save()
         .expect("second save");
-    let contents = fs::read_to_string(exclude).expect("exclude contents");
-    assert!(contents.lines().any(|line| line == "keep-this"));
     assert_eq!(
-        contents
-            .lines()
-            .filter(|line| line.trim() == ".outpost/")
-            .count(),
-        1
+        fs::read_to_string(exclude).expect("exclude contents"),
+        "keep-this"
     );
 }
 

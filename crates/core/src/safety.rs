@@ -346,19 +346,16 @@ mod tests {
     }
 
     #[test]
-    fn managed_outpost_gate_rejects_managed_false() {
+    fn managed_outpost_gate_rejects_repo_without_metadata() {
         let temp = tempfile::tempdir().expect("tempdir");
         let source_path = temp.path().join("source");
         let candidate = temp.path().join("candidate");
         init_repo_at(&source_path);
         init_repo_at(&candidate);
-        GitInvoker::at(&candidate)
-            .run_check(["config", "--local", "outpost.managed", "false"])
-            .expect("write managed false");
         let source = SourceRepo::at(&source_path).expect("source repo");
 
         let Err(err) = check_path_is_managed_outpost_of(&source, &candidate) else {
-            panic!("managed false should fail");
+            panic!("repo without metadata should fail");
         };
 
         assert!(
@@ -375,11 +372,14 @@ mod tests {
         init_repo_at(&source_path);
         init_repo_at(&other_source_path);
         init_repo_at(&candidate);
-        Metadata {
-            source_repo: other_source_path.clone(),
-            remote_name: RemoteName::parse("local").unwrap(),
-        }
-        .write(&GitInvoker::at(&candidate))
+        let candidate_git = GitInvoker::at(&candidate);
+        crate::metadata::initialize(
+            &candidate_git,
+            &Metadata {
+                source_repo: other_source_path.clone(),
+                remote_name: RemoteName::parse("local").unwrap(),
+            },
+        )
         .expect("metadata write");
         let source = SourceRepo::at(&source_path).expect("source repo");
 
@@ -399,11 +399,14 @@ mod tests {
         let candidate = temp.path().join("candidate");
         init_repo_at(&source_path);
         init_repo_at(&candidate);
-        Metadata {
-            source_repo: source_path.clone(),
-            remote_name: RemoteName::parse("local").unwrap(),
-        }
-        .write(&GitInvoker::at(&candidate))
+        let candidate_git = GitInvoker::at(&candidate);
+        crate::metadata::initialize(
+            &candidate_git,
+            &Metadata {
+                source_repo: source_path.clone(),
+                remote_name: RemoteName::parse("local").unwrap(),
+            },
+        )
         .expect("metadata write");
         let source = SourceRepo::at(&source_path).expect("source repo");
 
@@ -530,11 +533,13 @@ mod tests {
         outpost_git
             .run_check(["branch", "--set-upstream-to", "local/main", "main"])
             .expect("set upstream");
-        Metadata {
-            source_repo: source.clone(),
-            remote_name: RemoteName::parse("local").unwrap(),
-        }
-        .write(&outpost_git)
+        crate::metadata::initialize(
+            &outpost_git,
+            &Metadata {
+                source_repo: source.clone(),
+                remote_name: RemoteName::parse("local").unwrap(),
+            },
+        )
         .expect("metadata write");
         outpost_git
             .run_check(["commit", "--allow-empty", "-m", "outpost"])
@@ -568,11 +573,13 @@ mod tests {
         outpost_git
             .run_check(["remote", "add", "local", &source.to_string_lossy()])
             .expect("add source remote");
-        Metadata {
-            source_repo: source.clone(),
-            remote_name: RemoteName::parse("local").unwrap(),
-        }
-        .write(&outpost_git)
+        crate::metadata::initialize(
+            &outpost_git,
+            &Metadata {
+                source_repo: source.clone(),
+                remote_name: RemoteName::parse("local").unwrap(),
+            },
+        )
         .expect("metadata write");
         let outpost = Outpost::at(&outpost).expect("outpost");
         let branch = BranchName::parse("main").unwrap();
@@ -618,11 +625,13 @@ mod tests {
                 "refs/remotes/local/feature",
             ])
             .expect("switch feature");
-        Metadata {
-            source_repo: source.clone(),
-            remote_name: RemoteName::parse("local").unwrap(),
-        }
-        .write(&outpost_git)
+        crate::metadata::initialize(
+            &outpost_git,
+            &Metadata {
+                source_repo: source.clone(),
+                remote_name: RemoteName::parse("local").unwrap(),
+            },
+        )
         .expect("metadata write");
         source_git
             .run_check(["branch", "-D", "feature"])

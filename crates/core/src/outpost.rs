@@ -2,17 +2,15 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use crate::metadata::{Metadata, MetadataState, MigratingOutpostStore};
+use crate::metadata::{self, Metadata, MetadataState};
 use crate::source_repo::{
     SourceRepo, canonicalize_path, current_branch, invoker_at, is_dirty, read_optional_config,
 };
-use crate::state::{OutpostStateStore, RepositoryLocation};
 use crate::{BranchName, GitInvoker, OutpostError, OutpostResult, RefName, UpstreamRef};
 
 pub struct Outpost {
     work_tree: PathBuf,
     git_dir: PathBuf,
-    location: RepositoryLocation,
     git: GitInvoker,
     metadata: Metadata,
     env: BTreeMap<OsString, OsString>,
@@ -56,15 +54,18 @@ impl Outpost {
         let work_tree = canonicalize_path(Path::new(&work_tree_raw))?;
         let git_dir = canonicalize_git_path(&start, &git_dir_raw)?;
         let git = invoker_at(&work_tree, env);
-        let store = MigratingOutpostStore::new(work_tree.clone(), git_dir.clone(), git.clone());
-        let metadata = match store.read_metadata()? {
+        let metadata = match metadata::read(&git_dir)? {
             MetadataState::Absent => return Err(OutpostError::NotAnOutpost(work_tree)),
             MetadataState::Valid(metadata) => metadata,
-            MetadataState::Invalid(problem) => return Err(problem.as_error()),
+            MetadataState::Invalid(reason) => {
+                return Err(OutpostError::BadMetadata {
+                    outpost: work_tree,
+                    reason,
+                });
+            }
         };
 
         Ok(Self {
-            location: RepositoryLocation::new(work_tree.clone(), git_dir.clone()),
             work_tree,
             git_dir,
             git,
@@ -81,12 +82,8 @@ impl Outpost {
         &self.git_dir
     }
 
-    pub fn location(&self) -> &RepositoryLocation {
-        &self.location
-    }
-
     pub fn metadata_path(&self) -> PathBuf {
-        self.location.state_path("metadata.json")
+        metadata::metadata_path(&self.git_dir)
     }
 
     pub fn metadata(&self) -> &Metadata {
@@ -212,14 +209,6 @@ impl Outpost {
         &self.git
     }
 
-    pub fn state_store(&self) -> impl OutpostStateStore + '_ {
-        MigratingOutpostStore::new(
-            self.work_tree.clone(),
-            self.git_dir.clone(),
-            self.git.clone(),
-        )
-    }
-
     #[cfg(any(test, feature = "test-helpers"))]
     pub fn test_invoker(&self) -> &GitInvoker {
         &self.git
@@ -314,7 +303,7 @@ mod tests {
             source_repo: source.clone(),
             remote_name: RemoteName::parse("local").unwrap(),
         };
-        metadata.write(&GitInvoker::at(&outpost)).unwrap();
+        metadata::initialize(&GitInvoker::at(&outpost), &metadata).unwrap();
 
         let outpost = Outpost::at(&outpost).expect("managed outpost");
 
@@ -336,7 +325,7 @@ mod tests {
             source_repo: source.clone(),
             remote_name: RemoteName::parse("local").unwrap(),
         };
-        metadata.write(&GitInvoker::at(&outpost)).unwrap();
+        metadata::initialize(&GitInvoker::at(&outpost), &metadata).unwrap();
         fs::remove_dir_all(&source).expect("remove source");
 
         let outpost = Outpost::at(&outpost).expect("managed outpost");
@@ -377,7 +366,7 @@ mod tests {
             source_repo: source.clone(),
             remote_name: RemoteName::parse("local").unwrap(),
         };
-        metadata.write(&outpost_git).unwrap();
+        metadata::initialize(&outpost_git, &metadata).unwrap();
         outpost_git
             .run_check(["commit", "--allow-empty", "-m", "outpost"])
             .expect("outpost commit");

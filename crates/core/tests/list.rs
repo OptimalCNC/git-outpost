@@ -137,6 +137,20 @@ fn list_reports_not_managed_registered_path() {
 }
 
 #[test]
+fn list_reports_malformed_metadata_as_not_managed() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+    let managed = outpost_core::Outpost::at(&outpost).expect("managed outpost");
+    fs::write(managed.metadata_path(), "{malformed metadata").expect("malformed metadata");
+    let source = fixture.source_repo().expect("source repo");
+
+    let summaries = run(&source).expect("list summaries");
+
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].state, OutpostState::NotManaged);
+}
+
+#[test]
 fn list_reports_wrong_source_outpost_as_not_managed() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add C");

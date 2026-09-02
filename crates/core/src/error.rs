@@ -378,17 +378,17 @@ mod tests {
             ),
             (
                 OutpostError::BadRegistry {
-                    path: path("/repo/.outpost/registry.json"),
+                    path: path("/repo/.git/outpost/registry.json"),
                     reason: "invalid json".to_owned(),
                 },
-                "invalid registry file at /repo/.outpost/registry.json: invalid json",
+                "invalid registry file at /repo/.git/outpost/registry.json: invalid json",
             ),
             (
                 OutpostError::BadConfig {
-                    path: path("/repo/.outpost/config.json"),
+                    path: path("/repo/.git/outpost/config.json"),
                     reason: "invalid json".to_owned(),
                 },
-                "invalid config file at /repo/.outpost/config.json: invalid json",
+                "invalid config file at /repo/.git/outpost/config.json: invalid json",
             ),
             (
                 OutpostError::BadMetadata {
@@ -414,10 +414,10 @@ mod tests {
             ),
             (
                 OutpostError::IoAt {
-                    path: path("/repo/.outpost/registry.json"),
+                    path: path("/repo/.git/outpost/registry.json"),
                     source: std::io::Error::new(std::io::ErrorKind::NotFound, "missing"),
                 },
-                "io error at /repo/.outpost/registry.json: missing",
+                "io error at /repo/.git/outpost/registry.json: missing",
             ),
         ];
 
@@ -547,14 +547,14 @@ mod tests {
             ),
             (
                 OutpostError::BadRegistry {
-                    path: path("/repo/.outpost/registry.json"),
+                    path: path("/repo/.git/outpost/registry.json"),
                     reason: "invalid json".to_owned(),
                 },
                 6,
             ),
             (
                 OutpostError::BadConfig {
-                    path: path("/repo/.outpost/config.json"),
+                    path: path("/repo/.git/outpost/config.json"),
                     reason: "invalid json".to_owned(),
                 },
                 6,
@@ -591,7 +591,7 @@ mod tests {
             ),
             (
                 OutpostError::IoAt {
-                    path: path("/repo/.outpost/registry.json"),
+                    path: path("/repo/.git/outpost/registry.json"),
                     source: std::io::Error::new(std::io::ErrorKind::NotFound, "missing"),
                 },
                 70,

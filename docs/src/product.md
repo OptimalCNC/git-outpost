@@ -89,16 +89,10 @@ paths remain paths.
 
 `gop add` creates or updates the registry, and `gop config set` creates or
 updates the config file. These documents are Git administrative files: they
-are not listed by ignored-file commands and survive `git clean -fdx`. The
-temporary migration Adapter reads legacy worktree `.outpost/*.json` files and
-the three released local `outpost.*` keys. After it writes and verifies
-equivalent state in the exact Git directory, it removes only the migrated file
-or those known keys. Other files, Git configuration, the `.outpost/` directory,
-and its compatibility ignore entry remain untouched.
+are not listed by ignored-file commands and survive `git clean -fdx`.
 
-Each registered outpost has a derived ID alias for human selection. The alias
-is computed from the source repository path and the outpost path. It is not
-stored in the registry or the outpost's local git config.
+Each registered outpost has an ID alias for human selection, derived on demand
+from the source repository path and the outpost path.
 
 ### Artifact Ownership And Deletion
 
@@ -108,14 +102,6 @@ Git Outpost always owns and removes these removable artifacts:
 
 - the outpost directory
 - the source registry entry for that outpost
-
-During one-time state migration, Git Outpost also owns the exact legacy
-`.outpost/config.json` and `.outpost/registry.json` files and the local
-`outpost.managed`, `outpost.sourceRepo`, and `outpost.remoteName` keys. It
-removes each only after the corresponding current state is verified. It does
-not remove other files or keys, the `.outpost/` directory, or its compatibility
-ignore entry, and it refuses to clean through a symlinked `.outpost/`
-directory.
 
 `gop add -b` may create source-repo branches for tracking. Those branches are
 not recorded as owned provenance after creation. Once created, they are
@@ -128,8 +114,7 @@ local ancestry to the fetched upstream default branch. The user is prompted
 before deleting the source branch, and prompted separately before deleting the
 matching upstream `<remote>/<branch>` branch.
 
-Git Outpost also writes source-local setup state: a local compatibility ignore
-entry for legacy `.outpost/` files and
+Git Outpost also writes source-local setup state:
 `receive.denyCurrentBranch=updateInstead`. This setup state is left in place
 unless the user changes it directly.
 
@@ -380,9 +365,8 @@ the outpost. Defaults to `local`.
 source repository to be fetched from `origin` without a prompt. It has no
 network effect when the target branch already exists locally.
 
-`gop add` initializes `<outpost-git-dir>/outpost/metadata.json`, updates the
-source registry under `<source-git-dir>/outpost/registry.json`, and retains the
-legacy ignore compatibility entry in the source repository. It also configures
+`gop add` initializes `<outpost-git-dir>/outpost/metadata.json` and updates the
+source registry under `<source-git-dir>/outpost/registry.json`. It also configures
 the source repository with `receive.denyCurrentBranch=updateInstead` so ordinary
 `git push` from an outpost can update a branch that is checked out in the
 source repository. This source-side config write must be visible in command

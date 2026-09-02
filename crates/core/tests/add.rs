@@ -471,14 +471,12 @@ fn add_rejects_missing_existing_branch_before_clone() {
 }
 
 #[test]
-fn add_writes_outpost_metadata_file_without_legacy_config_keys() {
+fn add_writes_outpost_metadata_file() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");
     let destination = fixture.root.join("C");
 
     let outpost = add_existing(&source, &destination, None).expect("add outpost");
-    let git = fixture.invoker(&destination);
-
     let metadata_path = outpost.metadata_path();
     let metadata: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&metadata_path).expect("metadata file"))
@@ -489,23 +487,6 @@ fn add_writes_outpost_metadata_file_without_legacy_config_keys() {
         source.work_tree().to_string_lossy().as_ref()
     );
     assert_eq!(metadata["remote_name"], "local");
-    assert!(
-        !git.run_status(["config", "--local", "--get", "outpost.managed"])
-            .expect("managed config lookup")
-    );
-    assert!(
-        !git.run_status(["config", "--local", "--get", "outpost.sourceRepo"])
-            .expect("source config lookup")
-    );
-    assert!(
-        !git.run_status(["config", "--local", "--get", "outpost.remoteName"])
-            .expect("remote config lookup")
-    );
-    assert!(
-        !git.run_status(["config", "--local", "--get", "outpost.id"])
-            .expect("outpost.id lookup"),
-        "derived outpost IDs must not be stored in local git config"
-    );
     assert_eq!(outpost.metadata().source_repo, source.work_tree());
     assert_eq!(outpost.metadata().remote_name.as_str(), "local");
 }
@@ -723,18 +704,18 @@ fn add_clone_allows_user_file_protocol() {
 }
 
 #[test]
-fn add_ignores_source_registry_directory_locally() {
+fn add_keeps_source_clean_without_changing_local_exclude() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");
     let destination = fixture.root.join("C");
+    let exclude_path = source.git_dir().join("info/exclude");
+    let exclude_before = fs::read(&exclude_path).expect("source local exclude before add");
 
     add_existing(&source, &destination, None).expect("add outpost");
 
-    let exclude =
-        fs::read_to_string(fixture.source.join(".git/info/exclude")).expect("source local exclude");
-    assert!(
-        exclude.lines().any(|line| line.trim() == ".outpost/"),
-        "source local exclude should ignore .outpost/: {exclude:?}"
+    assert_eq!(
+        fs::read(&exclude_path).expect("source local exclude after add"),
+        exclude_before
     );
     assert_eq!(
         fixture

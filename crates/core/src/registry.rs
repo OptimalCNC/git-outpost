@@ -5,16 +5,13 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::state::{SourceStateStore, Stored};
 use crate::{OutpostError, OutpostResult, RemoteName, SourceRepo};
 
 const REGISTRY_VERSION: u32 = 1;
-const OUTPOST_IGNORE_LINE: &str = ".outpost/";
 
 #[derive(Debug, Clone)]
 pub struct Registry {
     path: PathBuf,
-    exclude_path: PathBuf,
     version: u32,
     entries: Vec<RegistryEntry>,
 }
@@ -30,8 +27,7 @@ pub struct RegistryEntry {
 }
 
 #[must_use = "RegistryMut changes are persisted only on save()"]
-pub struct RegistryMut<'src> {
-    _source: &'src SourceRepo,
+pub struct RegistryMut {
     inner: Registry,
     dirty: bool,
     saved: bool,
@@ -40,26 +36,22 @@ pub struct RegistryMut<'src> {
 impl Registry {
     pub fn load(source: &SourceRepo) -> OutpostResult<Self> {
         let path = source.registry_path();
-        match source.state_store().read_registry()? {
-            Stored::Absent => Ok(Self::empty(path, source.local_exclude_path())),
-            Stored::Present(registry) => Ok(registry),
-        }
+        Ok(Self::read_file(&path)?.unwrap_or_else(|| Self::empty(path)))
     }
 
-    pub(crate) fn empty(path: PathBuf, exclude_path: PathBuf) -> Self {
+    pub(crate) fn empty(path: PathBuf) -> Self {
         Self {
             path,
-            exclude_path,
             version: REGISTRY_VERSION,
             entries: Vec::new(),
         }
     }
 
-    pub(crate) fn read_file(path: &Path, exclude_path: PathBuf) -> OutpostResult<Stored<Self>> {
+    pub(crate) fn read_file(path: &Path) -> OutpostResult<Option<Self>> {
         let contents = match fs::read_to_string(path) {
             Ok(contents) => contents,
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(Stored::Absent);
+                return Ok(None);
             }
             Err(source) => {
                 return Err(OutpostError::IoAt {
@@ -88,9 +80,8 @@ impl Registry {
             .map(|entry| entry.try_into_entry(path))
             .collect::<OutpostResult<Vec<_>>>()?;
 
-        Ok(Stored::Present(Self {
+        Ok(Some(Self {
             path: path.to_path_buf(),
-            exclude_path,
             version: REGISTRY_VERSION,
             entries,
         }))
@@ -101,19 +92,10 @@ impl Registry {
     }
 
     pub fn save(&self) -> OutpostResult<()> {
-        ensure_local_ignore(&self.exclude_path)?;
         Self::write_file(&self.path, self)
     }
 
     pub(crate) fn write_file(path: &Path, registry: &Self) -> OutpostResult<()> {
-        Self::write_file_inner(path, registry, false)
-    }
-
-    pub(crate) fn write_file_noclobber(path: &Path, registry: &Self) -> OutpostResult<()> {
-        Self::write_file_inner(path, registry, true)
-    }
-
-    fn write_file_inner(path: &Path, registry: &Self, no_clobber: bool) -> OutpostResult<()> {
         let parent = path.parent().ok_or_else(|| OutpostError::IoAt {
             path: path.to_path_buf(),
             source: std::io::Error::new(
@@ -142,21 +124,12 @@ impl Registry {
             path: path.to_path_buf(),
             source,
         })?;
-        let result = if no_clobber {
-            temp.persist_noclobber(path)
-        } else {
-            temp.persist(path)
-        };
-        result.map_err(|source| OutpostError::IoAt {
+        temp.persist(path).map_err(|source| OutpostError::IoAt {
             path: path.to_path_buf(),
             source: source.error,
         })?;
 
         Ok(())
-    }
-
-    pub(crate) fn same_contents(&self, other: &Self) -> bool {
-        self.version == other.version && self.entries == other.entries
     }
 
     fn find(&self, path: &Path) -> Option<usize> {
@@ -195,10 +168,9 @@ impl RegistryEntry {
     }
 }
 
-impl<'src> RegistryMut<'src> {
-    pub(crate) fn load(source: &'src SourceRepo) -> OutpostResult<Self> {
+impl RegistryMut {
+    pub(crate) fn load(source: &SourceRepo) -> OutpostResult<Self> {
         Ok(Self {
-            _source: source,
             inner: Registry::load(source)?,
             dirty: false,
             saved: false,
@@ -276,8 +248,7 @@ impl<'src> RegistryMut<'src> {
 
     pub fn save(mut self) -> OutpostResult<()> {
         self.saved = true;
-        let result = ensure_local_ignore(&self._source.local_exclude_path())
-            .and_then(|()| self._source.state_store().write_registry(&self.inner));
+        let result = Registry::write_file(&self.inner.path, &self.inner);
         if result.is_ok() {
             self.dirty = false;
         }
@@ -285,7 +256,7 @@ impl<'src> RegistryMut<'src> {
     }
 }
 
-impl<'src> Drop for RegistryMut<'src> {
+impl Drop for RegistryMut {
     fn drop(&mut self) {
         if self.dirty && !self.saved {
             debug_assert!(false, "RegistryMut dropped with unsaved changes");
@@ -353,47 +324,6 @@ impl RegistryEntryFile {
     }
 }
 
-pub(crate) fn ensure_local_ignore(exclude_path: &Path) -> OutpostResult<()> {
-    let parent = exclude_path.parent().ok_or_else(|| OutpostError::IoAt {
-        path: exclude_path.to_path_buf(),
-        source: std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "exclude path has no parent",
-        ),
-    })?;
-    fs::create_dir_all(parent).map_err(|source| OutpostError::IoAt {
-        path: parent.to_path_buf(),
-        source,
-    })?;
-
-    let mut contents = match fs::read_to_string(exclude_path) {
-        Ok(contents) => contents,
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(source) => {
-            return Err(OutpostError::IoAt {
-                path: exclude_path.to_path_buf(),
-                source,
-            });
-        }
-    };
-
-    if contents
-        .lines()
-        .any(|line| line.trim() == OUTPOST_IGNORE_LINE)
-    {
-        return Ok(());
-    }
-    if !contents.is_empty() && !contents.ends_with('\n') {
-        contents.push('\n');
-    }
-    contents.push_str(OUTPOST_IGNORE_LINE);
-    contents.push('\n');
-    fs::write(exclude_path, contents).map_err(|source| OutpostError::IoAt {
-        path: exclude_path.to_path_buf(),
-        source,
-    })
-}
-
 fn canonicalize_path(path: &Path) -> OutpostResult<PathBuf> {
     fs::canonicalize(path).map_err(|source| OutpostError::IoAt {
         path: path.to_path_buf(),
@@ -423,13 +353,6 @@ mod tests {
         let expected: serde_json::Value =
             serde_json::from_str(r#"{ "version": 1, "outposts": [] }"#).expect("expected json");
         assert_eq!(value, expected);
-        assert!(
-            fs::read_to_string(source.local_exclude_path())
-                .expect("local exclude")
-                .lines()
-                .any(|line| line == OUTPOST_IGNORE_LINE)
-        );
-
         let loaded = Registry::load(&source).expect("registry reloads");
         assert!(loaded.entries().is_empty());
     }

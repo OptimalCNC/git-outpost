@@ -5,9 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use common::fixture::AbcFixture;
-use outpost_core::{
-    AheadBehind, MetadataState, Outpost, OutpostError, OutpostStateStore, SourceRepo,
-};
+use outpost_core::{AheadBehind, Outpost, OutpostError, SourceRepo};
 
 #[test]
 fn discovery_variants_canonicalize_nested_work_tree_and_git_directory() {
@@ -27,8 +25,6 @@ fn discovery_variants_canonicalize_nested_work_tree_and_git_directory() {
     for outpost in [&discovered, &discovered_with, &at_work_tree, &at_nested] {
         assert_eq!(outpost.work_tree(), expected_work_tree);
         assert_eq!(outpost.git_dir(), expected_git_dir);
-        assert_eq!(outpost.location().work_tree(), expected_work_tree);
-        assert_eq!(outpost.location().git_dir(), expected_git_dir);
         assert_eq!(
             outpost.metadata_path(),
             expected_git_dir.join("outpost/metadata.json")
@@ -75,7 +71,7 @@ fn at_rejects_a_managed_repository_with_invalid_metadata() {
 }
 
 #[test]
-fn state_and_source_accessors_expose_current_metadata_and_source() {
+fn metadata_and_source_accessors_expose_recorded_values() {
     let fixture = AbcFixture::new();
     let outpost_path = fixture.add_outpost("C").expect("add outpost");
     let outpost = Outpost::at_with(&outpost_path, &fixture.git_env).expect("open outpost");
@@ -86,11 +82,6 @@ fn state_and_source_accessors_expose_current_metadata_and_source() {
         outpost.source_repo().expect("open source").work_tree(),
         canonical(&fixture.source)
     );
-    assert!(matches!(
-        outpost.state_store().read_metadata().expect("read state"),
-        MetadataState::Valid(metadata)
-            if metadata == *outpost.metadata()
-    ));
 }
 
 #[test]

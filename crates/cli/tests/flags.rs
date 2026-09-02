@@ -125,7 +125,7 @@ fn e_08_outpost_errors_map_to_documented_exit_codes() {
         ),
         (
             OutpostError::BadRegistry {
-                path: path("/repo/.outpost/registry.json"),
+                path: path("/repo/.git/outpost/registry.json"),
                 reason: "invalid json".to_owned(),
             },
             6,
@@ -154,7 +154,7 @@ fn e_08_outpost_errors_map_to_documented_exit_codes() {
         ),
         (
             OutpostError::IoAt {
-                path: path("/repo/.outpost/registry.json"),
+                path: path("/repo/.git/outpost/registry.json"),
                 source: std::io::Error::new(std::io::ErrorKind::NotFound, "missing"),
             },
             70,

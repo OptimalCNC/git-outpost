@@ -59,14 +59,9 @@ directory reported by `git rev-parse --git-dir`:
 Linked worktrees have independent state directories; the shared Git common
 directory is never the state authority. These files are Git administrative
 data, so `git clean -fdx` and ignored-file listings do not remove or show
-them. During the temporary migration period, a read with no current state may
-import legacy `<worktree>/.outpost/*.json` or local `outpost.*` values into the
-new files. After re-reading and verifying the new state, migration removes only
-the imported legacy file or the three known legacy keys. If valid current state
-already exists, it is authoritative: migration does not parse or compare the
-legacy contents and only removes those known leftovers. A first `gop status`
-may perform that local migration cleanup and must keep its report and context
-classification unchanged.
+them. A status read with no metadata document reports the source context; it
+does not create, rewrite, or remove state. A present invalid document is
+reported as invalid and is not replaced.
 
 ## Orient First
 

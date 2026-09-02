@@ -125,7 +125,7 @@ fn malformed_outpost_tracking_remote_is_rejected_as_an_invalid_ref() {
 fn invalid_metadata_report_preserves_dirty_state() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add outpost");
-    write_current_metadata(&fixture, &outpost, "{");
+    write_metadata(&fixture, &outpost, "{");
     fs::write(outpost.join("dirty.txt"), "dirty").expect("dirty file");
 
     let report = expect_outpost(run_with(&outpost, &fixture.git_env).expect("status report"));
@@ -151,7 +151,7 @@ fn configured_source_path_that_is_not_a_repository_propagates_not_a_repo() {
     let file = fixture.root.join("source-directory");
     fs::create_dir(&file).expect("source directory");
     let expected = canonical(&file);
-    edit_current_metadata(&outpost, |metadata| {
+    edit_metadata(&outpost, |metadata| {
         metadata["source_repo"] = serde_json::Value::String(file.to_string_lossy().into_owned());
     });
 
@@ -163,7 +163,7 @@ fn configured_source_path_that_is_not_a_repository_propagates_not_a_repo() {
     );
 }
 
-fn write_current_metadata(fixture: &AbcFixture, outpost: &Path, contents: &str) {
+fn write_metadata(fixture: &AbcFixture, outpost: &Path, contents: &str) {
     let git_dir = fixture
         .invoker(outpost)
         .run_capture(["rev-parse", "--git-dir"])
@@ -179,7 +179,7 @@ fn write_current_metadata(fixture: &AbcFixture, outpost: &Path, contents: &str) 
     fs::write(path, contents).expect("metadata contents");
 }
 
-fn edit_current_metadata(outpost: &Path, edit: impl FnOnce(&mut serde_json::Value)) {
+fn edit_metadata(outpost: &Path, edit: impl FnOnce(&mut serde_json::Value)) {
     let metadata = outpost_core::Outpost::at(outpost).expect("managed outpost");
     let path = metadata.metadata_path();
     let mut value: serde_json::Value =

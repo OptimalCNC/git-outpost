@@ -36,7 +36,7 @@ For a new container:
 
 Ask only when candidates conflict or the safe location is genuinely ambiguous.
 
-`Ready(config set)` records the source, absolute container, config storage path, and local exclude path. Afterward, require the exact path from `config show` and inspect `<source-git-dir>/outpost/config.json`. The current file is Git administrative data and is not expected to appear in ignored-file listings; the retained local exclude entry covers only legacy `.outpost/` artifacts.
+`Ready(config set)` records the source, absolute container, and config storage path. Afterward, require the exact path from `config show` and inspect `<source-git-dir>/outpost/config.json`. The file is Git administrative data and is not expected to appear in ignored-file listings.
 
 ### Create the Checkout
 
@@ -66,9 +66,9 @@ gop -C /work/project add -b feature/catalog
 
 The source checkout does not switch branches. Uncommitted source changes are not copied. The destination must be absent or empty. Every final destination, whether explicit or container-derived, must be outside every containing Git work tree or explicitly ignored by its containing repository.
 
-A successful `add` may create a source branch. It also writes outpost metadata and the source registry under the exact Git directories, retains the local compatibility ignore for legacy `.outpost/` artifacts, and sets source-local `receive.denyCurrentBranch=updateInstead`. That setting remains after removal or prune and lets a later push update a clean source branch even while it is checked out.
+A successful `add` may create a source branch. It also writes outpost metadata and the source registry under the exact Git directories, and sets source-local `receive.denyCurrentBranch=updateInstead`. That setting remains after removal or prune and lets a later push update a clean source branch even while it is checked out.
 
-After `add`, require `gop status` in the destination, exact destination resolution from `gop -C <source> path <final-absolute-destination>` or a captured ID, matching source-branch and destination-`HEAD` OIDs, `receive.denyCurrentBranch=updateInstead`, the local ignore rule, and an account of every source/destination `git status` entry.
+After `add`, require `gop status` in the destination, exact destination resolution from `gop -C <source> path <final-absolute-destination>` or a captured ID, matching source-branch and destination-`HEAD` OIDs, `receive.denyCurrentBranch=updateInstead`, and an account of every source/destination `git status` entry.
 
 | Worktree intent | Git Outpost command |
 | --- | --- |
@@ -82,7 +82,7 @@ Worktree lifecycle equivalents are co-located under [Context and Lifecycle](#con
 
 | Purpose | Command | Effect |
 | --- | --- | --- |
-| Relationship summary and detection | `gop status` | Local diagnostic; does not fetch or update refs, but may migrate equivalent private state on first read |
+| Relationship summary and detection | `gop status` | Local read-only diagnostic; does not fetch, update refs, or write state |
 | File-level changes | `git status` | Ordinary working-tree status |
 | Source path | `gop path src` | Prints the associated source path |
 | Registered outpost path | `gop path <path-or-id>` | Prints a live managed path |

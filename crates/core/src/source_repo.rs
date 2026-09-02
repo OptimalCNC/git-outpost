@@ -6,8 +6,6 @@ use std::path::{Component, Path, PathBuf};
 use crate::config::{ConfigKey, ConfigStore, ConfigValue};
 use crate::outpost::Outpost;
 use crate::registry::{Registry, RegistryMut};
-use crate::source_state::MigratingSourceStore;
-use crate::state::{RepositoryLocation, SourceStateStore};
 use crate::{
     BranchName, GitInvoker, OutpostError, OutpostResult, RefName, RemoteName, UpstreamRef,
 };
@@ -16,7 +14,6 @@ pub struct SourceRepo {
     work_tree: PathBuf,
     git_dir: PathBuf,
     git_common_dir: PathBuf,
-    location: RepositoryLocation,
     git: GitInvoker,
     env: BTreeMap<OsString, OsString>,
 }
@@ -61,7 +58,6 @@ impl SourceRepo {
         let git = invoker_at(&work_tree, env);
 
         Ok(Self {
-            location: RepositoryLocation::new(work_tree.clone(), git_dir.clone()),
             work_tree,
             git_dir,
             git_common_dir,
@@ -82,10 +78,6 @@ impl SourceRepo {
         &self.git_common_dir
     }
 
-    pub fn location(&self) -> &RepositoryLocation {
-        &self.location
-    }
-
     #[cfg(any(test, feature = "test-helpers"))]
     pub fn git_argv_log_for_tests(&self) -> Vec<Vec<OsString>> {
         self.git.argv_log()
@@ -97,10 +89,6 @@ impl SourceRepo {
 
     pub fn config(&self) -> ConfigStore<'_> {
         ConfigStore::new(self)
-    }
-
-    pub fn state_store(&self) -> impl SourceStateStore + '_ {
-        MigratingSourceStore::new(self)
     }
 
     pub fn outpost_container(&self) -> OutpostResult<Option<PathBuf>> {
@@ -492,28 +480,19 @@ impl SourceRepo {
     }
 
     pub fn registry_path(&self) -> PathBuf {
-        self.location.state_path("registry.json")
+        self.git_dir.join("outpost").join("registry.json")
     }
 
     pub fn config_path(&self) -> PathBuf {
-        self.location.state_path("config.json")
+        self.git_dir.join("outpost").join("config.json")
     }
 
     pub fn registry(&self) -> OutpostResult<Registry> {
         Registry::load(self)
     }
 
-    pub fn registry_mut(&self) -> OutpostResult<RegistryMut<'_>> {
+    pub fn registry_mut(&self) -> OutpostResult<RegistryMut> {
         RegistryMut::load(self)
-    }
-
-    pub(crate) fn local_exclude_path(&self) -> PathBuf {
-        self.git_dir.join("info").join("exclude")
-    }
-
-    #[cfg(any(test, feature = "test-helpers"))]
-    pub fn local_exclude_path_for_tests(&self) -> PathBuf {
-        self.local_exclude_path()
     }
 
     pub(crate) fn git(&self) -> &GitInvoker {
@@ -526,7 +505,6 @@ impl SourceRepo {
         let git_dir = canonicalize_path(git_dir)?;
         Ok(Self {
             git_common_dir: git_dir.clone(),
-            location: RepositoryLocation::new(work_tree.clone(), git_dir.clone()),
             git: GitInvoker::at(&work_tree),
             env: BTreeMap::new(),
             work_tree,

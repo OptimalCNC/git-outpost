@@ -2,11 +2,10 @@ use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::metadata::{Metadata, current_store_at_git};
+use crate::metadata::{self, Metadata};
 use crate::path::git_path_arg;
 use crate::registry::RegistryEntry;
 use crate::safety;
-use crate::state::OutpostStateStore;
 use crate::{
     BranchName, Outpost, OutpostError, OutpostResult, RemoteName, Reporter, SourceRepo, StepKind,
 };
@@ -87,7 +86,7 @@ pub fn run_with_missing_branch(
         source_repo: source.work_tree().to_path_buf(),
         remote_name: remote_name.clone(),
     };
-    current_store_at_git(&outpost_git)?.initialize_metadata(&metadata)?;
+    metadata::initialize(&outpost_git, &metadata)?;
 
     reporter.step(
         StepKind::ConfigChange,

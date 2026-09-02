@@ -382,51 +382,37 @@ fn outpost_status_renders_split_source_upstream_fetch_and_push_routes() {
 }
 
 #[test]
-fn outpost_status_renders_unconfigured_source_and_remote_exactly() {
+fn outpost_status_reports_present_malformed_metadata_without_error_snapshot() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
-    std::fs::remove_file(outpost.join(".git/outpost/metadata.json"))
-        .expect("remove current metadata");
-    git_ok(
-        &fixture,
-        &outpost,
-        &["config", "--local", "outpost.managed", "true"],
-    );
-    git_ok(
-        &fixture,
-        &outpost,
-        &[
-            "config",
-            "--local",
-            "outpost.sourceRepo",
-            fixture.source.to_str().expect("source path"),
-        ],
-    );
-    git_ok(
-        &fixture,
-        &outpost,
-        &["config", "--local", "outpost.remoteName", "local"],
-    );
-    git_ok(
-        &fixture,
-        &outpost,
-        &["config", "--unset", "outpost.sourceRepo"],
-    );
-    git_ok(
-        &fixture,
-        &outpost,
-        &["config", "--unset", "outpost.remoteName"],
-    );
-    let output = common::run(fixture.gop().current_dir(&outpost).arg("status"));
-    common::assert_success(&output, "degraded gop status");
-    let outpost = common::displayed_path(&outpost);
+    fs::write(outpost.join("dirty.txt"), "dirty\n").expect("dirty outpost");
+    let git_dir = fixture.git_capture(&outpost, ["rev-parse", "--absolute-git-dir"]);
+    fs::write(
+        Path::new(&git_dir).join("outpost/metadata.json"),
+        "{invalid metadata",
+    )
+    .expect("malformed metadata");
 
-    assert_eq!(
-        common::stdout(&output),
-        format!(
-            "context: outpost\noutpost: {outpost}\nsource: -\nsource-present: false\nremote: -\nbranch: main\noutpost-state: clean\nsource-upstream: <unavailable>\noutpost-vs-source: -\nsource-vs-upstream: -\nhealth: problems\n  - missing source repo config\n  - missing remote name config\n"
+    let output = common::run(fixture.gop().current_dir(&outpost).arg("status"));
+    common::assert_success(&output, "malformed metadata gop status");
+
+    let output = common::stdout(&output);
+    let outpost = common::displayed_path(&outpost);
+    assert!(output.contains("context: outpost\n"));
+    assert!(output.contains(&format!("outpost: {outpost}\n")));
+    assert!(output.contains("source: -\nsource-present: false\nremote: -\n"));
+    assert!(output.contains("branch: main\noutpost-state: dirty\n"));
+    assert!(
+        output.contains(
+            "source-upstream: <unavailable>\noutpost-vs-source: -\nsource-vs-upstream: -\n"
         )
     );
+    let problems = output
+        .lines()
+        .filter(|line| line.starts_with("  - "))
+        .collect::<Vec<_>>();
+    assert_eq!(problems.len(), 1);
+    assert!(problems[0].starts_with("  - invalid outpost metadata:"));
 }
 
 #[test]
@@ -443,51 +429,6 @@ fn outpost_status_renders_detached_head_as_not_applicable() {
         common::stdout(&output),
         format!(
             "context: outpost\noutpost: {outpost}\nsource: {source}\nsource-present: true\nremote: local\nbranch: detached\noutpost-state: clean\nsource-upstream: <not-applicable>\noutpost-vs-source: -\nsource-vs-upstream: -\nhealth: ok\n"
-        )
-    );
-}
-
-#[test]
-fn outpost_status_keeps_source_upstream_when_remote_metadata_is_missing() {
-    let fixture = common::CliFixture::new();
-    let outpost = fixture.add_outpost("C");
-    std::fs::remove_file(outpost.join(".git/outpost/metadata.json"))
-        .expect("remove current metadata");
-    git_ok(
-        &fixture,
-        &outpost,
-        &["config", "--local", "outpost.managed", "true"],
-    );
-    git_ok(
-        &fixture,
-        &outpost,
-        &[
-            "config",
-            "--local",
-            "outpost.sourceRepo",
-            fixture.source.to_str().expect("source path"),
-        ],
-    );
-    git_ok(
-        &fixture,
-        &outpost,
-        &["config", "--local", "outpost.remoteName", "local"],
-    );
-    git_ok(
-        &fixture,
-        &outpost,
-        &["config", "--unset", "outpost.remoteName"],
-    );
-    let output = common::run(fixture.gop().current_dir(&outpost).arg("status"));
-    common::assert_success(&output, "missing-remote gop status");
-    let outpost = common::displayed_path(&outpost);
-    let source = common::displayed_path(&fixture.source);
-    let upstream = fixture.upstream.display();
-
-    assert_eq!(
-        common::stdout(&output),
-        format!(
-            "context: outpost\noutpost: {outpost}\nsource: {source}\nsource-present: true\nremote: -\nbranch: main\noutpost-state: clean\nsource-upstream: origin/main  {upstream}\noutpost-vs-source: -\nsource-vs-upstream: ahead 0, behind 0\nhealth: problems\n  - missing remote name config\n"
         )
     );
 }
@@ -1266,7 +1207,7 @@ fn path_outpost_rejects_stale_registered_outpost() {
 }
 
 #[test]
-fn config_set_rejects_non_directory_and_does_not_write_source_git_config() {
+fn config_set_validates_container_directory() {
     let fixture = common::CliFixture::new();
     let file = fixture.root.join("not-a-directory");
     std::fs::write(&file, "file").expect("write file");
@@ -1289,12 +1230,6 @@ fn config_set_rejects_non_directory_and_does_not_write_source_git_config() {
         "..",
     ]));
     common::assert_success(&set, "gop config set outpost-container");
-
-    assert_eq!(
-        fixture.local_config(&fixture.source, "outpost.container"),
-        None,
-        "source-owned config must not write source repo git config"
-    );
 }
 
 #[test]

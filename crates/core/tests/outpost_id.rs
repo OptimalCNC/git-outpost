@@ -72,7 +72,7 @@ fn registry_round_trip_does_not_store_outpost_ids() {
 }
 
 #[test]
-fn registry_save_drops_stale_outpost_id_fields() {
+fn registry_save_drops_unknown_outpost_id_fields() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");
     let outpost = fixture.root.join("C");
@@ -98,9 +98,9 @@ fn registry_save_drops_stale_outpost_id_fields() {
             serde_json::to_string(&outpost).expect("json path")
         ),
     )
-    .expect("write legacy registry");
+    .expect("write registry fixture");
 
-    let loaded = Registry::load(&source).expect("load legacy registry");
+    let loaded = Registry::load(&source).expect("load registry fixture");
     assert_eq!(loaded.entries().len(), 1);
     loaded.save().expect("save registry");
 
