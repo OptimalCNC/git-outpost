@@ -1,4 +1,5 @@
 mod cli;
+mod completion;
 mod exit;
 mod gh;
 mod output;
