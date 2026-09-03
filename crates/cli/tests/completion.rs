@@ -1,5 +1,6 @@
 mod common;
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 use std::process::Output;
@@ -26,6 +27,19 @@ fn has_candidate(output: &Output, candidate: &str) -> bool {
     common::stdout(output).lines().any(|line| line == candidate)
 }
 
+fn dynamic_ids(output: &Output) -> BTreeSet<String> {
+    common::stdout(output)
+        .lines()
+        .filter(|line| {
+            (outpost_core::outpost_id::MIN_PREFIX_LEN..=64).contains(&line.len())
+                && line
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
 fn expected_ids(fixture: &common::CliFixture, outposts: &[&Path]) -> Vec<String> {
     let ids = outposts
         .iter()
@@ -40,25 +54,32 @@ fn expected_ids(fixture: &common::CliFixture, outposts: &[&Path]) -> Vec<String>
 
 fn assert_ids(output: &Output, expected: &[String], label: &str) {
     common::assert_success(output, label);
-    for id in expected {
-        assert!(
-            has_candidate(output, id),
-            "{label} missing dynamic ID {id}\nstdout:\n{}",
-            common::stdout(output)
-        );
-    }
+    assert_eq!(
+        dynamic_ids(output),
+        expected.iter().cloned().collect(),
+        "{label} returned unexpected dynamic IDs\nstdout:\n{}",
+        common::stdout(output)
+    );
     assert_eq!(common::stderr(output), "", "{label} reported an error");
 }
 
-fn assert_no_ids(output: &Output, ids: &[String], label: &str) {
+fn assert_no_dynamic_ids(output: &Output, label: &str) {
     common::assert_success(output, label);
+    assert!(
+        dynamic_ids(output).is_empty(),
+        "{label} unexpectedly offered dynamic IDs {:?}",
+        dynamic_ids(output)
+    );
+    assert_eq!(common::stderr(output), "", "{label} reported an error");
+}
+
+fn assert_ids_absent(output: &Output, ids: &[String], label: &str) {
     for id in ids {
         assert!(
             !has_candidate(output, id),
             "{label} unexpectedly offered dynamic ID {id}"
         );
     }
-    assert_eq!(common::stderr(output), "", "{label} reported an error");
 }
 
 #[test]
@@ -149,7 +170,7 @@ fn dynamic_selectors_offer_source_scoped_ids_and_path_src() {
         &["gop", "move", &expected[0], ""],
         3,
     );
-    assert_no_ids(&second_move, &expected, "move destination");
+    assert_no_dynamic_ids(&second_move, "move destination");
 
     let filtered = query(
         &fixture,
@@ -176,21 +197,18 @@ fn dynamic_ids_match_across_shell_adapters_and_sources() {
     let zsh = query(&fixture, "zsh", &fixture.source, &["gop", "remove", ""], 2);
     assert_ids(&bash, &expected, "bash remove completion");
     assert_ids(&zsh, &expected, "zsh remove completion");
-    let bash_ids = expected
-        .iter()
-        .filter(|id| has_candidate(&bash, id))
-        .collect::<Vec<_>>();
-    let zsh_ids = expected
-        .iter()
-        .filter(|id| has_candidate(&zsh, id))
-        .collect::<Vec<_>>();
-    assert_eq!(bash_ids, zsh_ids, "shell adapters returned different IDs");
+    assert_eq!(
+        dynamic_ids(&bash),
+        dynamic_ids(&zsh),
+        "shell adapters returned different IDs"
+    );
 
     let other = common::CliFixture::new();
     let other_outpost = other.add_outpost("C");
     let other_ids = expected_ids(&other, &[&other_outpost]);
     let first_source = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
-    assert_no_ids(&first_source, &other_ids, "first source isolation");
+    assert_ids(&first_source, &expected, "first source isolation");
+    assert_ids_absent(&first_source, &other_ids, "first source isolation");
 }
 
 #[test]
@@ -206,7 +224,7 @@ fn dynamic_context_uses_associated_source_or_explicit_cd() {
     }
     for command in ["move", "remove"] {
         let output = query(&fixture, "bash", &first, &["gop", command, ""], 2);
-        assert_no_ids(&output, &expected, &format!("{command} from outpost"));
+        assert_no_dynamic_ids(&output, &format!("{command} from outpost"));
     }
 
     let source = fixture.source.display().to_string();
@@ -239,9 +257,10 @@ fn dynamic_remove_keeps_stale_entries_while_other_selectors_hide_them() {
             &expected[..1],
             &format!("{command} existing registration"),
         );
-        assert!(
-            !has_candidate(&output, &expected[1]),
-            "{command} should hide the stale registration"
+        assert_ids_absent(
+            &output,
+            &expected[1..],
+            &format!("{command} stale registration"),
         );
     }
 }
@@ -249,11 +268,10 @@ fn dynamic_remove_keeps_stale_entries_while_other_selectors_hide_them() {
 #[test]
 fn dynamic_completion_fails_closed_for_invalid_context_and_registry() {
     let fixture = common::CliFixture::new();
-    let outpost = fixture.add_outpost("C");
-    let expected = expected_ids(&fixture, &[&outpost]);
+    fixture.add_outpost("C");
 
     let non_git = query(&fixture, "bash", &fixture.root, &["gop", "remove", ""], 2);
-    assert_no_ids(&non_git, &expected, "non-Git completion");
+    assert_no_dynamic_ids(&non_git, "non-Git completion");
 
     for (words, index, label) in [
         (vec!["gop", "-C", "--", "remove", ""], 4, "missing -C"),
@@ -265,7 +283,7 @@ fn dynamic_completion_fails_closed_for_invalid_context_and_registry() {
         ),
     ] {
         let output = query(&fixture, "bash", &fixture.root, &words, index);
-        assert_no_ids(&output, &expected, label);
+        assert_no_dynamic_ids(&output, label);
     }
 
     let registry_path = fixture.source.join(".git/outpost/registry.json");
@@ -283,11 +301,11 @@ fn dynamic_completion_fails_closed_for_invalid_context_and_registry() {
     )
     .expect("write duplicate registry");
     let duplicate = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
-    assert_no_ids(&duplicate, &expected, "duplicate registry completion");
+    assert_no_dynamic_ids(&duplicate, "duplicate registry completion");
 
     fs::write(&registry_path, "{invalid registry").expect("write malformed registry");
     let malformed = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
-    assert_no_ids(&malformed, &expected, "malformed registry completion");
+    assert_no_dynamic_ids(&malformed, "malformed registry completion");
 }
 
 #[test]

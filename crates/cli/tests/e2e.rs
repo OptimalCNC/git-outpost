@@ -2123,7 +2123,7 @@ fn shell_path() -> std::ffi::OsString {
 
 #[cfg(unix)]
 fn bash_script(script: &str, fixture: &common::CliFixture) -> std::process::Output {
-    let mut command = std::process::Command::new("/usr/bin/bash");
+    let mut command = std::process::Command::new("bash");
     command
         .arg("--noprofile")
         .arg("--norc")
@@ -2137,10 +2137,10 @@ fn bash_script(script: &str, fixture: &common::CliFixture) -> std::process::Outp
 }
 
 #[cfg(unix)]
-fn zsh_script(script: &str, fixture: &common::CliFixture) -> std::process::Output {
+fn zsh_script(script: &str, fixture: &common::CliFixture) -> std::io::Result<std::process::Output> {
     let zdotdir = fixture.root.join("zsh-home");
     fs::create_dir_all(&zdotdir).expect("create isolated ZDOTDIR");
-    let mut command = std::process::Command::new("/usr/bin/zsh");
+    let mut command = std::process::Command::new("zsh");
     command
         .arg("-f")
         .arg("-c")
@@ -2151,7 +2151,7 @@ fn zsh_script(script: &str, fixture: &common::CliFixture) -> std::process::Outpu
         .env("ROOT_DIR", &fixture.root)
         .env("HOME", &zdotdir)
         .env("ZDOTDIR", &zdotdir);
-    common::run(&mut command)
+    command.output()
 }
 
 #[cfg(unix)]
@@ -2421,7 +2421,14 @@ gop cd
 pwd
 "#,
         );
-        let output = zsh_script(&script, &fixture);
+        let output = match zsh_script(&script, &fixture) {
+            Ok(output) => output,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!("skipping zsh lifecycle smoke: zsh is unavailable on PATH");
+                return;
+            }
+            Err(err) => panic!("run zsh lifecycle smoke: {err}"),
+        };
 
         common::assert_success(&output, "zsh gop cd and completion registration");
         assert_eq!(common::stdout(&output), format!("{source_display}\n"));
