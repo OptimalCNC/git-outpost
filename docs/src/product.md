@@ -267,7 +267,12 @@ or a managed outpost's associated source. Completion derives prefixes across
 the current registry before filtering: `remove` may show a stale registered ID
 so it can remove that entry, while the other selectors use only a cheap
 path-presence filter. That filter is not validation that the path remains a
-managed outpost; normal commands remain authoritative.
+managed outpost; normal commands remain authoritative. Zsh describes each ID
+with its registered absolute path and current branch, for example
+`/path/to/outpost [branch]`; detached outposts use `[detached]`, and stale or
+unreadable entries show only the path. Control characters in a displayed path
+use visible escapes. Bash lists the same IDs without descriptions because its
+completion protocol has no separate help field.
 
 The MVP keeps only the options that are meaningful for clone-backed outposts.
 It does not mirror every `git worktree` option. Synchronization commands have

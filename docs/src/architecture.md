@@ -1878,9 +1878,14 @@ after Clap's outer protocol `--`, skips a repeated `gop`, accepts `-C PATH`,
 Candidate lookup treats the current `SourceRepo::registry()` state as its only
 authority. It derives shortest unique lowercase IDs across all registered
 entries before applying each command's path-presence policy; duplicate derived
-IDs and registry or context failures return no dynamic candidates. This leaves
-selector validation with the normal command path and avoids a Git-heavy command
-operation during completion.
+IDs and registry or context failures return no dynamic candidates. It reuses
+the list operation's bounded concurrent snapshots to associate each present
+entry with an attached branch or detached-HEAD state while preserving registry
+order. Candidate help combines the registered absolute path with that head
+state; stale or unreadable entries retain a path-only hint. This leaves selector
+validation with the normal command path, escapes control characters before the
+line-oriented Zsh protocol, and performs no fetch or dirty-state inspection
+during completion.
 
 ---
 

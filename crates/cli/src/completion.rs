@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::CommandFactory as _;
 use clap_complete::env::{Bash, EnvCompleter, Shells, Zsh};
 use clap_complete::{ArgValueCandidates, CompleteEnv, CompletionCandidate};
-use outpost_core::outpost_id::{DuplicateOutpostIdError, OutpostId, shortest_unique_prefixes};
+use outpost_core::ops::list::{self, OutpostHead, OutpostState, OutpostSummary};
 use outpost_core::{Outpost, OutpostError, SourceRepo};
 
 use crate::cli::Cli;
@@ -16,11 +16,6 @@ enum CandidatePolicy {
     ExistingFromAssociatedSource,
     ExistingFromSource,
     RegisteredFromSource,
-}
-
-struct DerivedOutpostCandidate {
-    path: PathBuf,
-    id: OutpostId,
 }
 
 #[derive(Clone, Copy)]
@@ -173,6 +168,18 @@ fn escape_zsh(value: &str, escape_colon: bool) -> String {
     } else {
         value
     }
+}
+
+fn completion_help_path(path: &Path) -> String {
+    let mut rendered = String::new();
+    for character in path.display().to_string().chars() {
+        if character.is_control() {
+            rendered.extend(character.escape_default());
+        } else {
+            rendered.push(character);
+        }
+    }
+    rendered
 }
 
 fn command_for(cwd: Option<PathBuf>) -> clap::Command {
@@ -329,33 +336,37 @@ fn outpost_candidates(cwd: Option<&Path>, policy: CandidatePolicy) -> Vec<Comple
     let Some(source) = source else {
         return Vec::new();
     };
-    let Ok(registry) = source.registry() else {
+    let Ok(outposts) = list::run(&source) else {
         return Vec::new();
     };
-    let entries = registry
-        .entries()
-        .iter()
-        .map(|entry| DerivedOutpostCandidate {
-            path: entry.path.clone(),
-            id: OutpostId::derive(source.work_tree(), &entry.path),
-        })
-        .collect::<Vec<_>>();
 
-    candidates_from_entries(&entries, policy).unwrap_or_default()
+    candidates_from_summaries(&outposts, policy)
 }
 
-fn candidates_from_entries(
-    entries: &[DerivedOutpostCandidate],
+fn candidates_from_summaries(
+    outposts: &[OutpostSummary],
     policy: CandidatePolicy,
-) -> Result<Vec<CompletionCandidate>, DuplicateOutpostIdError> {
-    let prefixes = shortest_unique_prefixes(entries.iter().map(|entry| &entry.id))?;
+) -> Vec<CompletionCandidate> {
     let include_missing = policy == CandidatePolicy::RegisteredFromSource;
-    Ok(entries
+    outposts
         .iter()
-        .zip(prefixes)
-        .filter(|(entry, _)| include_missing || entry.path.exists())
-        .map(|(_, prefix)| CompletionCandidate::new(prefix.to_string()))
-        .collect())
+        .filter(|outpost| include_missing || outpost.path.exists())
+        .map(|outpost| {
+            let path = completion_help_path(&outpost.path);
+            let help = match &outpost.state {
+                OutpostState::Present {
+                    head: OutpostHead::Attached(branch),
+                    ..
+                } => format!("{path} [{branch}]"),
+                OutpostState::Present {
+                    head: OutpostHead::Detached,
+                    ..
+                } => format!("{path} [detached]"),
+                OutpostState::Missing | OutpostState::NotManaged => path.to_string(),
+            };
+            CompletionCandidate::new(outpost.display_id.clone()).help(Some(help.into()))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -365,7 +376,7 @@ mod tests {
     use std::path::PathBuf;
 
     use clap_complete::{ArgValueCandidates, CompletionCandidate};
-    use outpost_core::outpost_id::{DuplicateOutpostIdError, OutpostId};
+    use outpost_core::ops::list::{OutpostHead, OutpostState, OutpostSummary};
 
     use super::*;
 
@@ -431,63 +442,54 @@ mod tests {
     }
 
     #[test]
-    fn candidates_calculate_prefixes_before_excluding_missing_paths() {
+    fn candidates_filter_missing_paths_without_losing_registered_hints() {
         let temp = tempfile::tempdir().expect("tempdir");
         let live_path = temp.path().join("live");
         fs::create_dir(&live_path).expect("live path");
         let stale_path = temp.path().join("stale");
-        let live_id =
-            OutpostId::parse("abcde00000000000000000000000000000000000000000000000000000000000")
-                .expect("live ID");
-        let stale_id =
-            OutpostId::parse("abcde10000000000000000000000000000000000000000000000000000000000")
-                .expect("stale ID");
-        let entries = [
-            DerivedOutpostCandidate {
-                path: live_path,
-                id: live_id,
+        let outposts = [
+            OutpostSummary {
+                display_id: "abcde0".to_owned(),
+                path: live_path.clone(),
+                state: OutpostState::Present {
+                    head_oid: "0".repeat(40),
+                    head: OutpostHead::Detached,
+                },
+                locked: false,
+                lock_reason: None,
             },
-            DerivedOutpostCandidate {
-                path: stale_path,
-                id: stale_id,
+            OutpostSummary {
+                display_id: "abcde1".to_owned(),
+                path: stale_path.clone(),
+                state: OutpostState::Missing,
+                locked: false,
+                lock_reason: None,
             },
         ];
 
         assert_eq!(
-            candidate_values(
-                candidates_from_entries(&entries, CandidatePolicy::ExistingFromAssociatedSource)
-                    .expect("distinct IDs"),
-            ),
+            candidate_values(candidates_from_summaries(
+                &outposts,
+                CandidatePolicy::ExistingFromAssociatedSource,
+            ),),
             ["abcde0"]
         );
         assert_eq!(
-            candidate_values(
-                candidates_from_entries(&entries, CandidatePolicy::ExistingFromSource)
-                    .expect("distinct IDs"),
-            ),
+            candidate_values(candidates_from_summaries(
+                &outposts,
+                CandidatePolicy::ExistingFromSource
+            ),),
             ["abcde0"]
         );
+        let registered =
+            candidates_from_summaries(&outposts, CandidatePolicy::RegisteredFromSource);
+        assert_eq!(candidate_values(&registered), ["abcde0", "abcde1"]);
         assert_eq!(
-            candidate_values(
-                candidates_from_entries(&entries, CandidatePolicy::RegisteredFromSource)
-                    .expect("distinct IDs"),
-            ),
-            ["abcde0", "abcde1"]
-        );
-
-        let duplicates = [
-            DerivedOutpostCandidate {
-                path: temp.path().join("duplicate-one"),
-                id: entries[0].id.clone(),
-            },
-            DerivedOutpostCandidate {
-                path: temp.path().join("duplicate-two"),
-                id: entries[0].id.clone(),
-            },
-        ];
-        assert_eq!(
-            candidates_from_entries(&duplicates, CandidatePolicy::RegisteredFromSource),
-            Err(DuplicateOutpostIdError)
+            candidate_helps(&registered),
+            [
+                format!("{} [detached]", live_path.display()),
+                stale_path.display().to_string(),
+            ]
         );
     }
 
@@ -547,10 +549,18 @@ mod tests {
         args.into_iter().map(OsString::from).collect()
     }
 
-    fn candidate_values(candidates: Vec<CompletionCandidate>) -> Vec<String> {
+    fn candidate_values(candidates: impl AsRef<[CompletionCandidate]>) -> Vec<String> {
         candidates
+            .as_ref()
             .iter()
             .map(|candidate| candidate.get_value().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    fn candidate_helps(candidates: &[CompletionCandidate]) -> Vec<String> {
+        candidates
+            .iter()
+            .map(|candidate| candidate.get_help().expect("candidate help").to_string())
             .collect()
     }
 }

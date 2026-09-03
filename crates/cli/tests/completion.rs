@@ -34,7 +34,20 @@ fn query_with_index(
 }
 
 fn has_candidate(output: &Output, candidate: &str) -> bool {
-    common::stdout(output).lines().any(|line| line == candidate)
+    common::stdout(output).lines().any(|line| {
+        line == candidate
+            || line
+                .strip_prefix(candidate)
+                .is_some_and(|suffix| suffix.starts_with(':'))
+    })
+}
+
+fn candidate_help(output: &Output, candidate: &str) -> Option<String> {
+    common::stdout(output).lines().find_map(|line| {
+        line.strip_prefix(candidate)
+            .and_then(|suffix| suffix.strip_prefix(':'))
+            .map(str::to_owned)
+    })
 }
 
 fn flag_candidates(output: &Output) -> Vec<String> {
@@ -66,9 +79,10 @@ fn assert_no_flag_candidates(output: &Output, label: &str) {
 fn dynamic_ids(output: &Output) -> BTreeSet<String> {
     common::stdout(output)
         .lines()
-        .filter(|line| {
-            (outpost_core::outpost_id::MIN_PREFIX_LEN..=64).contains(&line.len())
-                && line
+        .map(|line| line.split_once(':').map_or(line, |(value, _)| value))
+        .filter(|value| {
+            (outpost_core::outpost_id::MIN_PREFIX_LEN..=64).contains(&value.len())
+                && value
                     .bytes()
                     .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
         })
@@ -215,6 +229,96 @@ fn dynamic_remove_offers_shortest_ids_from_the_source_registry() {
     let output = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
 
     assert_ids(&output, &expected, "remove completion from source");
+}
+
+#[test]
+fn zsh_dynamic_outpost_hint_shows_path_and_current_branch() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    let branch = "feature/completion-hint";
+    let switch = common::run(fixture.git(&outpost).args(["switch", "-c", branch]));
+    common::assert_success(&switch, "switch outpost branch");
+    let expected_id = expected_ids(&fixture, &[&outpost]).remove(0);
+    let expected_help = format!("{} [{branch}]", common::displayed_path(&outpost));
+
+    let zsh = query(&fixture, "zsh", &fixture.source, &["gop", "remove", ""], 2);
+    assert_ids(&zsh, std::slice::from_ref(&expected_id), "zsh branch hint");
+    assert_eq!(
+        candidate_help(&zsh, &expected_id).as_deref(),
+        Some(expected_help.as_str())
+    );
+
+    let bash = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
+    assert_ids(
+        &bash,
+        std::slice::from_ref(&expected_id),
+        "bash candidate value",
+    );
+    assert_eq!(candidate_help(&bash, &expected_id), None);
+}
+
+#[cfg(unix)]
+#[test]
+fn zsh_dynamic_outpost_hint_escapes_newlines_in_the_path() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("line\nbreak");
+    let expected_id = expected_ids(&fixture, &[&outpost]).remove(0);
+    let expected_help = common::displayed_path(&outpost).replace('\n', "\\\\n");
+
+    let output = query(&fixture, "zsh", &fixture.source, &["gop", "remove", ""], 2);
+
+    assert_ids(
+        &output,
+        std::slice::from_ref(&expected_id),
+        "zsh escaped hint",
+    );
+    assert_eq!(
+        candidate_help(&output, &expected_id).as_deref(),
+        Some(expected_help.as_str())
+    );
+}
+
+#[test]
+fn zsh_dynamic_outpost_hint_reports_detached_head() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    let detach = common::run(fixture.git(&outpost).args(["switch", "--detach"]));
+    common::assert_success(&detach, "detach outpost HEAD");
+    let expected_id = expected_ids(&fixture, &[&outpost]).remove(0);
+    let expected_help = format!("{} [detached]", common::displayed_path(&outpost));
+
+    let output = query(&fixture, "zsh", &fixture.source, &["gop", "remove", ""], 2);
+
+    assert_ids(
+        &output,
+        std::slice::from_ref(&expected_id),
+        "zsh detached hint",
+    );
+    assert_eq!(
+        candidate_help(&output, &expected_id).as_deref(),
+        Some(expected_help.as_str())
+    );
+}
+
+#[test]
+fn zsh_stale_remove_candidate_hint_keeps_its_registered_path() {
+    let fixture = common::CliFixture::new();
+    let stale = fixture.add_outpost("C");
+    let expected_id = expected_ids(&fixture, &[&stale]).remove(0);
+    let expected_help = common::displayed_path(&stale);
+    fs::remove_dir_all(&stale).expect("remove stale checkout");
+
+    let output = query(&fixture, "zsh", &fixture.source, &["gop", "remove", ""], 2);
+
+    assert_ids(
+        &output,
+        std::slice::from_ref(&expected_id),
+        "zsh stale path hint",
+    );
+    assert_eq!(
+        candidate_help(&output, &expected_id).as_deref(),
+        Some(expected_help.as_str())
+    );
 }
 
 #[test]
