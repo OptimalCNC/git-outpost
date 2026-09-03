@@ -67,12 +67,7 @@ fn command_for(cwd: Option<PathBuf>) -> clap::Command {
         )
     });
     let command = command.mut_subcommand("move", |command| {
-        command_with_candidates(
-            command,
-            "outpost_path",
-            cwd.clone(),
-            CandidatePolicy::ExistingFromSource,
-        )
+        command_with_move_candidates(command, cwd.clone())
     });
     let command = command.mut_subcommand("remove", |command| {
         command_with_candidates(
@@ -104,6 +99,17 @@ fn command_with_candidates(
             outpost_candidates(cwd.as_deref(), policy)
         }))
     })
+}
+
+fn command_with_move_candidates(command: clap::Command, cwd: Option<PathBuf>) -> clap::Command {
+    command_with_candidates(
+        command,
+        "outpost_path",
+        cwd,
+        CandidatePolicy::ExistingFromSource,
+    )
+    .mut_arg("outpost_path", |arg| arg.index(1))
+    .mut_arg("new_path", |arg| arg.index(2))
 }
 
 fn command_with_path_candidates(command: clap::Command, cwd: Option<PathBuf>) -> clap::Command {

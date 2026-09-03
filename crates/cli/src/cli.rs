@@ -283,10 +283,10 @@ pub struct UnlockArgs {
 
 #[derive(Debug, Args)]
 pub struct MoveArgs {
-    #[arg(index = 1, value_name = "OUTPOST")]
+    #[arg(value_name = "OUTPOST")]
     pub outpost_path: PathBuf,
 
-    #[arg(index = 2, value_name = "NEW-PATH")]
+    #[arg(value_name = "NEW-PATH")]
     pub new_path: PathBuf,
 
     /// Ignore dirty-tree and lock guards.
