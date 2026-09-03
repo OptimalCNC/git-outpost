@@ -5,7 +5,7 @@ use std::thread;
 use crate::metadata::{self, MetadataState};
 use crate::outpost_id::{OutpostId, shortest_unique_prefixes};
 use crate::source_repo::{canonicalize_path, invoker_at};
-use crate::{BranchName, OutpostResult, RegistryEntry, SourceRepo};
+use crate::{BranchName, OutpostError, OutpostResult, RegistryEntry, SourceRepo};
 
 const MAX_LIST_WORKERS: usize = 8;
 
@@ -38,7 +38,13 @@ pub fn run(source: &SourceRepo) -> OutpostResult<Vec<OutpostSummary>> {
         .iter()
         .map(|entry| OutpostId::derive(source.work_tree(), &entry.path))
         .collect::<Vec<_>>();
-    let prefixes = shortest_unique_prefixes(ids.iter());
+    let prefixes = shortest_unique_prefixes(ids.iter())
+        .map_err(|error| OutpostError::BadRegistry {
+            path: source.registry_path(),
+            reason: error.to_string(),
+        })?
+        .into_iter()
+        .map(|prefix| prefix.to_string());
     let jobs = registry
         .entries()
         .iter()

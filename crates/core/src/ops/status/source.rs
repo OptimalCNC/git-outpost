@@ -46,12 +46,16 @@ pub(super) fn build(
         .iter()
         .map(|entry| OutpostId::derive(&source_path, &entry.path))
         .collect::<Vec<_>>();
-    let prefixes = shortest_unique_prefixes(ids.iter());
+    let prefixes =
+        shortest_unique_prefixes(ids.iter()).map_err(|error| OutpostError::BadRegistry {
+            path: source.registry_path(),
+            reason: error.to_string(),
+        })?;
     let mut outposts = Vec::new();
     let mut stale_registrations = Vec::new();
 
     for (entry, prefix) in entries.iter().zip(prefixes) {
-        let display_id = OutpostIdPrefix::parse(prefix).expect("derived prefix is valid");
+        let display_id = prefix;
         match fs::metadata(&entry.path) {
             Ok(metadata) if metadata.is_dir() => {
                 outposts.push(build_live_row(&source_path, entry, display_id, env)?)

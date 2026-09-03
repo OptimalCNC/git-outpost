@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt;
 use std::path::Path;
 
@@ -22,6 +23,10 @@ pub struct OutpostId(String);
 /// uniquely identify one entry within the current source registry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutpostIdPrefix(String);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("duplicate derived outpost ID")]
+pub struct DuplicateOutpostIdError;
 
 impl OutpostId {
     pub fn parse(value: impl Into<String>) -> Result<Self, String> {
@@ -93,28 +98,31 @@ impl fmt::Display for OutpostIdPrefix {
     }
 }
 
-pub(crate) fn shortest_unique_prefixes<'a>(
+pub fn shortest_unique_prefixes<'a>(
     ids: impl IntoIterator<Item = &'a OutpostId>,
-) -> Vec<String> {
+) -> Result<Vec<OutpostIdPrefix>, DuplicateOutpostIdError> {
     let ids = ids.into_iter().collect::<Vec<_>>();
-    ids.iter()
+    if ids.iter().collect::<BTreeSet<_>>().len() != ids.len() {
+        return Err(DuplicateOutpostIdError);
+    }
+
+    Ok(ids
+        .iter()
         .map(|id| shortest_unique_prefix(id, &ids))
-        .collect()
+        .collect())
 }
 
-fn shortest_unique_prefix(id: &OutpostId, ids: &[&OutpostId]) -> String {
-    for len in MIN_PREFIX_LEN..=ID_LEN {
-        let prefix = &id.as_str()[..len];
-        if ids
-            .iter()
-            .filter(|candidate| candidate.as_str().starts_with(prefix))
-            .count()
-            == 1
-        {
-            return prefix.to_owned();
-        }
-    }
-    id.as_str().to_owned()
+fn shortest_unique_prefix(id: &OutpostId, ids: &[&OutpostId]) -> OutpostIdPrefix {
+    (MIN_PREFIX_LEN..=ID_LEN)
+        .find(|&len| {
+            let prefix = &id.as_str()[..len];
+            ids.iter()
+                .filter(|candidate| candidate.as_str().starts_with(prefix))
+                .count()
+                == 1
+        })
+        .map(|len| OutpostIdPrefix(id.as_str()[..len].to_owned()))
+        .expect("distinct full IDs must have a unique prefix")
 }
 
 fn update_field(hasher: &mut Sha256, value: &[u8]) {
@@ -160,9 +168,22 @@ mod tests {
             OutpostId::parse("1234500000000000000000000000000000000000000000000000000000000000")
                 .expect("third id");
 
-        let prefixes = shortest_unique_prefixes([&first, &second, &third]);
+        let prefixes = shortest_unique_prefixes([&first, &second, &third]).expect("distinct ids");
 
-        assert_eq!(prefixes, vec!["abcde", "abcdf", "12345"]);
+        assert_eq!(prefixes[0].as_str(), "abcde");
+        assert_eq!(prefixes[1].as_str(), "abcdf");
+        assert_eq!(prefixes[2].as_str(), "12345");
+        assert!(
+            prefixes
+                .iter()
+                .all(|prefix| prefix.as_str().len() >= MIN_PREFIX_LEN)
+        );
+        assert!(prefixes.iter().all(|prefix| {
+            prefix
+                .as_str()
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        }));
     }
 
     #[test]
@@ -174,8 +195,21 @@ mod tests {
             OutpostId::parse("abcde10000000000000000000000000000000000000000000000000000000000")
                 .expect("second id");
 
-        let prefixes = shortest_unique_prefixes([&first, &second]);
+        let prefixes = shortest_unique_prefixes([&first, &second]).expect("distinct ids");
 
-        assert_eq!(prefixes, vec!["abcde0", "abcde1"]);
+        assert_eq!(prefixes[0].as_str(), "abcde0");
+        assert_eq!(prefixes[1].as_str(), "abcde1");
+    }
+
+    #[test]
+    fn shortest_unique_prefixes_reject_duplicate_ids() {
+        let id =
+            OutpostId::parse("abcde00000000000000000000000000000000000000000000000000000000000")
+                .expect("id");
+
+        assert_eq!(
+            shortest_unique_prefixes([&id, &id]),
+            Err(DuplicateOutpostIdError)
+        );
     }
 }

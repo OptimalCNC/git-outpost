@@ -5,6 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use common::fixture::AbcFixture;
+use outpost_core::outpost_id::{DuplicateOutpostIdError, MIN_PREFIX_LEN, shortest_unique_prefixes};
 use outpost_core::{OutpostId, OutpostIdPrefix, Registry, RegistryEntry, RemoteName};
 
 #[test]
@@ -34,6 +35,29 @@ fn outpost_id_prefix_parse_normalizes_case_and_enforces_minimum() {
     assert_eq!(prefix.as_str(), "abc12");
     assert!(OutpostIdPrefix::parse("abc1").is_err());
     assert!(OutpostIdPrefix::parse("abc1z").is_err());
+}
+
+#[test]
+fn shortest_unique_prefixes_is_public_typed_and_fallible() {
+    let first =
+        OutpostId::parse("abcde00000000000000000000000000000000000000000000000000000000000")
+            .expect("first id");
+    let second =
+        OutpostId::parse("abcde10000000000000000000000000000000000000000000000000000000000")
+            .expect("second id");
+
+    let prefixes = shortest_unique_prefixes([&first, &second]).expect("distinct IDs");
+
+    assert_eq!(prefixes[0].as_str(), "abcde0");
+    assert!(
+        prefixes
+            .iter()
+            .all(|prefix| prefix.as_str().len() >= MIN_PREFIX_LEN)
+    );
+    assert_eq!(
+        shortest_unique_prefixes([&first, &first]),
+        Err(DuplicateOutpostIdError),
+    );
 }
 
 #[test]
