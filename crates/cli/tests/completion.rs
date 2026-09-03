@@ -12,11 +12,21 @@ fn query(
     words: &[&str],
     index: usize,
 ) -> Output {
+    query_with_index(fixture, shell, cwd, words, &index.to_string())
+}
+
+fn query_with_index(
+    fixture: &common::CliFixture,
+    shell: &str,
+    cwd: &Path,
+    words: &[&str],
+    index: &str,
+) -> Output {
     let mut command = fixture.gop();
     command
         .current_dir(cwd)
         .env("COMPLETE", shell)
-        .env("_CLAP_COMPLETE_INDEX", index.to_string())
+        .env("_CLAP_COMPLETE_INDEX", index)
         .env("_CLAP_IFS", "\n")
         .arg("--")
         .args(words);
@@ -25,6 +35,32 @@ fn query(
 
 fn has_candidate(output: &Output, candidate: &str) -> bool {
     common::stdout(output).lines().any(|line| line == candidate)
+}
+
+fn flag_candidates(output: &Output) -> Vec<String> {
+    common::stdout(output)
+        .lines()
+        .filter(|line| line.starts_with('-'))
+        .map(str::to_owned)
+        .collect()
+}
+
+fn has_flag_candidate(output: &Output, candidate: &str) -> bool {
+    flag_candidates(output).iter().any(|record| {
+        record == candidate
+            || record
+                .strip_prefix(candidate)
+                .is_some_and(|suffix| suffix.starts_with(':'))
+    })
+}
+
+fn assert_no_flag_candidates(output: &Output, label: &str) {
+    let flags = flag_candidates(output);
+    assert!(
+        flags.is_empty(),
+        "{label} unexpectedly offered flags {flags:?}\nstdout:\n{}",
+        common::stdout(output)
+    );
 }
 
 fn dynamic_ids(output: &Output) -> BTreeSet<String> {
@@ -69,6 +105,16 @@ fn assert_no_dynamic_ids(output: &Output, label: &str) {
         dynamic_ids(output).is_empty(),
         "{label} unexpectedly offered dynamic IDs {:?}",
         dynamic_ids(output)
+    );
+    assert_eq!(common::stderr(output), "", "{label} reported an error");
+}
+
+fn assert_no_candidates(output: &Output, label: &str) {
+    common::assert_success(output, label);
+    assert_eq!(
+        common::stdout(output),
+        "",
+        "{label} unexpectedly offered candidates"
     );
     assert_eq!(common::stderr(output), "", "{label} reported an error");
 }
@@ -120,6 +166,29 @@ fn complete_rejects_unsupported_shell() {
 }
 
 #[test]
+fn completion_preserves_out_of_range_index_errors() {
+    let fixture = common::CliFixture::new();
+
+    for shell in ["bash", "zsh"] {
+        let output = query_with_index(
+            &fixture,
+            shell,
+            &fixture.source,
+            &["gop", "remove", ""],
+            "9",
+        );
+        assert!(
+            !output.status.success(),
+            "{shell} completion silently accepted an out-of-range index"
+        );
+        assert!(
+            !common::stderr(&output).is_empty(),
+            "{shell} completion omitted the protocol error"
+        );
+    }
+}
+
+#[test]
 fn git_outpost_does_not_activate_completion() {
     let output = common::run(common::git_outpost_command().env("COMPLETE", "bash"));
 
@@ -146,6 +215,88 @@ fn dynamic_remove_offers_shortest_ids_from_the_source_registry() {
     let output = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
 
     assert_ids(&output, &expected, "remove completion from source");
+}
+
+#[test]
+fn completion_flags_require_a_dash_prefix_across_shell_adapters() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    let expected = expected_ids(&fixture, &[&outpost]);
+
+    for shell in ["bash", "zsh"] {
+        let selector = query(&fixture, shell, &fixture.source, &["gop", "remove", ""], 2);
+        assert_ids(
+            &selector,
+            &expected,
+            &format!("{shell} selector completion"),
+        );
+        assert_no_flag_candidates(&selector, &format!("{shell} selector completion"));
+
+        for (word, expected_flag) in [("-", "-f"), ("--f", "--force")] {
+            let flags = query(
+                &fixture,
+                shell,
+                &fixture.source,
+                &["gop", "remove", word],
+                2,
+            );
+            common::assert_success(&flags, &format!("{shell} {word} flag completion"));
+            assert!(
+                has_flag_candidate(&flags, expected_flag),
+                "{shell} {word} completion did not offer {expected_flag}\nstdout:\n{}",
+                common::stdout(&flags)
+            );
+            assert_no_dynamic_ids(&flags, &format!("{shell} {word} flag completion"));
+        }
+    }
+}
+
+#[test]
+fn completion_without_dash_never_falls_back_to_flags() {
+    let fixture = common::CliFixture::new();
+
+    for shell in ["bash", "zsh"] {
+        for (words, index, label) in [
+            (&["gop", ""][..], 1, "root completion"),
+            (&["gop", "status", ""][..], 2, "non-selector completion"),
+            (&["gop", "remove", ""][..], 2, "empty registry completion"),
+            (
+                &["gop", "remove", "unmatched"][..],
+                2,
+                "non-dash selector completion",
+            ),
+        ] {
+            let output = query(&fixture, shell, &fixture.source, words, index);
+            common::assert_success(&output, &format!("{shell} {label}"));
+            assert_no_flag_candidates(&output, &format!("{shell} {label}"));
+        }
+
+        let non_git = query(&fixture, shell, &fixture.root, &["gop", "remove", ""], 2);
+        common::assert_success(&non_git, &format!("{shell} non-Git completion"));
+        assert_no_flag_candidates(&non_git, &format!("{shell} non-Git completion"));
+    }
+}
+
+#[test]
+fn completion_preserves_dash_prefixed_positional_candidates() {
+    let fixture = common::CliFixture::new();
+    fs::create_dir(fixture.source.join("-dash")).expect("dash-prefixed path");
+
+    for shell in ["bash", "zsh"] {
+        let output = query(
+            &fixture,
+            shell,
+            &fixture.source,
+            &["gop", "add", "--", ""],
+            3,
+        );
+        common::assert_success(&output, &format!("{shell} dash-prefixed path completion"));
+        assert!(
+            has_candidate(&output, "-dash/"),
+            "{shell} completion omitted the dash-prefixed positional path\nstdout:\n{}",
+            common::stdout(&output)
+        );
+    }
 }
 
 #[test]
@@ -270,20 +421,22 @@ fn dynamic_completion_fails_closed_for_invalid_context_and_registry() {
     let fixture = common::CliFixture::new();
     fixture.add_outpost("C");
 
-    let non_git = query(&fixture, "bash", &fixture.root, &["gop", "remove", ""], 2);
-    assert_no_dynamic_ids(&non_git, "non-Git completion");
+    for shell in ["bash", "zsh"] {
+        let non_git = query(&fixture, shell, &fixture.root, &["gop", "remove", ""], 2);
+        assert_no_candidates(&non_git, &format!("{shell} non-Git completion"));
 
-    for (words, index, label) in [
-        (vec!["gop", "-C", "--", "remove", ""], 4, "missing -C"),
-        (vec!["gop", "-C", "", "remove", ""], 4, "empty -C"),
-        (
-            vec!["gop", "-C", "B", "-C", "B", "remove", ""],
-            6,
-            "repeated -C",
-        ),
-    ] {
-        let output = query(&fixture, "bash", &fixture.root, &words, index);
-        assert_no_dynamic_ids(&output, label);
+        for (words, index, label) in [
+            (vec!["gop", "-C", "--", "remove", ""], 4, "missing -C"),
+            (vec!["gop", "-C", "", "remove", ""], 4, "empty -C"),
+            (
+                vec!["gop", "-C", "B", "-C", "B", "remove", ""],
+                6,
+                "repeated -C",
+            ),
+        ] {
+            let output = query(&fixture, shell, &fixture.root, &words, index);
+            assert_no_candidates(&output, &format!("{shell} {label}"));
+        }
     }
 
     let registry_path = fixture.source.join(".git/outpost/registry.json");
@@ -300,12 +453,22 @@ fn dynamic_completion_fails_closed_for_invalid_context_and_registry() {
         serde_json::to_string(&registry).expect("serialize duplicate registry"),
     )
     .expect("write duplicate registry");
-    let duplicate = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
-    assert_no_dynamic_ids(&duplicate, "duplicate registry completion");
+    for shell in ["bash", "zsh"] {
+        let duplicate = query(&fixture, shell, &fixture.source, &["gop", "remove", ""], 2);
+        assert_no_candidates(
+            &duplicate,
+            &format!("{shell} duplicate registry completion"),
+        );
+    }
 
     fs::write(&registry_path, "{invalid registry").expect("write malformed registry");
-    let malformed = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
-    assert_no_dynamic_ids(&malformed, "malformed registry completion");
+    for shell in ["bash", "zsh"] {
+        let malformed = query(&fixture, shell, &fixture.source, &["gop", "remove", ""], 2);
+        assert_no_candidates(
+            &malformed,
+            &format!("{shell} malformed registry completion"),
+        );
+    }
 }
 
 #[test]

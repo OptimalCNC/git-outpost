@@ -2352,15 +2352,34 @@ COMP_WORDS=(gop remove "")
 COMP_CWORD=2
 COMP_TYPE=9
 _clap_complete_gop gop ""
-printf '%s\n' "${COMPREPLY[@]}"
+printf 'selector=%s\n' "${COMPREPLY[@]}"
+COMP_WORDS=(gop remove "-")
+_clap_complete_gop gop "-"
+printf 'flag=%s\n' "${COMPREPLY[@]}"
 "#;
 
     let output = bash_script(script, &fixture);
 
     common::assert_success(&output, "explicit bash shell init completion");
     assert!(
-        common::stdout(&output).lines().any(|line| line == expected),
+        common::stdout(&output)
+            .lines()
+            .any(|line| line == format!("selector={expected}")),
         "bash completion did not return {expected}:\n{}",
+        common::stdout(&output)
+    );
+    assert!(
+        !common::stdout(&output)
+            .lines()
+            .any(|line| line.starts_with("selector=-")),
+        "bash selector completion unexpectedly offered flags:\n{}",
+        common::stdout(&output)
+    );
+    assert!(
+        common::stdout(&output)
+            .lines()
+            .any(|line| line == "flag=-f"),
+        "bash flag completion did not return -f:\n{}",
         common::stdout(&output)
     );
 }

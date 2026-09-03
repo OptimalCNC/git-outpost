@@ -2,12 +2,14 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use clap::CommandFactory as _;
-use clap_complete::env::{Bash, Shells, Zsh};
+use clap_complete::env::{Bash, EnvCompleter, Shells, Zsh};
 use clap_complete::{ArgValueCandidates, CompleteEnv, CompletionCandidate};
 use outpost_core::outpost_id::{DuplicateOutpostIdError, OutpostId, shortest_unique_prefixes};
 use outpost_core::{Outpost, OutpostError, SourceRepo};
 
 use crate::cli::Cli;
+
+const CLAP_OPTION_CANDIDATE_ID_PREFIX: &str = "arg::";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CandidatePolicy {
@@ -21,6 +23,12 @@ struct DerivedOutpostCandidate {
     id: OutpostId,
 }
 
+#[derive(Clone, Copy)]
+struct GopBash;
+
+#[derive(Clone, Copy)]
+struct GopZsh;
+
 pub(crate) fn try_complete(bin: &str, argv: &[OsString]) -> bool {
     if bin != "gop" {
         return false;
@@ -32,9 +40,139 @@ pub(crate) fn try_complete(bin: &str, argv: &[OsString]) -> bool {
     let factory_cwd = cwd.clone();
     CompleteEnv::with_factory(move || command_for(factory_cwd.clone()))
         .bin("gop")
-        .shells(Shells(&[&Bash, &Zsh]))
+        .shells(Shells(&[&GopBash, &GopZsh]))
         .try_complete(argv.iter().cloned(), cwd.as_deref())
         .unwrap_or_else(|err| err.exit())
+}
+
+impl EnvCompleter for GopBash {
+    fn name(&self) -> &'static str {
+        Bash.name()
+    }
+
+    fn is(&self, name: &str) -> bool {
+        Bash.is(name)
+    }
+
+    fn write_registration(
+        &self,
+        var: &str,
+        name: &str,
+        bin: &str,
+        completer: &str,
+        buf: &mut dyn std::io::Write,
+    ) -> Result<(), std::io::Error> {
+        Bash.write_registration(var, name, bin, completer, buf)
+    }
+
+    fn write_complete(
+        &self,
+        cmd: &mut clap::Command,
+        args: Vec<OsString>,
+        current_dir: Option<&Path>,
+        buf: &mut dyn std::io::Write,
+    ) -> Result<(), std::io::Error> {
+        let completions = filtered_completions(cmd, args, current_dir, false)?;
+        write_completion_records(buf, &completions, |candidate| {
+            candidate.get_value().to_string_lossy().into_owned()
+        })
+    }
+}
+
+impl EnvCompleter for GopZsh {
+    fn name(&self) -> &'static str {
+        Zsh.name()
+    }
+
+    fn is(&self, name: &str) -> bool {
+        Zsh.is(name)
+    }
+
+    fn write_registration(
+        &self,
+        var: &str,
+        name: &str,
+        bin: &str,
+        completer: &str,
+        buf: &mut dyn std::io::Write,
+    ) -> Result<(), std::io::Error> {
+        Zsh.write_registration(var, name, bin, completer, buf)
+    }
+
+    fn write_complete(
+        &self,
+        cmd: &mut clap::Command,
+        args: Vec<OsString>,
+        current_dir: Option<&Path>,
+        buf: &mut dyn std::io::Write,
+    ) -> Result<(), std::io::Error> {
+        let completions = filtered_completions(cmd, args, current_dir, true)?;
+        write_completion_records(buf, &completions, |candidate| {
+            let mut record = escape_zsh(&candidate.get_value().to_string_lossy(), true);
+            if let Some(help) = candidate.get_help() {
+                record.push(':');
+                record.push_str(&escape_zsh(
+                    help.to_string().lines().next().unwrap_or_default(),
+                    false,
+                ));
+            }
+            record
+        })
+    }
+}
+
+fn filtered_completions(
+    cmd: &mut clap::Command,
+    mut args: Vec<OsString>,
+    current_dir: Option<&Path>,
+    append_missing_current_word: bool,
+) -> Result<Vec<CompletionCandidate>, std::io::Error> {
+    let index = std::env::var("_CLAP_COMPLETE_INDEX")
+        .ok()
+        .and_then(|index| index.parse::<usize>().ok())
+        .unwrap_or_default();
+    if append_missing_current_word && index == args.len() {
+        args.push(OsString::new());
+    }
+
+    let include_flags = args
+        .get(index)
+        .is_some_and(|arg| arg.as_encoded_bytes().starts_with(b"-"));
+    let mut completions = clap_complete::engine::complete(cmd, args, index, current_dir)?;
+    if !include_flags {
+        completions.retain(|candidate| !is_flag_candidate(candidate));
+    }
+    Ok(completions)
+}
+
+fn is_flag_candidate(candidate: &CompletionCandidate) -> bool {
+    candidate
+        .get_id()
+        .is_some_and(|id| id.starts_with(CLAP_OPTION_CANDIDATE_ID_PREFIX))
+}
+
+fn write_completion_records(
+    buf: &mut dyn std::io::Write,
+    completions: &[CompletionCandidate],
+    format: impl Fn(&CompletionCandidate) -> String,
+) -> Result<(), std::io::Error> {
+    let separator = std::env::var("_CLAP_IFS").unwrap_or_else(|_| "\n".to_owned());
+    for (index, candidate) in completions.iter().enumerate() {
+        if index != 0 {
+            write!(buf, "{separator}")?;
+        }
+        write!(buf, "{}", format(candidate))?;
+    }
+    Ok(())
+}
+
+fn escape_zsh(value: &str, escape_colon: bool) -> String {
+    let value = value.replace('\\', "\\\\");
+    if escape_colon {
+        value.replace(':', "\\:")
+    } else {
+        value
+    }
 }
 
 fn command_for(cwd: Option<PathBuf>) -> clap::Command {
