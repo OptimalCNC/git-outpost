@@ -1,5 +1,6 @@
 mod common;
 
+use std::fs;
 use std::path::Path;
 use std::process::Output;
 
@@ -23,6 +24,41 @@ fn query(
 
 fn has_candidate(output: &Output, candidate: &str) -> bool {
     common::stdout(output).lines().any(|line| line == candidate)
+}
+
+fn expected_ids(fixture: &common::CliFixture, outposts: &[&Path]) -> Vec<String> {
+    let ids = outposts
+        .iter()
+        .map(|outpost| outpost_core::OutpostId::derive(&fixture.source, outpost))
+        .collect::<Vec<_>>();
+    outpost_core::outpost_id::shortest_unique_prefixes(ids.iter())
+        .expect("distinct fixture IDs")
+        .into_iter()
+        .map(|prefix| prefix.to_string())
+        .collect()
+}
+
+fn assert_ids(output: &Output, expected: &[String], label: &str) {
+    common::assert_success(output, label);
+    for id in expected {
+        assert!(
+            has_candidate(output, id),
+            "{label} missing dynamic ID {id}\nstdout:\n{}",
+            common::stdout(output)
+        );
+    }
+    assert_eq!(common::stderr(output), "", "{label} reported an error");
+}
+
+fn assert_no_ids(output: &Output, ids: &[String], label: &str) {
+    common::assert_success(output, label);
+    for id in ids {
+        assert!(
+            !has_candidate(output, id),
+            "{label} unexpectedly offered dynamic ID {id}"
+        );
+    }
+    assert_eq!(common::stderr(output), "", "{label} reported an error");
 }
 
 #[test]
@@ -80,21 +116,190 @@ fn git_outpost_does_not_activate_completion() {
 }
 
 #[test]
-fn completion_uses_source_context_for_remove_and_outpost_context_for_cd() {
+fn dynamic_remove_offers_shortest_ids_from_the_source_registry() {
+    let fixture = common::CliFixture::new();
+    let first = fixture.add_outpost("C");
+    let second = fixture.add_outpost("D");
+    let expected = expected_ids(&fixture, &[&first, &second]);
+
+    let output = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
+
+    assert_ids(&output, &expected, "remove completion from source");
+}
+
+#[test]
+fn dynamic_selectors_offer_source_scoped_ids_and_path_src() {
+    let fixture = common::CliFixture::new();
+    let first = fixture.add_outpost("C");
+    let second = fixture.add_outpost("D");
+    let expected = expected_ids(&fixture, &[&first, &second]);
+
+    for command in ["cd", "path", "lock", "unlock", "move", "remove", "analyze"] {
+        let output = query(&fixture, "bash", &fixture.source, &["gop", command, ""], 2);
+        assert_ids(&output, &expected, &format!("{command} first selector"));
+        if command == "path" {
+            assert!(has_candidate(&output, "src"), "path should offer src");
+        }
+    }
+
+    let second_move = query(
+        &fixture,
+        "bash",
+        &fixture.source,
+        &["gop", "move", &expected[0], ""],
+        3,
+    );
+    assert_no_ids(&second_move, &expected, "move destination");
+
+    let filtered = query(
+        &fixture,
+        "bash",
+        &fixture.source,
+        &["gop", "remove", &expected[0]],
+        2,
+    );
+    assert_ids(&filtered, &expected[..1], "remove filtered prefix");
+    assert!(
+        !has_candidate(&filtered, &expected[1]),
+        "remove should filter out non-matching IDs"
+    );
+}
+
+#[test]
+fn dynamic_ids_match_across_shell_adapters_and_sources() {
+    let fixture = common::CliFixture::new();
+    let first = fixture.add_outpost("C");
+    let second = fixture.add_outpost("D");
+    let expected = expected_ids(&fixture, &[&first, &second]);
+
+    let bash = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
+    let zsh = query(&fixture, "zsh", &fixture.source, &["gop", "remove", ""], 2);
+    assert_ids(&bash, &expected, "bash remove completion");
+    assert_ids(&zsh, &expected, "zsh remove completion");
+    let bash_ids = expected
+        .iter()
+        .filter(|id| has_candidate(&bash, id))
+        .collect::<Vec<_>>();
+    let zsh_ids = expected
+        .iter()
+        .filter(|id| has_candidate(&zsh, id))
+        .collect::<Vec<_>>();
+    assert_eq!(bash_ids, zsh_ids, "shell adapters returned different IDs");
+
+    let other = common::CliFixture::new();
+    let other_outpost = other.add_outpost("C");
+    let other_ids = expected_ids(&other, &[&other_outpost]);
+    let first_source = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
+    assert_no_ids(&first_source, &other_ids, "first source isolation");
+}
+
+#[test]
+fn dynamic_context_uses_associated_source_or_explicit_cd() {
+    let fixture = common::CliFixture::new();
+    let first = fixture.add_outpost("C");
+    let second = fixture.add_outpost("D");
+    let expected = expected_ids(&fixture, &[&first, &second]);
+
+    for command in ["cd", "path", "lock", "unlock", "analyze"] {
+        let output = query(&fixture, "bash", &first, &["gop", command, ""], 2);
+        assert_ids(&output, &expected, &format!("{command} from outpost"));
+    }
+    for command in ["move", "remove"] {
+        let output = query(&fixture, "bash", &first, &["gop", command, ""], 2);
+        assert_no_ids(&output, &expected, &format!("{command} from outpost"));
+    }
+
+    let source = fixture.source.display().to_string();
+    for (words, index) in [
+        (vec!["gop", "-C", source.as_str(), "remove", ""], 4),
+        (vec!["gop", &format!("-C{source}"), "remove", ""], 3),
+        (vec!["gop", &format!("-C={source}"), "remove", ""], 3),
+        (vec!["gop", "-C", "B", "remove", ""], 4),
+    ] {
+        let output = query(&fixture, "bash", &fixture.root, &words, index);
+        assert_ids(&output, &expected, "remove with explicit -C");
+    }
+}
+
+#[test]
+fn dynamic_remove_keeps_stale_entries_while_other_selectors_hide_them() {
+    let fixture = common::CliFixture::new();
+    let existing = fixture.add_outpost("C");
+    let stale = fixture.add_outpost("D");
+    let expected = expected_ids(&fixture, &[&existing, &stale]);
+    fs::remove_dir_all(&stale).expect("remove stale checkout");
+
+    let remove = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
+    assert_ids(&remove, &expected, "remove stale registration");
+
+    for command in ["cd", "path", "lock", "unlock", "move", "analyze"] {
+        let output = query(&fixture, "bash", &fixture.source, &["gop", command, ""], 2);
+        assert_ids(
+            &output,
+            &expected[..1],
+            &format!("{command} existing registration"),
+        );
+        assert!(
+            !has_candidate(&output, &expected[1]),
+            "{command} should hide the stale registration"
+        );
+    }
+}
+
+#[test]
+fn dynamic_completion_fails_closed_for_invalid_context_and_registry() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
-    let id = outpost_core::OutpostId::derive(&fixture.source, &outpost);
-    let id = &id.as_str()[..5];
+    let expected = expected_ids(&fixture, &[&outpost]);
 
-    let remove_from_source = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
-    common::assert_success(&remove_from_source, "remove completion from source");
-    assert!(has_candidate(&remove_from_source, id));
+    let non_git = query(&fixture, "bash", &fixture.root, &["gop", "remove", ""], 2);
+    assert_no_ids(&non_git, &expected, "non-Git completion");
 
-    let cd_from_outpost = query(&fixture, "bash", &outpost, &["gop", "cd", ""], 2);
-    common::assert_success(&cd_from_outpost, "cd completion from outpost");
-    assert!(has_candidate(&cd_from_outpost, id));
+    for (words, index, label) in [
+        (vec!["gop", "-C", "--", "remove", ""], 4, "missing -C"),
+        (vec!["gop", "-C", "", "remove", ""], 4, "empty -C"),
+        (
+            vec!["gop", "-C", "B", "-C", "B", "remove", ""],
+            6,
+            "repeated -C",
+        ),
+    ] {
+        let output = query(&fixture, "bash", &fixture.root, &words, index);
+        assert_no_ids(&output, &expected, label);
+    }
 
-    let remove_from_outpost = query(&fixture, "bash", &outpost, &["gop", "remove", ""], 2);
-    common::assert_success(&remove_from_outpost, "remove completion from outpost");
-    assert!(!has_candidate(&remove_from_outpost, id));
+    let registry_path = fixture.source.join(".git/outpost/registry.json");
+    let mut registry: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&registry_path).expect("read registry"))
+            .expect("parse registry");
+    let duplicate = registry["outposts"][0].clone();
+    registry["outposts"]
+        .as_array_mut()
+        .expect("registry outposts")
+        .push(duplicate);
+    fs::write(
+        &registry_path,
+        serde_json::to_string(&registry).expect("serialize duplicate registry"),
+    )
+    .expect("write duplicate registry");
+    let duplicate = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
+    assert_no_ids(&duplicate, &expected, "duplicate registry completion");
+
+    fs::write(&registry_path, "{invalid registry").expect("write malformed registry");
+    let malformed = query(&fixture, "bash", &fixture.source, &["gop", "remove", ""], 2);
+    assert_no_ids(&malformed, &expected, "malformed registry completion");
+}
+
+#[test]
+fn normal_commands_remain_unchanged_without_completion_environment() {
+    let fixture = common::CliFixture::new();
+    let help = common::run(fixture.gop().arg("--help"));
+    common::assert_success(&help, "normal gop help");
+    assert!(common::stdout(&help).contains("Manage self-contained Git outposts"));
+    assert_eq!(common::stderr(&help), "");
+
+    let status = common::run(fixture.gop().current_dir(&fixture.source).arg("status"));
+    common::assert_success(&status, "normal gop status");
+    assert!(common::stdout(&status).contains("context: source\n"));
+    assert_eq!(common::stderr(&status), "");
 }

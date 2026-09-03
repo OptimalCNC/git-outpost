@@ -2067,7 +2067,7 @@ fn shell_install_requires_home_for_default_paths() {
 
 #[cfg(unix)]
 #[test]
-fn shell_installed_rc_enables_gop_cd() {
+fn shell_installed_rc_enables_navigation_and_completion() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
     let rc_file = fixture.root.join("home/.bashrc");
@@ -2090,6 +2090,8 @@ fn shell_installed_rc_enables_gop_cd() {
         r#"
 set -eu
 . "{}"
+type -t gop
+type -t _clap_complete_gop
 cd "{}"
 gop cd
 pwd
@@ -2101,7 +2103,10 @@ pwd
     let output = bash_script(&script, &fixture);
 
     common::assert_success(&output, "installed bash rc gop cd");
-    assert_eq!(common::stdout(&output), format!("{source_display}\n"));
+    assert_eq!(
+        common::stdout(&output),
+        format!("function\nfunction\n{source_display}\n")
+    );
 }
 
 #[cfg(unix)]
@@ -2118,7 +2123,7 @@ fn shell_path() -> std::ffi::OsString {
 
 #[cfg(unix)]
 fn bash_script(script: &str, fixture: &common::CliFixture) -> std::process::Output {
-    let mut command = std::process::Command::new("bash");
+    let mut command = std::process::Command::new("/usr/bin/bash");
     command
         .arg("--noprofile")
         .arg("--norc")
@@ -2128,6 +2133,24 @@ fn bash_script(script: &str, fixture: &common::CliFixture) -> std::process::Outp
         .env("PATH", shell_path())
         .env("SOURCE_DIR", &fixture.source)
         .env("ROOT_DIR", &fixture.root);
+    common::run(&mut command)
+}
+
+#[cfg(unix)]
+fn zsh_script(script: &str, fixture: &common::CliFixture) -> std::process::Output {
+    let zdotdir = fixture.root.join("zsh-home");
+    fs::create_dir_all(&zdotdir).expect("create isolated ZDOTDIR");
+    let mut command = std::process::Command::new("/usr/bin/zsh");
+    command
+        .arg("-f")
+        .arg("-c")
+        .arg(script)
+        .env("GOP_BIN", common::binary_path("gop"))
+        .env("PATH", shell_path())
+        .env("SOURCE_DIR", &fixture.source)
+        .env("ROOT_DIR", &fixture.root)
+        .env("HOME", &zdotdir)
+        .env("ZDOTDIR", &zdotdir);
     common::run(&mut command)
 }
 
@@ -2309,35 +2332,98 @@ gop cd --help
 
 #[cfg(unix)]
 #[test]
-fn shell_gop_cd_smoke_test_zsh_when_available() {
+fn shell_init_bash_enables_navigation_and_completion() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    let expected = outpost_core::outpost_id::shortest_unique_prefixes(
+        [outpost_core::OutpostId::derive(&fixture.source, &outpost)].iter(),
+    )
+    .expect("fixture ID")
+    .remove(0)
+    .to_string();
+
+    let script = r#"
+set -eu
+eval "$(gop shell init bash)"
+[ "$(type -t gop)" = function ]
+[ "$(type -t _clap_complete_gop)" = function ]
+cd "$SOURCE_DIR"
+COMP_WORDS=(gop remove "")
+COMP_CWORD=2
+COMP_TYPE=9
+_clap_complete_gop gop ""
+printf '%s\n' "${COMPREPLY[@]}"
+"#;
+
+    let output = bash_script(script, &fixture);
+
+    common::assert_success(&output, "explicit bash shell init completion");
+    assert!(
+        common::stdout(&output).lines().any(|line| line == expected),
+        "bash completion did not return {expected}:\n{}",
+        common::stdout(&output)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_init_bash_detects_its_shell_and_enables_completion() {
+    let fixture = common::CliFixture::new();
+    let outpost = fixture.add_outpost("C");
+    let expected = outpost_core::outpost_id::shortest_unique_prefixes(
+        [outpost_core::OutpostId::derive(&fixture.source, &outpost)].iter(),
+    )
+    .expect("fixture ID")
+    .remove(0)
+    .to_string();
+
+    let script = r#"
+set -eu
+eval "$(gop shell init)"
+[ "$(type -t gop)" = function ]
+[ "$(type -t _clap_complete_gop)" = function ]
+cd "$SOURCE_DIR"
+COMP_WORDS=(gop remove "")
+COMP_CWORD=2
+COMP_TYPE=9
+_clap_complete_gop gop ""
+printf '%s\n' "${COMPREPLY[@]}"
+"#;
+
+    let output = bash_script(script, &fixture);
+
+    common::assert_success(&output, "detected bash shell init completion");
+    assert!(
+        common::stdout(&output).lines().any(|line| line == expected),
+        "bash completion did not return {expected}:\n{}",
+        common::stdout(&output)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_init_zsh_enables_navigation_and_completion() {
     let fixture = common::CliFixture::new();
     fixture.add_outpost("C");
     let source_display = common::displayed_path(&fixture.source);
 
-    let mut command = std::process::Command::new("zsh");
-    command
-        .arg("-f")
-        .arg("-c")
-        .arg(
+    for init in ["shell init zsh", "shell init"] {
+        let script = format!(
             r#"
 set -eu
-compdef() { :; }
-eval "$("$GOP_BIN" shell init zsh)"
+autoload -Uz compinit
+compinit
+eval "$(gop {init})"
+(( $+functions[gop] ))
+(( $+functions[_clap_dynamic_completer_gop] ))
 cd "$ROOT_DIR/C"
 gop cd
 pwd
 "#,
-        )
-        .env("GOP_BIN", common::binary_path("gop"))
-        .env("PATH", shell_path())
-        .env("ROOT_DIR", &fixture.root);
+        );
+        let output = zsh_script(&script, &fixture);
 
-    let output = match command.output() {
-        Ok(output) => output,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return,
-        Err(err) => panic!("run zsh: {err}"),
-    };
-
-    common::assert_success(&output, "zsh gop cd");
-    assert_eq!(common::stdout(&output), format!("{source_display}\n"));
+        common::assert_success(&output, "zsh gop cd and completion registration");
+        assert_eq!(common::stdout(&output), format!("{source_display}\n"));
+    }
 }
