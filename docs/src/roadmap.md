@@ -61,10 +61,11 @@ service, daemon, database, API server, or provider-specific integration.
 | `git-outpost` crate/package | Present | End-user package installed with `cargo install git-outpost`; installs both `git-outpost` and `gop`. |
 | `git-outpost` binary | Present | Canonical binary; Git dispatches `git outpost ...` to it. |
 | `gop` binary | Present | Short alias for everyday use; same CLI entrypoint as `git-outpost`. |
-| `gop shell init [bash\|zsh]` | Present | Prints marker-wrapped Bash/Zsh shell integration that shadows `gop` only to implement `gop cd`; calls whose first argument is not exactly `cd` delegate to the binary. |
+| `gop shell init [bash\|zsh]` | Present | Prints marker-wrapped Bash/Zsh integration for `gop cd` and runtime `gop` completion; calls whose first argument is not exactly `cd` delegate to the binary. |
 | `gop cd [<outpost>]` | Present | Binary fallback listed in help; prints shell setup guidance when shell integration is not active. The shell function handles real directory changes after setup. |
-| `gop shell install <bash\|zsh>` | Present | Writes the generated integration script and a managed source block in the selected shell startup file. Re-running updates the generated integration. |
-| `gop shell uninstall <bash\|zsh>` | Present | Removes only Git Outpost's managed source block and generated integration script. |
+| `gop dynamic selector completion` | Present | Bash/Zsh runtime completion for source-scoped IDs on `cd`, `path`, `lock`, `unlock`, `move`, `remove`, and `analyze`; only `gop` is registered. |
+| `gop shell install <bash\|zsh>` | Present | Writes the generated combined integration script and a managed source block in the selected shell startup file. Each source regenerates registration from the installed binary; re-run after an upgrade to refresh wrapper changes. |
+| `gop shell uninstall <bash\|zsh>` | Present | Removes only Git Outpost's managed source block and generated integration script for future shells. |
 | GitHub CI / release workflows | Present | Validate formatting, clippy, tests, docs, packaging, cross-platform integration, and crates.io publishing on release paths. |
 
 ## Implementation Phases

@@ -150,14 +150,16 @@ whose directory is named `src`.
 
 Because a child process cannot change its parent shell's current directory,
 `gop cd` is provided by shell integration rather than by the binary itself.
-`gop shell init bash` and `gop shell init zsh` print integration code for the
-current shell. `gop shell install bash` and `gop shell install zsh` persist that
-integration by writing a generated script and a small managed source block in
-the shell startup file. The generated function shadows `gop` in that shell,
-intercepts only invocations whose first argument is exactly `cd`, and delegates
-every other `gop ...` invocation to the installed binary with `command gop "$@"`.
-The binary also exposes a dummy `gop cd [<outpost>]` command so root help can
-show the feature and so users without shell integration get setup guidance.
+The same Bash/Zsh integration also registers completion for `gop`; there is no
+separate completion command or source line. `gop shell init bash` and `gop shell
+init zsh` print integration code for the current shell. `gop shell install bash`
+and `gop shell install zsh` persist that integration by writing a generated
+script and a small managed source block in the shell startup file. The generated
+function shadows `gop` in that shell, intercepts only invocations whose first
+argument is exactly `cd`, and delegates every other `gop ...` invocation to the
+installed binary with `command gop "$@"`. The binary also exposes a dummy `gop
+cd [<outpost>]` command so root help can show the feature and so users without
+shell integration get setup guidance.
 
 ```mermaid
 %%{init: {"flowchart": {"wrappingWidth": 300}}}%%
@@ -256,6 +258,16 @@ scoped to the current source repository registry and are derived from each
 registered path. Prefixes must be at least 5 hex characters; if a prefix is
 missing or matches more than one registered outpost, the command fails instead
 of guessing.
+
+The Bash/Zsh integration completes source-scoped shortest unique lowercase ID
+prefixes for `cd`, `path`, `lock`, `unlock`, `move`, `remove`, and `analyze`.
+`path` also offers the literal `src`. `move` and `remove` offer IDs only from a
+source checkout; the other completed selectors may use either a source checkout
+or a managed outpost's associated source. Completion derives prefixes across
+the current registry before filtering: `remove` may show a stale registered ID
+so it can remove that entry, while the other selectors use only a cheap
+path-presence filter. That filter is not validation that the path remains a
+managed outpost; normal commands remain authoritative.
 
 The MVP keeps only the options that are meaningful for clone-backed outposts.
 It does not mirror every `git worktree` option. Synchronization commands have
@@ -513,10 +525,13 @@ directory named `src`, use explicit path syntax such as `./src` or `../src`.
 
 ### `shell init [bash|zsh]`
 
-Print Bash/Zsh shell integration. Pass `bash` or `zsh` to select the generated
-shell syntax. Evaluate it in the current shell to define a `gop` function that
-intercepts only invocations whose first argument is exactly `cd` and delegates
-every other `gop ...` invocation to the binary with `command gop "$@"`.
+Print combined Bash/Zsh navigation and completion integration. Pass `bash` or
+`zsh` to select the generated shell syntax; this explicit form is recommended.
+Evaluate it in the current shell to define a `gop` function that intercepts
+only invocations whose first argument is exactly `cd` and delegates every other
+`gop ...` invocation to the binary with `command gop "$@"`. The same script
+registers completion for `gop` only; `git-outpost` and `git outpost` are not
+registered in this first version.
 
 ```bash
 eval "$(gop shell init bash)"
@@ -532,7 +547,18 @@ gop shell install zsh
 
 `install` writes the generated integration script under the Git Outpost config
 directory and adds a marker-wrapped source block to `~/.bashrc` or `~/.zshrc`.
-Run `install` again after upgrading Git Outpost to refresh the generated script.
+Each time the generated script is sourced, it regenerates the completion
+registration from the installed `gop`, so registry-backed candidates reflect
+current state. Run `install` again after upgrading Git Outpost to refresh
+changes to the generated navigation wrapper itself.
+
+Bare `gop shell init` remains a compatibility form. When its output is
+evaluated, it detects Bash or Zsh rather than relying on the login-shell
+`SHELL` variable; use the explicit form above when possible. Before sourcing
+the integration, Zsh users must initialize their normal completion system (for
+example, with `compinit`); Git Outpost does not do so. Repeated-Tab listing,
+common-prefix insertion, and menu behavior belong to Bash or Zsh, not Git
+Outpost.
 
 Remove the managed source block and generated script with:
 
@@ -542,7 +568,9 @@ gop shell uninstall zsh
 ```
 
 `uninstall` removes only Git Outpost's managed source block and generated
-script. It does not remove manually pasted `gop shell init` snippets.
+script. It does not remove manually pasted `gop shell init` snippets or change
+the integration already loaded by the current parent shell; it affects future
+shells that would source the managed block.
 
 After setup, `gop cd` changes to the associated source repository. `gop cd
 <outpost>` changes to the path resolved by `gop path <outpost>`. Existing

@@ -48,7 +48,7 @@ fetching it. Non-interactive callers must grant that consent explicitly with
 `--fetch-missing`; otherwise `add` remains local-only and fails without
 fetching.
 
-Enable shell navigation in the current shell:
+Enable shell navigation and completion in the current Bash or Zsh shell:
 
 ```bash
 eval "$(gop shell init bash)"   # Bash
@@ -56,20 +56,25 @@ eval "$(gop shell init zsh)"    # Zsh
 ```
 
 For persistent setup, let Git Outpost manage a small source block in your shell
-startup file:
+startup file. The sourced integration regenerates completion registration from
+the installed `gop` on every shell startup:
 
 ```bash
 gop shell install bash          # writes ~/.bashrc + ~/.config/git-outpost/shell.bash
 gop shell install zsh           # writes ~/.zshrc + ~/.config/git-outpost/shell.zsh
 ```
 
-Run the install command again after upgrading Git Outpost to refresh the
-generated shell integration. Remove the managed block and generated file with:
+Run the install command again after upgrading Git Outpost to refresh changes to
+the generated navigation wrapper. Remove the managed block and generated file
+with:
 
 ```bash
 gop shell uninstall bash
 gop shell uninstall zsh
 ```
+
+Uninstall affects future shells; it does not remove integration already loaded
+by the current parent shell.
 
 If you run `gop cd` before enabling shell integration, the binary prints setup
 instructions and exits without changing directories.

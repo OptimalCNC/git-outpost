@@ -145,12 +145,17 @@ git-outpost/                       # repo root
 │       ├── src/
 │       │   ├── main.rs              # entry point: parse + dispatch
 │       │   ├── cli.rs               # clap definitions
+│       │   ├── completion.rs        # private runtime completion boundary
 │       │   ├── output.rs            # formatting / colors / tables
 │       │   ├── exit.rs              # OutpostError -> ExitCode mapping
-│       │   └── reporter_impls.rs    # StderrReporter
+│       │   ├── reporter_impls.rs    # StderrReporter
+│       │   ├── shell.rs             # combined navigation and completion integration
+│       │   └── shell/
+│       │       └── install.rs       # marker-bounded generated-script lifecycle
 │       └── tests/
 │           ├── common/mod.rs        # CLI fixture wrapping AbcFixture
-│           ├── e2e.rs               # round-trip and binary-name tests
+│           ├── completion.rs        # compiled-binary dynamic completion contract
+│           ├── e2e.rs               # round-trip, binary-name, and shell lifecycle tests
 │           ├── flags.rs             # exit codes, --no-color, etc.
 │           └── help.rs              # help text snapshots
 ```
@@ -1851,6 +1856,31 @@ places both binaries into `~/.cargo/bin/` (Unix) or
 and dispatches `git outpost …` to it. `gop` is the same compiled
 binary under a different name. The bin name shown in help is read
 from `argv[0]` at runtime (§6.1).
+
+### 6.4 Runtime selector completion
+
+`completion::try_complete(bin: &str, argv: &[OsString]) -> bool` is the CLI
+module's only completion interface. `main.rs` calls it before normal Clap
+parsing; it handles only the `gop` executable name, so `git-outpost` and `git
+outpost` retain normal command behavior and are not shell-registration targets.
+The module keeps the pinned `clap_complete` 4.6.9 `unstable-dynamic` protocol
+private behind `CompleteEnv` and `ArgValueCandidates`, and restricts adapters
+to Bash and Zsh.
+
+The combined shell integration evaluates the module's internal
+`COMPLETE=<shell> command gop` transport whenever it is sourced. This
+regenerates the shell adapter from the installed binary at shell startup rather
+than caching adapter output. The completion module decodes raw command words
+after Clap's outer protocol `--`, skips a repeated `gop`, accepts `-C PATH`,
+`-CPATH`, and `-C=PATH`, and stops option scanning at a later user-command
+`--`; missing, empty, or repeated `-C` yields no dynamic context.
+
+Candidate lookup treats the current `SourceRepo::registry()` state as its only
+authority. It derives shortest unique lowercase IDs across all registered
+entries before applying each command's path-presence policy; duplicate derived
+IDs and registry or context failures return no dynamic candidates. This leaves
+selector validation with the normal command path and avoids a Git-heavy command
+operation during completion.
 
 ---
 
