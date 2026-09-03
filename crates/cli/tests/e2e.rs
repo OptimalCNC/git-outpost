@@ -2147,6 +2147,18 @@ fn shell_init_accepts_supported_shells_and_prints_removable_block() {
                 && stdout.contains("command gop \"$@\""),
             "generated integration should be marker-wrapped and delegate to command gop:\n{stdout}"
         );
+        let start = stdout
+            .find("# >>> git-outpost shell integration >>>")
+            .expect("integration start marker");
+        let end = stdout
+            .find("# <<< git-outpost shell integration <<<")
+            .expect("integration end marker");
+        let loader = format!("COMPLETE={shell} command gop");
+        let loader_position = stdout.find(&loader).expect("selected completion loader");
+        assert!(
+            start < loader_position && loader_position < end,
+            "completion loader must remain inside integration markers:\n{stdout}"
+        );
     }
 }
 
@@ -2309,6 +2321,7 @@ fn shell_gop_cd_smoke_test_zsh_when_available() {
         .arg(
             r#"
 set -eu
+compdef() { :; }
 eval "$("$GOP_BIN" shell init zsh)"
 cd "$ROOT_DIR/C"
 gop cd

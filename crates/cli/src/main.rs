@@ -33,6 +33,10 @@ fn run() -> CliResult<()> {
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_else(|| "gop".to_owned());
 
+    if completion::try_complete(&bin, &argv) {
+        return Ok(());
+    }
+
     let cli = Cli::try_parse_from_with_bin(argv, &bin).unwrap_or_else(|err| err.exit());
     cli.validate_refs()?;
     dispatch(cli)

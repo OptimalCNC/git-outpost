@@ -113,7 +113,14 @@ fn e_03_help_lists_commands_and_long_flags() {
     }
 
     let shell_init_help = help_for(&["shell", "init", "--help"]);
-    for token in ["Print shell integration", "gop cd", "SHELL", "bash", "zsh"] {
+    for token in [
+        "Print shell integration",
+        "gop cd",
+        "completion",
+        "SHELL",
+        "bash",
+        "zsh",
+    ] {
         assert!(
             shell_init_help.contains(token),
             "expected {token} in shell init help:\n{shell_init_help}"

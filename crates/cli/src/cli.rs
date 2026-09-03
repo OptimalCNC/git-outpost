@@ -383,7 +383,7 @@ pub struct ShellArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum ShellCommand {
-    /// Print shell integration for `gop cd`.
+    /// Print shell integration for gop cd and completion.
     Init {
         /// Shell syntax to print.
         #[arg(value_enum, value_name = "SHELL")]

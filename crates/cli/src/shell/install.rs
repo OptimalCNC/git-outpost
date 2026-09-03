@@ -242,7 +242,7 @@ pub fn install(options: InstallOptions) -> OutpostResult<ShellInstallReport> {
     let rc_after = install_contents(&options.rc_file, &rc_before, &block)?;
     let script = super::init_script(Some(options.shell));
 
-    write_text(&options.script_file, script)?;
+    write_text(&options.script_file, &script)?;
     write_text(&options.rc_file, &rc_after)?;
 
     Ok(ShellInstallReport {
@@ -321,6 +321,14 @@ mod operation_tests {
         assert_eq!(first_script, second_script);
         assert_eq!(second_rc.matches(INSTALL_START).count(), 1, "{second_rc}");
         assert!(second_script.contains("gop()"), "{second_script}");
+        assert!(
+            second_script.contains("COMPLETE=bash command gop"),
+            "{second_script}"
+        );
+        assert!(
+            !second_script.contains("_clap_complete_gop"),
+            "{second_script}"
+        );
     }
 
     #[test]
