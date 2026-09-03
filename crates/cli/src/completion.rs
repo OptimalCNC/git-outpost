@@ -138,7 +138,7 @@ fn completion_cwd_from_argv(base: &Path, argv: &[OsString]) -> Option<PathBuf> {
             let Some((value, after)) = rest.split_first() else {
                 return None;
             };
-            if value.is_empty() || override_path.is_some() {
+            if value.is_empty() || value == "--" || override_path.is_some() {
                 return None;
             }
             override_path = Some(value.clone());
@@ -262,6 +262,9 @@ mod tests {
 
         let missing = os_args(["/bin/gop", "--", "gop", "remove", "-C"]);
         assert_eq!(completion_cwd_from_argv(&base, &missing), None);
+
+        let separator_as_value = os_args(["/bin/gop", "--", "gop", "-C", "--", "remove", ""]);
+        assert_eq!(completion_cwd_from_argv(&base, &separator_as_value), None);
 
         let empty_equals = os_args(["/bin/gop", "--", "gop", "remove", "-C="]);
         assert_eq!(completion_cwd_from_argv(&base, &empty_equals), None);
