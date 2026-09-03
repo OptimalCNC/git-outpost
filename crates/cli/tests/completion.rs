@@ -91,9 +91,13 @@ fn dynamic_ids(output: &Output) -> BTreeSet<String> {
 }
 
 fn expected_ids(fixture: &common::CliFixture, outposts: &[&Path]) -> Vec<String> {
+    let source = fs::canonicalize(&fixture.source).expect("canonical source path");
     let ids = outposts
         .iter()
-        .map(|outpost| outpost_core::OutpostId::derive(&fixture.source, outpost))
+        .map(|outpost| {
+            let outpost = fs::canonicalize(outpost).expect("canonical outpost path");
+            outpost_core::OutpostId::derive(&source, &outpost)
+        })
         .collect::<Vec<_>>();
     outpost_core::outpost_id::shortest_unique_prefixes(ids.iter())
         .expect("distinct fixture IDs")

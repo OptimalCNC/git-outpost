@@ -2335,8 +2335,10 @@ gop cd --help
 fn shell_init_bash_enables_navigation_and_completion() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
+    let source = fs::canonicalize(&fixture.source).expect("canonical source path");
+    let outpost = fs::canonicalize(outpost).expect("canonical outpost path");
     let expected = outpost_core::outpost_id::shortest_unique_prefixes(
-        [outpost_core::OutpostId::derive(&fixture.source, &outpost)].iter(),
+        [outpost_core::OutpostId::derive(&source, &outpost)].iter(),
     )
     .expect("fixture ID")
     .remove(0)
@@ -2389,8 +2391,10 @@ printf 'flag=%s\n' "${COMPREPLY[@]}"
 fn shell_init_bash_detects_its_shell_and_enables_completion() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("C");
+    let source = fs::canonicalize(&fixture.source).expect("canonical source path");
+    let outpost = fs::canonicalize(outpost).expect("canonical outpost path");
     let expected = outpost_core::outpost_id::shortest_unique_prefixes(
-        [outpost_core::OutpostId::derive(&fixture.source, &outpost)].iter(),
+        [outpost_core::OutpostId::derive(&source, &outpost)].iter(),
     )
     .expect("fixture ID")
     .remove(0)
