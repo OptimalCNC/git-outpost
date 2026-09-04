@@ -84,10 +84,12 @@ Normal orientation has this exact recipe:
    - **Source:** the reported `source:` path.
    - **Outpost:** the current `outpost:` path in outpost context; in source
      context, the complete registered set under `outposts:`, including `none`.
-   - **Upstream:** the remote/ref and route reported by `upstream:`,
-     `upstream-fetch:` and `upstream-push:` in source context, or by
-     `source-upstream:`, `source-upstream-fetch:` and
-     `source-upstream-push:` in outpost context.
+   - **Upstream:** source context uses one `upstream:` field for a local
+     repository or a remote whose fetch and push routes are identical. A
+     remote with different routes replaces that field with `upstream-fetch:`
+     and `upstream-push:`. Outpost context follows the same rule with
+     `source-upstream:` or the split `source-upstream-fetch:` and
+     `source-upstream-push:` fields.
    - **Outpost-to-source link:** the reported `remote:` in outpost context; it
      is not applicable to the source worktree itself.
 
