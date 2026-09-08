@@ -37,13 +37,8 @@ explicit two-hop workflows.
 
 Treat a reported remote/source mismatch as a hard stop for synchronization,
 publication, or destructive lifecycle work: the configured remote and
-recorded source can otherwise name different repositories. A clean status does
-not verify missing remotes, push URLs, or push-routing overrides. Before
-transport or deletion, resolve the outpost source remote's fetch and push
-destinations and source `origin` as applicable. Every fetch and push route for
-a logical remote must identify the same intended repository; lookup failure or
-mismatch is a hard stop. Use an explicit verified remote and refspec for
-source-only pushes.
+recorded source can otherwise name different repositories. Use an explicit
+verified remote and refspec for source-only pushes.
 
 ## Private State
 
@@ -110,12 +105,12 @@ Read [references/gop-workflows.md](references/gop-workflows.md) when the state i
 
 For worktree, parallel-checkout, or outpost-creation tasks, read [Create an Outpost for Worktree Intent](references/gop-workflows.md#create-an-outpost-for-worktree-intent) before constructing the command and use its command forms.
 
-`Ready(command)` extends the carried successful report without another orientation call by adding only missing command-specific facts (verified live grammar and execution context; resolved selectors, paths, refs, and transport destinations; predicted writes and postconditions; applicable safety evidence and authorization); a later `gop status` serves as a command-specific postcondition check after mutation. Resolve `Unknown` before mutation. Any unresolved applicable field means the command is not ready. Check `gop --version` and live subcommand help when syntax may have changed:
+`Ready(command)` extends the carried orientation report with only the information needed to choose the command, target, and authorization. Resolve `Unknown(error)` before mutation. Check `gop --version` and live subcommand help when syntax may have changed:
 
 ```bash
 gop <command> --help
 ```
 
-After any failed multi-step mutation, re-read every affected repository, ref, config or registry file, and filesystem path before retrying. Treat rollback or partial-output deletion as a separate destructive action.
+When a `gop` command completes successfully without reporting a failed step, trust every postcondition guaranteed by its implementation. Additional checks serve command, target, or authorization choices, outcomes outside the command contract (such as PR state or CI), or failure recovery. Identify a required guarantee absent from `gop` as a product-contract gap.
 
-A mutation is complete only after every predicted `Ready(command)` postcondition is observed at its write target. Use the command-specific checks in the workflow reference; exit status alone is insufficient.
+After a failed multi-step mutation, inspect affected state before retrying. Treat rollback or partial-output deletion as a separate destructive action.
