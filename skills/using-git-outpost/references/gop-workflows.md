@@ -9,7 +9,7 @@
 
 A request for a worktree or parallel checkout maps to `gop add`. Use `git worktree add` only when the user explicitly requires linked-worktree semantics. The commands are not flag-compatible: an outpost is a self-contained clone.
 
-`add` and `config` require source-repository context. From an outpost, first run `gop path src`, retain the returned path as `source`, then use `gop -C <source> ...`.
+`add` and `config` require source-repository context. From an outpost, use the reported `source:` path with `gop -C <source> ...`.
 
 ### Choose `outpost-container` When Needed
 
@@ -36,8 +36,6 @@ For a new container:
 
 Ask only when candidates conflict or the safe location is genuinely ambiguous.
 
-`Ready(config set)` records the source, absolute container, and config storage path. Afterward, require the exact path from `config show` and inspect `<source-git-dir>/outpost/config.json`. The file is Git administrative data and is not expected to appear in ignored-file listings.
-
 ### Create the Checkout
 
 ```bash
@@ -48,7 +46,7 @@ gop -C <source> add [--fetch-missing] <path-or-name> [<target-branch>]
 gop -C <source> add -b <new-branch> [--fetch-missing] [<path-or-name> [<target-branch>]]
 ```
 
-`Ready(add)` records the source, existing or new branch, base branch, final destination, source-remote name, container decision, destination-safety result, whether the explicit target exists locally, and any authorization to fetch it from `origin`.
+`Ready(add)` records the source, existing or new branch and base, destination, source-remote name, and any authorization to fetch a missing target from `origin`.
 
 With `-b`, one positional is the destination, not the target branch. Omitting the destination derives a bare name from the branch's final component and therefore requires `outpost-container`. An explicit path bypasses the container.
 
@@ -64,11 +62,9 @@ gop -C /work/project config set outpost-container /work/project-outposts
 gop -C /work/project add -b feature/catalog
 ```
 
-The source checkout does not switch branches. Uncommitted source changes are not copied. The destination must be absent or empty. Every final destination, whether explicit or container-derived, must be outside every containing Git work tree or explicitly ignored by its containing repository.
+The source checkout does not switch branches. Uncommitted source changes are not copied. The destination must be absent or empty. `gop add` checks the containing Git work tree and requires an in-tree destination to be explicitly ignored by that repository.
 
 A successful `add` may create a source branch. It also writes outpost metadata and the source registry under the exact Git directories, and sets source-local `receive.denyCurrentBranch=updateInstead`. That setting remains after removal or prune and lets a later push update a clean source branch even while it is checked out.
-
-After `add`, require `gop status` in the destination, exact destination resolution from `gop -C <source> path <final-absolute-destination>` or a captured ID, matching source-branch and destination-`HEAD` OIDs, `receive.denyCurrentBranch=updateInstead`, and an account of every source/destination `git status` entry.
 
 | Worktree intent | Git Outpost command |
 | --- | --- |
@@ -117,15 +113,15 @@ gop source pull main
 gop rebase <source-remote>/main
 ```
 
-`Ready` for synchronization or publication records the attached branch, affected source worktree, outpost source remote, fetch and push destinations, source repository `origin`, current tips, fast-forward relationships, and relevant worktree dirt or in-progress integration state. Fetch and push routes for each logical remote must identify the same intended repository. Publication also requires explicit external-write authorization.
+`Ready` for synchronization or publication records the intended branch or source ref, affected worktrees, and destination repositories. Publication also requires explicit external-write authorization.
 
-`pull` and `source pull` hard-code the source repository's upstream remote `origin`. They can fast-forward files in whichever source worktree has the branch checked out, so inspect that worktree first. `gop pull` then advances the outpost to the full source branch, including source-only commits. `merge` and `rebase` do not refresh the source branch from upstream. Before any synchronization, inspect every affected worktree for dirt, conflicts, or an in-progress merge/rebase; these commands rely on Git rather than autostash.
+`pull` and `source pull` hard-code the source repository's upstream remote `origin`. They can fast-forward files in whichever source worktree has the branch checked out, so include that worktree update in the intended scope. `gop pull` then integrates the full source branch, including source-only commits. `merge` and `rebase` do not refresh the source branch from upstream. These commands rely on Git rather than autostash.
 
-`gop push` requires the matching source branch, allows a missing `origin/B`, and sets the source branch to track `origin/B`. It is fast-forward-only at both hops. A dirty outpost does not block publication of committed history; a dirty checked-out source branch can make the first hop fail. Inspect both repositories and `gop status` first, then treat `gop push` as an external publication boundary.
+`gop push` requires the matching source branch and allows a missing `origin/B`. Successful execution completes both fast-forward-only hops, sets source tracking of `origin/B`, reads the actual upstream branch OID, and checks that it equals the published source OID. A dirty outpost does not block publication of committed history; a dirty checked-out source branch can make the first hop fail.
 
 Multi-hop operations are sequential, not transactional. A later hop can fail after an earlier repository or checked-out worktree changed.
 
-After synchronization, compare the affected branch OIDs and inspect every changed worktree, including conflict or rebase state after failure. After publication, require outpost `HEAD`, source `refs/heads/B`, and `B` at every actual push endpoint to equal the intended OID, then confirm source tracking of `origin/B`.
+After a failed synchronization, inspect affected worktrees for conflict or rebase state.
 
 ## Context and Lifecycle
 
@@ -149,8 +145,8 @@ An `<outpost>` selector is a registered path or the unique 5-64-character hexade
 
 Serialize registry-writing commands (`add`, `lock`, `unlock`, `move`, `remove`, and `prune`) per source repository; concurrent writers race. `lock` is advisory protection against `gop` cleanup. Capture exact cleanup targets with `gop prune --dry-run --verbose`.
 
-After lock or unlock, inspect the exact registry entry for its expected lock state and reason. `Ready(move/remove)` records the exact registry entry, canonical paths, lock state, worktree dirt and local-only data, relevant refs/remotes, and requested deletion scope. `Ready(prune)` records the source registry snapshot, exact missing unlocked entries from verbose dry-run, and expected survivors; completion compares the registry delta or verbose real-run paths with that set, removes only those entries, and leaves directories and branches unchanged.
+`Ready(move/remove)` records the selected outpost, destination for a move, requested deletion scope, and any explicit force authorization. Successful `prune` removes missing unlocked registrations and leaves directories and branches unchanged.
 
-`move --force` bypasses only dirty and lock guards. Before `remove`, verify that the outpost source remote's fetch and push destinations identify the recorded source; `--no-branch-cleanup` does not repair an identity mismatch. Inspect ignored files or other local data explicitly: the clean guard omits ignored content, but `remove` deletes it. Use `--no-branch-cleanup` for checkout-only deletion.
+`move --force` bypasses only dirty and lock guards. Before `remove`, inspect ignored files or other local data explicitly: the clean guard omits ignored content, but `remove` deletes it. Use `--no-branch-cleanup` for checkout-only deletion.
 
-Interactive `remove` can analyze GitHub/fetch state and, after deleting the outpost, separately prompt to delete the source and upstream branches; treat each deletion as a distinct authorization scope. `safe-delete: yes` is eligibility evidence, not removal or branch-deletion authorization. Before branch cleanup, bind the exact repository URL, push URL, remote, branch, and OID, and confirm any merged-PR proof belongs to that repository; otherwise use `--no-branch-cleanup`. Guarded removal is the default; apply `--force` only with explicit authorization to bypass dirty, commits-not-pushed-to-source, and lock guards. Branch cleanup retains its separate evidence and authorization gate. Verify registry/path results, cleanup diagnostics, and final branch state even when removal exits 0.
+Interactive `remove` can analyze GitHub/fetch state and, after deleting the outpost, separately prompt to delete the source and upstream branches; treat each deletion as a distinct authorization scope. `safe-delete: yes` is eligibility evidence, not removal or branch-deletion authorization. Guarded removal is the default; apply `--force` only with explicit authorization to bypass dirty, commits-not-pushed-to-source, and lock guards. Read the reported branch-cleanup outcomes: a warning can indicate an incomplete cleanup step even when removal exits 0.
