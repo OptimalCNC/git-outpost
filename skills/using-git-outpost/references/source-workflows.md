@@ -1,26 +1,42 @@
-# Git Outpost Workflows
+# Working in a Source Repository
 
-- [Command Locations and Selectors](#command-locations-and-selectors)
-- [Create an Outpost for Worktree Intent](#create-an-outpost-for-worktree-intent)
-- [Inspect and Navigate](#inspect-and-navigate)
-- [Synchronize and Publish](#synchronize-and-publish)
-- [Lifecycle](#lifecycle)
-
-## Command Locations and Selectors
-
-| Run from | Commands |
-| --- | --- |
-| Source checkout | `add`, `config`, `move`, `remove`, `prune` |
-| Outpost checkout | `pull`, `source pull`, `merge`, `rebase`, `push` |
-| Source or outpost | `status`, `list`, `path`, `lock`, `unlock`, `analyze` |
-
-When a command requires the source checkout, use the reported `source:` path with `gop -C <source> ...`.
-
-An `<outpost>` selector accepts a registered path or the unique ID prefix shown by `gop list`. From the source checkout, `lock`, `unlock`, and `analyze` require a selector; from an outpost, omission selects the current outpost.
+Run these commands in the source checkout. When starting from an outpost, use the reported `source:` path with `gop -C <source> ...`.
 
 Run `add`, `lock`, `unlock`, `move`, `remove`, and `prune` one at a time for each source repository.
 
-## Create an Outpost for Worktree Intent
+## Read Source Status
+
+Reuse the source's orientation report. If the task started in an outpost and needs the source's current branch, layout, or container settings, read them with `gop --no-color -C <source> status`.
+
+- `source:` identifies the source checkout; `branch:` identifies its current branch or detached `HEAD`.
+- `outposts:` lists registered outposts and their local state; `stale-registrations:` lists registered paths that are missing.
+- `outpost-container:` gives the directory used for named creation. `<unset>` is normal.
+- `upstream:` describes the current branch's tracked upstream. If fetch and push routes differ, read `upstream-fetch:` and `upstream-push:`.
+
+Preserve `none`, `-`, `<unset>`, `<not-applicable>`, and `<unavailable>` as explicit results. The report contains local facts and may include stale registrations. Summarize the paths, roles, and problems relevant to the user's task.
+
+## Select, Inspect, and Navigate
+
+An `<outpost>` selector accepts a registered path or the unique ID prefix shown by `gop list`. From the source, `lock`, `unlock`, and `analyze` require a selector.
+
+| Purpose | Command | Effect |
+| --- | --- | --- |
+| File-level changes | `git status` | Ordinary working-tree status for the source |
+| Registered outposts | `gop list` | Lists registered checkouts using local information |
+| Registered outpost path | `gop path <outpost>` | Prints a live managed path |
+| Remote branch state, matching PRs, and source-branch cleanup eligibility | `gop --no-color analyze <outpost>` | Analyzes the selected outpost; may fetch refs and contact GitHub |
+
+Use `gop path` plus the execution tool's working-directory option for agent navigation. For `gop path`, `src` is reserved for the source; use an explicit path such as `./src` or `../src` for an outpost named `src`. Lifecycle selectors do not reserve that token.
+
+`gop list` reports paths, `HEAD` identities, branches, locks, and missing or not-managed annotations. It does not scan file changes, fetch, or update refs or state. Use `gop status` in the relevant checkout for local cleanliness and ahead/behind diagnostics.
+
+Use `gop analyze <outpost>` when the task needs upstream branch comparisons, push hazards, matching GitHub PRs, or source-branch cleanup eligibility. It may fetch remote-tracking refs and query GitHub while leaving working files and local branches unchanged.
+
+In `pull-requests:`, a `- none` result means the lookup completed with no matching PR. An `unknown` or `unavailable` result is inconclusive; preserve the reported reason. `safe-delete: yes` describes source-branch deletion eligibility; deletion still requires the user's authorization.
+
+For work in a selected outpost, including synchronization or publication, follow [outpost workflows](outpost-workflows.md) from that checkout.
+
+## Create an Outpost
 
 A request for a worktree or parallel checkout maps to `gop add`. Use `git worktree add` only when the user explicitly requires linked-worktree semantics. The commands are not flag-compatible: an outpost is a self-contained clone.
 
@@ -28,7 +44,7 @@ A request for a worktree or parallel checkout maps to `gop add`. Use `git worktr
 
 An explicit destination path (absolute, `./name`, `../name`, or `group/name`) bypasses `outpost-container`. For a one-off explicit path, use it and leave `outpost-container` unchanged. The agent may still configure a container when recurring named creation would benefit from one.
 
-When choosing a container, use `outpost-container` and `outposts` from `gop --no-color -C <source> status`, reusing the report if available. `<unset>` is normal. The container setting belongs to that source checkout; linked source worktrees have independent settings and outpost registrations.
+Use `outpost-container` and `outposts` from the source status report. The container setting belongs to that source checkout; linked source worktrees have independent settings and outpost registrations.
 
 Bare names and branch-derived omitted destinations require a configured container. When it is unset, use an explicit destination or configure a safe container if recurring named creation justifies it.
 
@@ -89,79 +105,13 @@ A successful `add` registers the outpost, may create a source branch, and sets s
 | Existing branch `B` at path/name `P` | `gop add P B` |
 | Branch `B` missing locally, with fetch authorization | `gop add --fetch-missing P B` |
 
-For moving or removing the checkout, read [Lifecycle](#lifecycle).
-
-## Inspect and Navigate
-
-| Purpose | Command | Effect |
-| --- | --- | --- |
-| Relationship summary and detection | `gop status` | Local read-only diagnostic; does not fetch, update refs, or write state |
-| File-level changes | `git status` | Ordinary working-tree status |
-| Source path | `gop path src` | Prints the associated source path |
-| Registered outpost path | `gop path <path-or-id>` | Prints a live managed path |
-| Registered outposts | `gop list` | Local read-only checkout identity; does not scan changes, fetch, or update refs or state |
-| Remote branch state, matching PRs, and source-branch cleanup eligibility | `gop analyze [<outpost>]` | May fetch refs and contact GitHub |
-
-Use `gop path` plus the execution tool's working-directory option for agent navigation.
-
-For `gop path`, the exact token `src` is reserved for the source. Use an explicit path such as `./src` or `../src` to navigate to an outpost named `src`; lifecycle selectors do not reserve it.
-
-Source status supplies the local outpost layout for orientation and container
-choice. `gop list` supplies registered paths, `HEAD` identities, branches,
-locks, and missing or not-managed annotations. It does not establish
-working-tree cleanliness or ahead/behind relationships; use `gop status` in
-the relevant checkout for those local diagnostics.
-
-Use `gop analyze` when the task needs upstream branch comparisons, push hazards, matching GitHub PRs, or source-branch cleanup eligibility. It may fetch remote-tracking refs and query GitHub while leaving working files and local branches unchanged.
-
-```bash
-# Current outpost
-gop --no-color analyze
-
-# From the source checkout
-gop --no-color -C <source> analyze <outpost>
-```
-
-In `pull-requests:`, a `- none` result means the lookup completed with no matching PR. An `unknown` or `unavailable` result is inconclusive; preserve the reported reason. `safe-delete: yes` describes source-branch deletion eligibility; deletion still requires the user's authorization.
-
-## Synchronize and Publish
-
-Choose the intended branch or source ref, affected checkouts, and destination repositories. Publication requires authorization to write to the upstream repository.
-
-| Purpose | Command | Repository hops |
-| --- | --- | --- |
-| Fast-forward the current branch `B` | `gop pull` | `origin/B` -> source `B` -> outpost `B` |
-| Refresh another source branch `B` | `gop source pull B` | `origin/B` -> source `B` |
-| Linear integration | `gop rebase <source-remote>/<branch>` | source -> outpost |
-| Merge integration | `gop merge <source-remote>/<branch>` | source -> outpost |
-| Push only to the source | `git push <verified-source-remote> B:B` from the outpost | outpost `B` -> source `B` |
-| Publish attached branch `B` | `gop push` | outpost `B` -> source `B` -> `origin/B` |
-
-For current work rebased onto upstream `main`:
-
-```bash
-gop source pull main
-gop rebase <source-remote>/main
-```
-
-For source-only Git pushes, use an explicitly verified source remote and branch refspec.
-
-`pull` and `source pull` use the source repository's remote `origin`. They can fast-forward files in whichever source worktree has the branch checked out, so include that worktree update in the intended scope. `gop pull` then integrates the full source branch, including source-only commits. `merge` and `rebase` do not refresh the source branch from upstream. These commands rely on Git rather than autostash.
-
-`gop push` requires the matching source branch and allows a missing `origin/B`. Successful execution confirms that both fast-forward pushes completed, that `origin/B` matches the published source commit, and that the source branch tracks `origin/B`. A dirty outpost does not block publication of committed history; a dirty checked-out source branch can make the first push fail.
-
-A later step can fail after an earlier repository or checked-out worktree changed.
-
-After a failed synchronization, inspect affected worktrees for conflict or rebase state.
-
 ## Lifecycle
 
 Before moving or removing an outpost, identify the selected checkout, destination for a move, requested deletion scope, and any explicit force authorization.
 
 | Worktree lifecycle intent | Git Outpost command |
 | --- | --- |
-| List checkouts | `gop list` |
-| Protect or unprotect a checkout | `gop lock [<outpost>]`, `gop unlock [<outpost>]` |
+| Protect or unprotect a checkout | `gop lock <outpost>`, `gop unlock <outpost>` |
 | Move a checkout | `gop move <outpost> <new-path>` |
 | Remove a checkout | `gop remove <outpost>` |
 | Prune missing registrations | `gop prune --dry-run --verbose`, then `gop prune --verbose` |

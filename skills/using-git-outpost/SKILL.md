@@ -27,10 +27,6 @@ Git Outpost links three repository roles:
 outpost <-> source repository <-> upstream repository
 ```
 
-The current checkout is the directory against which `gop` runs; it can be the
-source or an outpost. Git operations using the outpost's source remote reach
-the source repository. `gop` also provides workflows that reach upstream.
-
 ## Orient First
 
 Run one status command against the relevant checkout:
@@ -39,50 +35,35 @@ Run one status command against the relevant checkout:
 gop --no-color -C <path> status
 ```
 
-On success, `context: source` means the current checkout is the source
-repository; `context: outpost` means it is an outpost. An outpost reporting
-`health: problems` is still an outpost. Read its reported problems before
-choosing an operation.
+On success, `context: source` identifies the source checkout and
+`context: outpost` identifies an outpost. An outpost reporting
+`health: problems` is still an outpost. Status is local and read-only; reuse
+its report in the selected workflow without reconstructing it through Git or
+filesystem probes.
 
-Use the same report to understand the repository relationships:
-
-- `source:` identifies the source checkout. In an outpost, `outpost:` identifies
-  the current checkout; in the source, `outposts:` lists registered outposts.
-- In an outpost, `remote:` names its source remote. Use that name instead of
-  assuming `local`.
-- Source status reports the tracked upstream under `upstream:`; outpost status
-  uses `source-upstream:`. If fetch and push routes differ, read the split
-  `upstream-fetch:` and `upstream-push:` fields, or `source-upstream-fetch:` and
-  `source-upstream-push:` in an outpost.
-
-Preserve `none`, `-`, `<unset>`, `<not-applicable>`, and `<unavailable>` as
-explicit results. Status is local and read-only: comparisons use existing
-local refs, and the report may include stale registrations. Use this report
-for orientation without reconstructing it through Git or filesystem probes.
-Summarize the paths, roles, and problems relevant to the user's task.
+Stop synchronization, publication, or destructive lifecycle work on a reported
+remote/source mismatch.
 
 If status fails or its output cannot be interpreted, preserve the error and
 available output and resolve the uncertainty before making changes. If `gop`
 is unavailable, report the command error and stop using this skill.
 
-Stop synchronization, publication, or destructive lifecycle work if status
-reports a remote/source mismatch: the configured remote and reported source
-can name different repositories.
-
 ## Choose the Workflow
 
-For `gop` operations, use [Command Locations and Selectors](references/gop-workflows.md#command-locations-and-selectors) to choose the working directory and outpost target, then read the workflow matching the user's purpose:
+Use the current checkout as the default, and load only the guide needed for
+the requested operation:
 
-- [Create an Outpost for Worktree Intent](references/gop-workflows.md#create-an-outpost-for-worktree-intent) for a worktree, parallel checkout, or new outpost.
-- [Inspect and Navigate](references/gop-workflows.md#inspect-and-navigate) for checkout paths, local status, or branch and PR analysis.
-- [Synchronize and Publish](references/gop-workflows.md#synchronize-and-publish) for pulling, integrating, or publishing branch changes.
-- [Lifecycle](references/gop-workflows.md#lifecycle) for locking, moving, removing, or pruning outposts.
+- [Outpost workflows](references/outpost-workflows.md): inspect, navigate,
+  synchronize, integrate, publish, or protect work in an outpost.
+- [Source workflows](references/source-workflows.md): inspect registered
+  outposts, configure or create checkouts, and manage their lifecycle.
 
-Use the status report when choosing commands and targets. Resolve only the additional facts and authorization needed for the requested operation. Check `gop --version` and live subcommand help when syntax may have changed:
+Creation, configuration, moving, removal, and pruning use the source guide
+even when the task starts in an outpost. Working in a selected outpost uses
+the outpost guide even when the task starts in the source. Follow the link to
+the other guide only when the task needs its workflow.
 
-```bash
-gop <command> --help
-```
+Use the status report when choosing commands and targets. Resolve only the additional facts and authorization needed for the requested operation. Check `gop --version` and `gop <command> --help` when syntax may have changed.
 
 When a `gop` command completes successfully without reporting a failed step, trust its guaranteed results. Additional checks serve command, target, or authorization choices, separate outcomes such as PR state or CI, or failure recovery. If the task requires a guarantee that `gop` does not provide, report that limitation.
 
