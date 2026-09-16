@@ -9,9 +9,9 @@ disable-model-invocation: true
 ## Overview
 
 Git Outpost provides a worktree-like parallel-checkout workflow using normal
-local clones with their own `.git` directories. Orient once, then use ordinary
-Git for files and commits and `gop` for checkout topology and explicit two-hop
-synchronization and publication.
+local clones with their own `.git` directories. Use ordinary Git for files and
+commits, and `gop` to manage checkouts and synchronize or publish branches
+through their source repository.
 
 ## Core Model
 
@@ -27,90 +27,44 @@ Git Outpost links three repository roles:
 outpost <-> source repository <-> upstream repository
 ```
 
-The current worktree is the checkout against which `gop` runs; it can be the
-source or a managed outpost. In an outpost, read the source remote from
-`remote:` in `gop status` instead of assuming `local`. Read the upstream
-remote, ref, and fetch/push routes from the report's `upstream` fields in
-source context or `source-upstream` fields in outpost context. Ordinary Git in
-an outpost covers the direct source hop. `gop` owns outpost lifecycle and
-explicit two-hop workflows.
-
-Treat a reported remote/source mismatch as a hard stop for synchronization,
-publication, or destructive lifecycle work: the configured remote and
-recorded source can otherwise name different repositories. Use an explicit
-verified remote and refspec for source-only pushes.
-
-## Private State
-
-Git Outpost's private state is stored below the exact per-worktree Git
-directory reported by `git rev-parse --git-dir`:
-
-```text
-<git-dir>/outpost/config.json
-<git-dir>/outpost/registry.json
-<git-dir>/outpost/metadata.json
-```
-
-Linked worktrees have independent state directories; the shared Git common
-directory is never the state authority. These files are Git administrative
-data, so `git clean -fdx` and ignored-file listings do not remove or show
-them. A status read with no metadata document reports the source context; it
-does not create, rewrite, or remove state. A present invalid document is
-reported as invalid and is not replaced.
-
 ## Orient First
 
-Normal orientation has this exact recipe:
+Run one status command against the relevant checkout:
 
-1. Run exactly one command directly against the relevant input path:
+```bash
+gop --no-color -C <path> status
+```
 
-   ```bash
-   gop --no-color -C <path> status
-   ```
+On success, `context: source` identifies the source checkout and
+`context: outpost` identifies an outpost. An outpost reporting
+`health: problems` is still an outpost. Status is local and read-only; reuse
+its report in the selected workflow without reconstructing it through Git or
+filesystem probes.
 
-2. Parse the report and return exactly one state label verbatim:
-   - Exit 0 with first line `context: source` and the required source fields: `SourceContext(report)`.
-   - Exit 0 with first line `context: outpost` and the required outpost fields: `ManagedOutpostContext(report)` for both `health: ok` and `health: problems`.
-   - Every nonzero result or malformed exit-0 report: `Unknown(error)`, preserving the error and any report output.
+Stop synchronization, publication, or destructive lifecycle work on a reported
+remote/source mismatch.
 
-3. For a successful state, preserve the full report and identify all of the
-   following from that same report:
-   - **Current worktree:** its reported path and its `source` or `outpost` role.
-   - **Source:** the reported `source:` path.
-   - **Outpost:** the current `outpost:` path in outpost context; in source
-     context, the complete registered set under `outposts:`, including `none`.
-   - **Upstream:** source context uses one `upstream:` field for a local
-     repository or a remote whose fetch and push routes are identical. A
-     remote with different routes replaces that field with `upstream-fetch:`
-     and `upstream-push:`. Outpost context follows the same rule with
-     `source-upstream:` or the split `source-upstream-fetch:` and
-     `source-upstream-push:` fields.
-   - **Outpost-to-source link:** the reported `remote:` in outpost context; it
-     is not applicable to the source worktree itself.
-
-   Preserve `none`, `-`, `<unset>`, `<not-applicable>`, and `<unavailable>` as
-   explicit results. Do not infer replacements or run secondary Git probes
-   during normal orientation. The report contains local facts and may include
-   degraded health or stale registrations.
-
-`gop` is required. If it is unavailable, preserve the command error as `Unknown(error)` and stop using this skill.
-
-Orientation is complete only after naming the state and every applicable
-identity above. `gop status` is the sole authority for normal orientation;
-later `Ready(command)` checks may resolve additional command-specific facts.
+If status fails or its output cannot be interpreted, preserve the error and
+available output and resolve the uncertainty before making changes. If `gop`
+is unavailable, report the command error and stop using this skill.
 
 ## Choose the Workflow
 
-Read [references/gop-workflows.md](references/gop-workflows.md) when the state is managed or the task concerns `gop`, an outpost, a worktree, or a parallel checkout. For mutations, always load **Context and Lifecycle**, then load the section matching the user's purpose.
+Use the current checkout as the default, and load only the guide needed for
+the requested operation:
 
-For worktree, parallel-checkout, or outpost-creation tasks, read [Create an Outpost for Worktree Intent](references/gop-workflows.md#create-an-outpost-for-worktree-intent) before constructing the command and use its command forms.
+- [Outpost workflows](references/outpost-workflows.md): inspect, navigate,
+  synchronize, integrate, publish, or protect work in an outpost.
+- [Source workflows](references/source-workflows.md): inspect registered
+  outposts, configure or create checkouts, and manage their lifecycle.
 
-`Ready(command)` extends the carried orientation report with only the information needed to choose the command, target, and authorization. Resolve `Unknown(error)` before mutation. Check `gop --version` and live subcommand help when syntax may have changed:
+Creation, configuration, moving, removal, and pruning use the source guide
+even when the task starts in an outpost. Working in a selected outpost uses
+the outpost guide even when the task starts in the source. Follow the link to
+the other guide only when the task needs its workflow.
 
-```bash
-gop <command> --help
-```
+Use the status report when choosing commands and targets. Resolve only the additional facts and authorization needed for the requested operation. Check `gop --version` and `gop <command> --help` when syntax may have changed.
 
-When a `gop` command completes successfully without reporting a failed step, trust every postcondition guaranteed by its implementation. Additional checks serve command, target, or authorization choices, outcomes outside the command contract (such as PR state or CI), or failure recovery. Identify a required guarantee absent from `gop` as a product-contract gap.
+When a `gop` command completes successfully without reporting a failed step, trust its guaranteed results. Additional checks serve command, target, or authorization choices, separate outcomes such as PR state or CI, or failure recovery. If the task requires a guarantee that `gop` does not provide, report that limitation.
 
-After a failed multi-step mutation, inspect affected state before retrying. Treat rollback or partial-output deletion as a separate destructive action.
+After a failed multi-step operation, inspect affected repositories before retrying. Treat rolling back changes or deleting partially created files as separate destructive actions.
