@@ -25,3 +25,26 @@ When editing existing content,
 - Don't do things that are not asked to be done silently, mention them.
 
 The test: Every changed line should trace directly to the user's request.
+
+## Core Test Development
+
+Before changing tests, coverage configuration, or exclusions for `crates/core`,
+read and follow
+[Core Coverage And Test Policy](docs/src/core-coverage-and-test-policy.md).
+
+- Treat 100% as production executable line coverage under the approved target,
+  profile, feature set, and source classification. The current coverage command
+  does not yet isolate that denominator.
+- Admit permanent tests only when they satisfy independent wrongness, semantic
+  evidence, marginal value, and proportionality.
+- Use the smallest safe fixture that establishes the behavior. Prefer real,
+  hermetic repositories and observable outcomes; use existing seams according
+  to their production meaning.
+- Assess behavioral obligations, safe testability, and measurement scope
+  separately. Keep unresolved supported behavior visibly uncovered; difficulty
+  alone does not justify an exemption.
+- Follow the policy's fixture restrictions and process-tree resource limits.
+  Never force coverage with hazardous fixtures or abandon running commands.
+- Obtain explicit approval before modifying `crates/core/src`, introducing a
+  production seam, or changing the coverage denominator, exclusions, or
+  target/profile/feature/metric requirements.

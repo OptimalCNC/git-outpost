@@ -124,8 +124,13 @@ This is a Cargo workspace with the implementation split between:
 - `crates/core`: Git Outpost library logic.
 - `crates/cli`: CLI parsing, output, and binary entry points.
 
-Core line coverage must remain at or above 85%. Install the coverage tool once,
-then run all checks before opening a pull request:
+The accepted target is 100% production executable line coverage for
+`crates/core`. Its denominator contract and permanent-test requirements are
+defined in the
+[Core Coverage And Test Policy](docs/src/core-coverage-and-test-policy.md).
+The current coverage command does not yet isolate that denominator; do not add
+contrived tests or broad exclusions to make its percentage pass. Install the
+coverage tool once, then run all checks before opening a pull request:
 
 ```bash
 cargo install cargo-llvm-cov
