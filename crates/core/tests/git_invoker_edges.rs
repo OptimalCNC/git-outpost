@@ -178,7 +178,7 @@ case "$1" in
         printf 'cwd=%s\nenv=%s\n' "$PWD" "$GIT_INVOKER_EDGE_TOKEN"
         ;;
     trim)
-        printf '\n  capture result  \t\n'
+        printf '\n\013  capture result  \t\013\n'
         ;;
     invalid-stdout)
         printf '\377 stdout \n'

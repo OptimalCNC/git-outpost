@@ -324,7 +324,7 @@ impl GitInvoker {
     pub fn with_env(self, key: impl Into<OsString>, val: impl Into<OsString>) -> Self;
     pub fn cwd(&self) -> &Path;
 
-    /// Run `git <args>` and return trimmed stdout.
+    /// Run `git <args>` and return stdout trimmed of ASCII whitespace.
     pub fn run_capture<I, S>(&self, args: I) -> OutpostResult<String>
     where I: IntoIterator<Item = S>, S: AsRef<OsStr>;
 

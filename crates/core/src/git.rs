@@ -176,7 +176,9 @@ fn display_arg(arg: &OsStr) -> String {
 }
 
 fn trimmed_lossy(bytes: &[u8]) -> String {
-    String::from_utf8_lossy(bytes).trim().to_owned()
+    String::from_utf8_lossy(bytes)
+        .trim_matches(|ch: char| ch.is_ascii() && ch.is_whitespace())
+        .to_owned()
 }
 
 #[cfg(unix)]

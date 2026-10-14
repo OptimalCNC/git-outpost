@@ -254,7 +254,7 @@ impl SourceRepo {
             return Ok(None);
         }
 
-        let mut fields = output.split_whitespace();
+        let mut fields = output.split_ascii_whitespace();
         let oid = fields
             .next()
             .ok_or_else(|| invalid_git_output(&self.git, &output))?;
@@ -382,7 +382,7 @@ impl SourceRepo {
             let Some(rest) = line.strip_prefix("ref: ") else {
                 continue;
             };
-            let mut fields = rest.split_whitespace();
+            let mut fields = rest.split_ascii_whitespace();
             let Some(reference) = fields.next() else {
                 return Err(invalid_git_output(&self.git, &output));
             };

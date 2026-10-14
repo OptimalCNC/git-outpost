@@ -76,7 +76,7 @@ fn parse_ls_remote_snapshot(
 
     for line in output.lines() {
         if let Some(symref) = line.strip_prefix("ref: ") {
-            let mut fields = symref.split_whitespace();
+            let mut fields = symref.split_ascii_whitespace();
             let reference = fields
                 .next()
                 .ok_or_else(|| invalid_ls_remote_output(output, "malformed symbolic ref"))?;
@@ -100,7 +100,7 @@ fn parse_ls_remote_snapshot(
             continue;
         }
 
-        let mut fields = line.split_whitespace();
+        let mut fields = line.split_ascii_whitespace();
         let oid = fields
             .next()
             .ok_or_else(|| invalid_ls_remote_output(output, "malformed object line"))?;
