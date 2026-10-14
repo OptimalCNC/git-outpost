@@ -74,20 +74,35 @@ fn run_check_lossily_decodes_invalid_utf8_stderr() {
 }
 
 #[test]
-fn run_capture_reports_unix_signal_termination() {
+fn invoker_methods_report_unix_signal_termination() {
     let fake = FakeGit::new();
+    let git = fake.invoker();
+    let errors = [
+        (
+            "capture",
+            git.run_capture(["terminate"])
+                .expect_err("terminated git cannot return captured output"),
+        ),
+        (
+            "check",
+            git.run_check(["terminate"])
+                .expect_err("terminated git cannot report success"),
+        ),
+        (
+            "status",
+            git.run_status(["terminate"])
+                .expect_err("terminated git cannot become a boolean status"),
+        ),
+    ];
 
-    let error = fake
-        .invoker()
-        .run_capture(["terminate"])
-        .expect_err("fake git should terminate itself");
-
-    match error {
-        OutpostError::GitTerminatedBySignal { args, signal_str } => {
-            assert_eq!(args, r#"["terminate"]"#);
-            assert_eq!(signal_str, " (signal 15)");
+    for (method, error) in errors {
+        match error {
+            OutpostError::GitTerminatedBySignal { args, signal_str } => {
+                assert_eq!(args, r#"["terminate"]"#, "{method} preserves arguments");
+                assert_eq!(signal_str, " (signal 15)", "{method} preserves the signal");
+            }
+            other => panic!("expected GitTerminatedBySignal from {method}, got {other:?}"),
         }
-        other => panic!("expected GitTerminatedBySignal, got {other:?}"),
     }
 }
 

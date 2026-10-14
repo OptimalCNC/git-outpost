@@ -53,16 +53,25 @@ fn git_error_display_escapes_non_utf8_and_control_argv_bytes() {
 }
 
 #[test]
-fn container_error_display_shell_quotes_a_path_with_spaces_and_apostrophe() {
-    let error = OutpostError::OutpostContainerNotConfigured {
-        name: "C".to_owned(),
-        suggestion: Some(PathBuf::from("/tmp/out post's")),
-    };
-
-    assert_eq!(
-        error.to_string(),
-        "outpost container is not configured for bare outpost name C; run `gop config set outpost-container '/tmp/out post'\\''s'`"
-    );
+fn container_error_display_has_an_actionable_hint_with_or_without_a_suggestion() {
+    for (suggestion, argument) in [
+        (None, "<path>"),
+        (
+            Some(PathBuf::from("/tmp/out post's")),
+            "'/tmp/out post'\\''s'",
+        ),
+    ] {
+        let error = OutpostError::OutpostContainerNotConfigured {
+            name: "C".to_owned(),
+            suggestion,
+        };
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "outpost container is not configured for bare outpost name C; run `gop config set outpost-container {argument}`"
+            )
+        );
+    }
 }
 
 #[cfg(unix)]
