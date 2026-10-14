@@ -365,9 +365,8 @@ fn collect_cleanup_evidence(
     }
 
     let fallback = GitCleanupEvidenceProvider::new(source);
-    match CleanupEvidenceProvider::snapshot(&fallback, request) {
-        Ok(Some(snapshot)) => Some(snapshot),
-        Ok(None) => None,
+    match fallback.snapshot_from_git(request) {
+        Ok(snapshot) => Some(snapshot),
         Err(err) => {
             findings.push(warning(
                 Some(request.branch.clone()),

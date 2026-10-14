@@ -260,6 +260,7 @@ impl Drop for RegistryMut {
     fn drop(&mut self) {
         if self.dirty && !self.saved {
             debug_assert!(false, "RegistryMut dropped with unsaved changes");
+            #[cfg(not(debug_assertions))]
             eprintln!("warning: registry changes dropped without save");
         }
     }

@@ -105,13 +105,13 @@ fn classify(selector: &OutpostSelector) -> ClassifiedSelector {
     match selector {
         OutpostSelector::Path(path) => ClassifiedSelector::PathOnly(path.clone()),
         OutpostSelector::CliArg { cwd, value } => {
-            if explicit_path_syntax(value) {
-                return ClassifiedSelector::PathOnly(absolutize(cwd, value));
-            }
             let path = absolutize(cwd, value);
             let Some(value) = value.to_str() else {
                 return ClassifiedSelector::PathOnly(path);
             };
+            if explicit_path_syntax(value) {
+                return ClassifiedSelector::PathOnly(path);
+            }
             match OutpostIdPrefix::parse(value.to_owned()) {
                 Ok(prefix) => ClassifiedSelector::BareHex { path, prefix },
                 Err(_) => ClassifiedSelector::BarePath(path),
@@ -120,8 +120,9 @@ fn classify(selector: &OutpostSelector) -> ClassifiedSelector {
     }
 }
 
-fn explicit_path_syntax(path: &Path) -> bool {
-    if path.is_absolute() || path.to_str().is_none() {
+fn explicit_path_syntax(value: &str) -> bool {
+    let path = Path::new(value);
+    if path.is_absolute() {
         return true;
     }
     let mut components = path.components();

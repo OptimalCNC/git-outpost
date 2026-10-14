@@ -46,13 +46,11 @@ impl<'a> GitCleanupEvidenceProvider<'a> {
     pub(crate) fn new(source: &'a SourceRepo) -> Self {
         Self { source }
     }
-}
 
-impl CleanupEvidenceProvider for GitCleanupEvidenceProvider<'_> {
-    fn snapshot(
+    pub(crate) fn snapshot_from_git(
         &self,
         request: &CleanupEvidenceRequest,
-    ) -> OutpostResult<Option<CleanupEvidenceSnapshot>> {
+    ) -> OutpostResult<CleanupEvidenceSnapshot> {
         let candidate_ref = format!("refs/heads/{}", request.branch.as_str());
         let output = self.source.git().run_capture([
             "ls-remote",
@@ -61,7 +59,16 @@ impl CleanupEvidenceProvider for GitCleanupEvidenceProvider<'_> {
             "HEAD",
             &candidate_ref,
         ])?;
-        parse_ls_remote_snapshot(&output, &request.branch).map(Some)
+        parse_ls_remote_snapshot(&output, &request.branch)
+    }
+}
+
+impl CleanupEvidenceProvider for GitCleanupEvidenceProvider<'_> {
+    fn snapshot(
+        &self,
+        request: &CleanupEvidenceRequest,
+    ) -> OutpostResult<Option<CleanupEvidenceSnapshot>> {
+        self.snapshot_from_git(request).map(Some)
     }
 }
 
