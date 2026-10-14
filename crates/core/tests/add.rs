@@ -212,6 +212,143 @@ fn add_fetches_one_remote_only_branch_and_materializes_source_tracking() {
 }
 
 #[test]
+fn explicit_fetch_authorization_materializes_a_branch_and_retains_origin_routing() {
+    let fixture = AbcFixture::new();
+    let branch = fixture
+        .create_source_branch("feature/remote-only")
+        .expect("branch");
+    fixture
+        .push_source_branch(&branch)
+        .expect("publish branch to A");
+    let expected = fixture
+        .rev_parse(&fixture.upstream, "refs/heads/feature/remote-only")
+        .expect("upstream branch OID");
+    fixture
+        .delete_source_branch(&branch)
+        .expect("remove local branch");
+    let source = fixture.source_repo().expect("source repo");
+    let source_head = fixture
+        .rev_parse(&fixture.source, "HEAD")
+        .expect("source HEAD");
+    let mut reporter = RecordingReporter::default();
+
+    let outpost = run_with_missing_branch(
+        &source,
+        AddOptions {
+            destination: fixture.root.join("C"),
+            checkout: AddCheckout::CheckoutExisting {
+                target_branch: Some(branch.clone()),
+            },
+            remote_name: RemoteName::parse("origin").expect("standard remote name"),
+        },
+        MissingBranchAuthorization::AllowFetchFromOrigin,
+        &mut reporter,
+    )
+    .expect("explicit authorization permits remote-only branch materialization");
+
+    assert_eq!(source.branch_oid(&branch).unwrap(), Some(expected.clone()));
+    assert_eq!(
+        fixture.rev_parse(outpost.work_tree(), "HEAD").unwrap(),
+        expected
+    );
+    assert_eq!(outpost.current_branch().unwrap(), branch);
+    assert_eq!(outpost.metadata().remote_name.as_str(), "origin");
+    assert_eq!(
+        remote_url_path(&fixture, outpost.work_tree(), "origin"),
+        source.work_tree()
+    );
+    assert_eq!(
+        remote_url_path(&fixture, source.work_tree(), "origin"),
+        canonical(&fixture.upstream)
+    );
+    let registry = source.registry().expect("saved registration");
+    assert_eq!(registry.entries().len(), 1);
+    assert_eq!(registry.entries()[0].path, outpost.work_tree());
+    assert_eq!(registry.entries()[0].remote_name.as_str(), "origin");
+    assert_eq!(
+        fixture.rev_parse(&fixture.source, "HEAD").unwrap(),
+        source_head
+    );
+}
+
+#[test]
+fn add_uses_a_source_branch_created_during_fetch_confirmation_without_refetching_it() {
+    struct BranchCreatedDuringPrompt<'a>(&'a AbcFixture);
+    impl MissingBranchAuthorizer for BranchCreatedDuringPrompt<'_> {
+        fn authorize_fetch_from_origin(&mut self, branch: &BranchName) -> bool {
+            self.0
+                .invoker(&self.0.source)
+                .run_check(["branch", branch.as_str(), "HEAD"])
+                .expect("another actor creates the branch while confirmation is pending");
+            true
+        }
+    }
+
+    let fixture = AbcFixture::new();
+    let branch = fixture
+        .create_source_branch("feature/appearing")
+        .expect("branch");
+    fixture
+        .push_source_branch(&branch)
+        .expect("publish initial branch");
+    fixture
+        .delete_source_branch(&branch)
+        .expect("requested branch starts missing");
+    let remote_oid = fixture
+        .commit_in_upstream(branch.as_str(), "remote branch advance")
+        .expect("upstream branch differs from the local branch created at confirmation");
+    let source = fixture.source_repo().expect("source repo");
+    let local_oid = fixture
+        .rev_parse(&fixture.source, "HEAD")
+        .expect("local branch starting OID");
+    assert_ne!(remote_oid, local_oid);
+    let tracking_ref = "refs/remotes/origin/feature/appearing";
+    let tracking_before = fixture
+        .rev_parse(&fixture.source, tracking_ref)
+        .expect("tracking OID");
+    let mut authorizer = BranchCreatedDuringPrompt(&fixture);
+    let mut reporter = RecordingReporter::default();
+
+    let outpost = run_with_missing_branch(
+        &source,
+        AddOptions {
+            destination: fixture.root.join("C"),
+            checkout: AddCheckout::CheckoutExisting {
+                target_branch: Some(branch.clone()),
+            },
+            remote_name: RemoteName::parse("local").expect("remote name"),
+        },
+        MissingBranchAuthorization::Ask(&mut authorizer),
+        &mut reporter,
+    )
+    .expect("the local branch that appeared during confirmation is sufficient");
+
+    assert_eq!(source.branch_oid(&branch).unwrap(), Some(local_oid.clone()));
+    assert_eq!(
+        fixture.rev_parse(outpost.work_tree(), "HEAD").unwrap(),
+        local_oid
+    );
+    assert_eq!(outpost.current_branch().unwrap(), branch);
+    assert_eq!(
+        fixture.rev_parse(&fixture.source, tracking_ref).unwrap(),
+        tracking_before
+    );
+    assert_eq!(source.upstream_for(&branch).unwrap(), None);
+    assert!(
+        !reporter
+            .steps
+            .iter()
+            .any(|(kind, _)| *kind == StepKind::SourceFetch)
+    );
+    assert_eq!(
+        fixture
+            .rev_parse(&fixture.upstream, "refs/heads/feature/appearing")
+            .unwrap(),
+        remote_oid
+    );
+}
+
+#[test]
 fn add_does_not_request_missing_branch_authorization_for_existing_local_branch() {
     let fixture = AbcFixture::new();
     let branch = fixture

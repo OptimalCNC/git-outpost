@@ -7,6 +7,50 @@ use common::fixture::AbcFixture;
 use outpost_core::{BranchName, OutpostError, RemoteName, SourceRepo};
 
 #[test]
+#[cfg(unix)]
+fn source_constructor_rejects_a_missing_explicit_git_work_tree_without_mutation() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let missing = fs::canonicalize(&fixture.root)
+        .expect("canonical fixture root")
+        .join("relocated-work-tree");
+    let config_path = source.git_dir().join("config");
+    let config = fs::read(&config_path).expect("source config");
+    let refs = fixture
+        .invoker(&fixture.source)
+        .run_capture(["for-each-ref", "--format=%(refname) %(objectname)"])
+        .expect("source refs");
+    let mut env = fixture.git_env.clone();
+    env.insert("GIT_WORK_TREE".into(), missing.clone().into_os_string());
+    assert_eq!(
+        fixture
+            .invoker(&fixture.source)
+            .with_env("GIT_WORK_TREE", missing.as_os_str())
+            .run_capture(["rev-parse", "--show-toplevel"])
+            .expect("Git reports its configured work tree"),
+        missing.to_string_lossy()
+    );
+
+    let error = SourceRepo::at_with(&fixture.source, &env)
+        .err()
+        .expect("a missing configured work tree cannot form a valid source handle");
+
+    assert!(matches!(error,
+        OutpostError::IoAt { path, source: error }
+            if path == missing && error.kind() == std::io::ErrorKind::NotFound
+    ));
+    assert!(!missing.exists());
+    assert_eq!(fs::read(config_path).unwrap(), config);
+    assert_eq!(
+        fixture
+            .invoker(&fixture.source)
+            .run_capture(["for-each-ref", "--format=%(refname) %(objectname)"])
+            .unwrap(),
+        refs
+    );
+}
+
+#[test]
 fn remote_branch_oid_distinguishes_present_and_absent_refs() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");
@@ -50,6 +94,63 @@ fn remote_default_branch_requires_and_parses_the_local_remote_head_symref() {
             .remote_default_branch(&remote("origin"))
             .expect("missing local remote HEAD"),
         None
+    );
+}
+
+// Git permits an origin/HEAD symref to point outside origin's tracking namespace.
+// Reject that identity before fetching; valid and absent aliases are covered above.
+#[test]
+fn fetching_a_misconfigured_remote_default_preserves_refs_and_the_alias() {
+    let fixture = AbcFixture::new();
+    let git = fixture.invoker(&fixture.source);
+    git.run_check([
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+        "refs/heads/main",
+    ])
+    .expect("set a valid Git symref with the wrong remote identity");
+    let source = fixture.source_repo().expect("source repo");
+    let refs = git
+        .run_capture(["for-each-ref", "--format=%(refname) %(objectname)"])
+        .expect("source refs");
+    let head = fixture
+        .rev_parse(&fixture.source, "HEAD")
+        .expect("source HEAD");
+    let fetch_head = source.git_dir().join("FETCH_HEAD");
+    let previous_fetch = fs::read(&fetch_head).ok();
+    fixture
+        .commit_in_upstream("main", "remote advance")
+        .expect("advance remote");
+    fs::write(
+        fixture.source.join("notes.txt"),
+        "uncommitted source work\n",
+    )
+    .expect("source work");
+
+    let error = source
+        .fetch_origin_default_branch()
+        .expect_err("invalid remote identity");
+
+    assert!(matches!(
+        error,
+        OutpostError::IoAt { path, source: error }
+            if path == source.work_tree() && error.kind() == std::io::ErrorKind::InvalidData
+    ));
+    assert_eq!(
+        git.run_capture(["symbolic-ref", "refs/remotes/origin/HEAD"])
+            .unwrap(),
+        "refs/heads/main"
+    );
+    assert_eq!(
+        git.run_capture(["for-each-ref", "--format=%(refname) %(objectname)"])
+            .unwrap(),
+        refs
+    );
+    assert_eq!(fixture.rev_parse(&fixture.source, "HEAD").unwrap(), head);
+    assert_eq!(fs::read(fetch_head).ok(), previous_fetch);
+    assert_eq!(
+        fs::read_to_string(fixture.source.join("notes.txt")).unwrap(),
+        "uncommitted source work\n"
     );
 }
 

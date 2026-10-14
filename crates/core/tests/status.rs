@@ -610,30 +610,34 @@ fn source_registry_not_found_is_stale() {
 #[cfg(unix)]
 #[test]
 fn source_registry_metadata_io_error_is_not_stale() {
-    use std::os::unix::fs::PermissionsExt;
-
     let fixture = AbcFixture::new();
-    let sealed = fixture.root.join("sealed");
-    let path = sealed.join("C");
-    fs::create_dir_all(&path).expect("create registered path");
+    let container = fixture.root.join("container");
+    fs::create_dir(&container).expect("create outpost container");
+    let path = fixture.add_outpost("container/C").expect("add C");
     let registered_path = canonical(&path);
     let source = fixture.source_repo().expect("source repo");
-    let mut registry = source.registry_mut().expect("registry mut");
-    registry
-        .add(RegistryEntry::new(path.clone(), remote("local")).expect("entry"))
-        .expect("add entry");
-    registry.save().expect("save registry");
-    fs::set_permissions(&sealed, fs::Permissions::from_mode(0o000)).expect("seal parent");
+    let registry_path = source.registry_path();
+    let registry_before = fs::read(&registry_path).expect("registry before status");
+    let moved_container = fixture.root.join("container.moved");
+    fs::rename(&container, &moved_container).expect("move outpost container");
+    fs::write(&container, "replacement file").expect("replace container with file");
 
     let result = run_with(&fixture.source, &fixture.git_env);
 
-    fs::set_permissions(&sealed, fs::Permissions::from_mode(0o755)).expect("restore parent");
     assert!(matches!(
         expect_error(result, "metadata error must propagate"),
         OutpostError::IoAt { path: error_path, source }
             if error_path == registered_path
-                && source.kind() == std::io::ErrorKind::PermissionDenied
+                && source.kind() == std::io::ErrorKind::NotADirectory
     ));
+    assert_eq!(
+        fs::read(&registry_path).expect("registry after status"),
+        registry_before
+    );
+    assert_eq!(
+        fs::read_to_string(&container).expect("replacement file"),
+        "replacement file"
+    );
 }
 
 #[test]

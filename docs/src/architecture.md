@@ -2415,8 +2415,8 @@ Tests run on Linux, macOS, and Windows in CI. Implications:
 - Long-path support on Windows: tempdir paths in CI stay under 200
   chars; if a test creates deeper structure, it uses
   `tempfile::Builder::prefix("gop-")` which keeps paths short.
-- Symlinks: tests do not create symlinks. Symlink behavior in the
-  source/outpost is whatever Git itself does.
+- Symlink fixtures run on Unix and keep both links and targets inside
+  test-owned temporary directories.
 
 ## 12. Dependencies
 
