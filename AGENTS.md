@@ -33,8 +33,8 @@ read and follow
 [Core Coverage And Test Policy](docs/src/core-coverage-and-test-policy.md).
 
 - Treat 100% as production executable line coverage under the approved target,
-  profile, feature set, and source classification. The current coverage command
-  does not yet isolate that denominator.
+  profile, feature set, and source classification. Use the canonical
+  `tools/core-coverage/run.py` measurement.
 - Admit permanent tests only when they satisfy independent wrongness, semantic
   evidence, marginal value, and proportionality.
 - Use the smallest safe fixture that establishes the behavior. Prefer real,

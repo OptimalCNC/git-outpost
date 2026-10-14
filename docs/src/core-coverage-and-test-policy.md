@@ -218,23 +218,53 @@ Interrupted runs, failed tests, and incomplete reports cannot satisfy the gate.
 
 ## Workflow And Enforcement Status
 
-The current `cargo coverage-core` alias, ignoring its threshold, selects:
+The approved canonical measurement is implemented in `tools/core-coverage`.
+Its contract selects `x86_64-unknown-linux-gnu`, the unoptimized `dev` profile
+with debug assertions and overflow checks, Rust 1.94.0 and its matching LLVM
+21.1.8 tools, and cargo-llvm-cov 0.9.0. The ordinary production build enables no
+features. Test execution explicitly enables `test-helpers` and runs every
+library unit and integration target; doctests run separately.
+
+An ordinary instrumented library supplies the production map. A `syn`-based
+classifier identifies attributed test implementations and instrumentation,
+including field initializers inside production methods. LLVM's per-file
+`DA` records supply physical executable lines; its detailed JSON segments
+independently establish the same lines and counts. LLVM summaries add counts
+across functions, so nested functions may count one physical line more than
+once. Those summaries remain separately labelled informational evidence.
+
+The denominator retains all ordinary production lines after syntax
+classification. Missing test execution remains uncovered. Additional
+unclassified mappings, mixed production/test executable lines, unsupported
+ownership syntax, and source files absent from compiler dependency information
+fail measurement. No production exemptions are approved. Default filename
+exclusions and coverage-specific cfgs are disabled. Compiler and report
+overrides are scrubbed, and actual configurations are recorded.
+
+Run the tooling checks, then obtain a baseline:
 
 ```text
-cargo llvm-cov --package outpost-core --all-features --locked
+python3 tools/core-coverage/run.py self-test
+python3 tools/core-coverage/run.py baseline
 ```
 
-This does not yet isolate the production denominator. The default selection
-includes library tests, so inline test code is attributed to production source
-files. `--all-features` enables `test-helpers`, which is also enabled by the
-crate's self dev-dependency. `--tests` still includes library tests, and selecting
-only integration targets would lose unit-test execution without removing the
-self dev-dependency's instrumentation.
+The runner requires a Linux cgroup v2 systemd manager and holds an exclusive
+workload lease. Canonical runs have a 30-minute wall deadline, two Cargo jobs,
+one test thread, 256 tasks, no swap, and aggregate memory caps of 8 GiB locally
+or 4 GiB in CI. Timeout and cancellation terminate the entire workload cgroup. Fresh
+run directories retain source hashes and uncommitted changes, commands, tool
+versions, source and test inventories, compiler objects, raw maps, exact
+classified counts, test logs, resource enforcement, and successful supervision.
+Artifact hashing and evidence verification also run inside the resource bounds
+and workload lease. Only a complete successful service receives the final atomic
+manifest; the outer supervisor performs bounded completion bookkeeping.
 
-Changing only the numeric threshold does not implement this policy. Do not
-claim 100% production coverage until an auditable denominator mechanism has
-been validated. This document does not select a filtering mechanism, coverage
-attribute, toolchain change, or test-source reorganization.
+`run.py verify <run-directory>` rejects missing, malformed, stale, incomplete,
+or inconsistent evidence. Adding `--require-zero`, or running `run.py gate`,
+requires zero uncovered eligible production lines. CI runs this same measurement
+in baseline mode, uploads only eligible production coverage, and retains evidence.
+Its hard gate remains disabled until an independently reviewed complete run
+establishes zero.
 
 Proceed in this order:
 

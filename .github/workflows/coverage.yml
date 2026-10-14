@@ -19,30 +19,63 @@ env:
 
 jobs:
   core:
-    name: Core
+    name: Core production lines (baseline)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RUSTUP_TOOLCHAIN: 1.94.0
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.94.0
         with:
           components: llvm-tools-preview
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: false
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov@0.9.0
+          fallback: none
 
-      - name: Generate core coverage
-        run: cargo coverage-core --lcov --output-path lcov.info
+      - name: Fetch locked dependencies
+        run: |
+          python3 tools/core-coverage/run.py check --ci -- cargo fetch --locked
+          python3 tools/core-coverage/run.py check --ci -- cargo fetch --manifest-path tools/core-coverage/classifier/Cargo.toml --locked
+
+      - name: Validate measurement tooling
+        run: python3 tools/core-coverage/run.py self-test --ci
+
+      # Adoption requires a reviewed complete run with zero uncovered lines.
+      - name: Measure production executable lines
+        id: measurement
+        run: python3 tools/core-coverage/run.py baseline --ci
+
+      - name: Retain measurement evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: outpost-core-linux-dev-production-lines
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            target/core-coverage/*/*.json
+            target/core-coverage/*/*.log
+            target/core-coverage/*/*.lcov
+            target/core-coverage/*/production-objects/*.o
+            target/core-coverage/*/production-build/x86_64-unknown-linux-gnu/debug/liboutpost_core.rlib
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:
           use_oidc: true
-          files: lcov.info
+          files: ${{ steps.measurement.outputs.run_directory }}/eligible.lcov
+          flags: outpost-core-linux-dev-production-lines
           disable_search: true
           fail_ci_if_error: true

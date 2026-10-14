@@ -128,17 +128,28 @@ The accepted target is 100% production executable line coverage for
 `crates/core`. Its denominator contract and permanent-test requirements are
 defined in the
 [Core Coverage And Test Policy](docs/src/core-coverage-and-test-policy.md).
-The current coverage command does not yet isolate that denominator; do not add
-contrived tests or broad exclusions to make its percentage pass. Install the
-coverage tool once, then run all checks before opening a pull request:
+The canonical measurement runs on Linux with cgroup v2 and a systemd user
+manager. It requires Rust 1.94.0 with matching LLVM tools and cargo-llvm-cov
+0.9.0. The runner bounds the whole process tree, executes all core unit and
+integration tests, and reports exact production line counts. A baseline may
+contain uncovered lines; the local `gate` command requires zero. Do not add
+contrived tests or exclusions to make it pass.
 
 ```bash
-cargo install cargo-llvm-cov
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features --locked
-cargo test --workspace --locked
-cargo coverage-core
+rustup toolchain install 1.94.0 --component llvm-tools-preview
+cargo install cargo-llvm-cov --version 0.9.0 --locked
+RUSTUP_TOOLCHAIN=1.94.0 python3 tools/core-coverage/run.py check -- cargo fetch --locked
+RUSTUP_TOOLCHAIN=1.94.0 python3 tools/core-coverage/run.py check -- cargo fetch --manifest-path tools/core-coverage/classifier/Cargo.toml --locked
+RUSTUP_TOOLCHAIN=1.94.0 python3 tools/core-coverage/run.py self-test
+RUSTUP_TOOLCHAIN=1.94.0 python3 tools/core-coverage/run.py baseline
+RUSTUP_TOOLCHAIN=1.94.0 python3 tools/core-coverage/run.py check -- cargo fmt --all -- --check
+RUSTUP_TOOLCHAIN=1.94.0 python3 tools/core-coverage/run.py check -- cargo clippy --workspace --all-targets --all-features --locked
+RUSTUP_TOOLCHAIN=1.94.0 python3 tools/core-coverage/run.py check -- cargo test --workspace --locked
 ```
+
+Each coverage run prints its artifact directory under `target/core-coverage`.
+Verify a retained result with `python3 tools/core-coverage/run.py verify
+<run-directory>`; add `--require-zero` to check the hard target.
 
 Development details are in [docs/src/architecture.md](docs/src/architecture.md),
 and planned work is tracked in [docs/src/roadmap.md](docs/src/roadmap.md).

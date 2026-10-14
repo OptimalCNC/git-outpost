@@ -1,0 +1,12 @@
+[package]
+name = "outpost-core-coverage-classifier"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+proc-macro2 = { version = "=1.0.106", features = ["span-locations"] }
+syn = { version = "=2.0.117", features = ["full", "visit"] }
+serde_json = "=1.0.151"
