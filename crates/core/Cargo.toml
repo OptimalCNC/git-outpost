@@ -23,3 +23,6 @@ thiserror.workspace = true
 [dev-dependencies]
 dunce.workspace = true
 outpost-core = { path = ".", features = ["test-helpers"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+libc = "0.2"
