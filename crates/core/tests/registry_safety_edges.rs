@@ -168,6 +168,14 @@ fn failed_registry_mutations_leave_persisted_entries_unchanged() {
             .remove_by_path(&unknown)
             .expect("remove unknown existing path")
     );
+    let missing_remove = registry
+        .remove_by_path(&missing)
+        .expect_err("an absent unregistered path cannot be identified");
+    assert!(matches!(
+        missing_remove,
+        OutpostError::IoAt { path, source }
+            if path == missing && source.kind() == std::io::ErrorKind::NotFound
+    ));
     assert_eq!(registry.entries().len(), 1);
     drop(registry);
 

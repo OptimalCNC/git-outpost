@@ -55,8 +55,8 @@ fn set_get_list_show_and_unset_round_trip() {
         }]
     );
 
-    store
-        .unset(ConfigKey::OutpostContainer)
+    source
+        .unset_outpost_container()
         .expect("unset outpost container");
 
     assert_eq!(store.get(ConfigKey::OutpostContainer).unwrap(), None);
