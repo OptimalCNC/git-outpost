@@ -10,6 +10,59 @@ use outpost_core::ops::status;
 use outpost_core::selector::OutpostSelector;
 use outpost_core::{AheadBehind, BranchName, Outpost, OutpostError};
 
+// An ordinary directory can obstruct the application-owned metadata document.
+// Source-context status must propagate that filesystem cause through its
+// registered-outpost inspection, rather than flatten it to an integrity error.
+#[test]
+fn source_status_preserves_metadata_io_errors_and_registered_work() {
+    let fixture = AbcFixture::new();
+    let path = fixture.add_outpost("C").expect("registered outpost");
+    let outpost = Outpost::at_with(&path, &fixture.git_env).expect("open outpost");
+    let source = fixture.source_repo().expect("source repo");
+    let metadata_path = outpost.metadata_path();
+    let backup = fixture.root.join("metadata.saved.json");
+    let metadata = fs::read(&metadata_path).expect("metadata before obstruction");
+    fs::rename(&metadata_path, &backup).expect("save metadata document");
+    fs::create_dir(&metadata_path).expect("ordinary directory obstruction");
+    let marker = metadata_path.join("keep.txt");
+    fs::write(&marker, "external contents\n").expect("obstruction contents");
+    let expected_kind = fs::read(&metadata_path)
+        .expect_err("metadata document is now a directory")
+        .kind();
+    let work = path.join("draft.txt");
+    fs::write(&work, "uncommitted outpost work\n").expect("outpost work");
+    let registry = fs::read(source.registry_path()).expect("saved registry");
+    let repositories = [&fixture.source, &path];
+    let refs = repositories.map(|repository| {
+        fixture
+            .invoker(repository)
+            .run_capture(["for-each-ref", "--format=%(refname) %(objectname)"])
+            .expect("refs before status")
+    });
+
+    let error = status::run_with(&fixture.source, &fixture.git_env)
+        .expect_err("unreadable registered metadata must stop source status");
+
+    assert!(matches!(
+        error,
+        OutpostError::IoAt { path, source }
+            if path == metadata_path && source.kind() == expected_kind
+    ));
+    assert_eq!(fs::read(source.registry_path()).unwrap(), registry);
+    assert_eq!(fs::read(&backup).unwrap(), metadata);
+    assert_eq!(fs::read(&marker).unwrap(), b"external contents\n");
+    assert_eq!(fs::read(&work).unwrap(), b"uncommitted outpost work\n");
+    for (repository, before) in repositories.into_iter().zip(refs) {
+        assert_eq!(
+            fixture
+                .invoker(repository)
+                .run_capture(["for-each-ref", "--format=%(refname) %(objectname)"])
+                .unwrap(),
+            before
+        );
+    }
+}
+
 // Git configuration accepts a whitespace-only URL. Status must reject that
 // invalid route inventory without changing configuration or work; the existing
 // absent-URL test protects Git's distinct remote-name fallback.
