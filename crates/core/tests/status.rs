@@ -496,21 +496,6 @@ fn source_upstream_dot_remote_is_local_repository() {
     );
 }
 
-#[cfg(unix)]
-#[test]
-fn source_upstream_propagates_non_two_git_route_failure() {
-    let fixture = AbcFixture::new();
-    set_branch_tracking(&fixture, &fixture.source, "main", "origin", "main");
-    let env = git_env_with_route_failure(&fixture, 7);
-
-    let error = expect_error(
-        run_with(&fixture.source, &env),
-        "route failure should propagate",
-    );
-
-    assert!(matches!(error, OutpostError::GitFailed { code: 7, .. }));
-}
-
 #[test]
 fn source_registry_absent_is_an_empty_inventory() {
     let fixture = AbcFixture::new();
@@ -898,6 +883,15 @@ fn status_from_source_and_outpost_is_local_and_does_not_change_refs() {
     run_with(&fixture.source, &env).expect("local source status");
     run_with(&outpost, &env).expect("local outpost status");
 
+    assert!(
+        !fixture
+            .root
+            .join("forbidden-status-commands")
+            .try_exists()
+            .expect("inspect command log"),
+        "status attempted a remote query or ref mutation"
+    );
+
     assert_eq!(refs_snapshot(&fixture, &fixture.source), source_refs_before);
     assert_eq!(refs_snapshot(&fixture, &outpost), outpost_refs_before);
 }
@@ -1093,32 +1087,6 @@ fn urls<const N: usize>(values: [&str; N]) -> RemoteUrlList {
 }
 
 #[cfg(unix)]
-fn git_env_with_route_failure(
-    fixture: &AbcFixture,
-    exit_code: u8,
-) -> std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let shim_dir = fixture.root.join("git-shim");
-    fs::create_dir(&shim_dir).expect("create shim dir");
-    let real_git = find_git_executable();
-    let shim = shim_dir.join("git");
-    fs::write(
-        &shim,
-        format!(
-            "#!/bin/sh\nif [ \"$1\" = remote ] && [ \"$2\" = get-url ]; then exit {exit_code}; fi\nexec '{}' \"$@\"\n",
-            real_git.display()
-        ),
-    )
-    .expect("write git shim");
-    fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).expect("chmod git shim");
-
-    let mut env = fixture.git_env.clone();
-    env.insert("PATH".into(), shim_dir.into_os_string());
-    env
-}
-
-#[cfg(unix)]
 fn git_env_rejecting_forbidden_status_commands(
     fixture: &AbcFixture,
 ) -> std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString> {
@@ -1131,7 +1099,7 @@ fn git_env_rejecting_forbidden_status_commands(
     fs::write(
         &shim,
         format!(
-            "#!/bin/sh\ncase \"$1\" in fetch|pull|push|ls-remote|update-ref) exit 97 ;; esac\nexec '{}' \"$@\"\n",
+            "#!/bin/sh\ncase \"$1\" in fetch|pull|push|ls-remote|update-ref) echo \"$1\" >> \"$STATUS_FORBIDDEN_LOG\"; exit 97 ;; esac\nexec '{}' \"$@\"\n",
             real_git.display()
         ),
     )
@@ -1140,6 +1108,13 @@ fn git_env_rejecting_forbidden_status_commands(
         .expect("chmod local-only git shim");
 
     let mut env = fixture.git_env.clone();
+    env.insert(
+        "STATUS_FORBIDDEN_LOG".into(),
+        fixture
+            .root
+            .join("forbidden-status-commands")
+            .into_os_string(),
+    );
     env.insert("PATH".into(), shim_dir.into_os_string());
     env
 }

@@ -3,7 +3,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Output};
 
-use crate::{OutpostError, OutpostResult};
+use crate::{AheadBehind, OutpostError, OutpostResult};
 
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
@@ -37,7 +37,47 @@ impl GitInvoker {
         &self.cwd
     }
 
+    pub(crate) fn ahead_behind(&self, local: &str, other: &str) -> OutpostResult<AheadBehind> {
+        let range = format!("{local}...{other}");
+        let output = self.run_capture(["rev-list", "--left-right", "--count", &range])?;
+        let mut counts = output.split_whitespace();
+        let ahead = counts.next().and_then(|value| value.parse().ok());
+        let behind = counts.next().and_then(|value| value.parse().ok());
+        match (ahead, behind, counts.next()) {
+            (Some(ahead), Some(behind), None) => Ok(AheadBehind { ahead, behind }),
+            _ => Err(OutpostError::IoAt {
+                path: self.cwd.clone(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("unexpected rev-list output: {output}"),
+                ),
+            }),
+        }
+    }
+
     pub fn run_capture<I, S>(&self, args: I) -> OutpostResult<String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        Ok(trimmed_lossy(&self.successful_stdout(args)?))
+    }
+
+    /// Preserve each line exactly, including surrounding spaces and empty records.
+    pub(crate) fn run_capture_lines<I, S>(&self, args: I) -> OutpostResult<Vec<String>>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let bytes = self.successful_stdout(args)?;
+        let output = std::str::from_utf8(&bytes).map_err(|error| OutpostError::IoAt {
+            path: self.cwd.clone(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+        })?;
+        Ok(output.split_terminator('\n').map(str::to_owned).collect())
+    }
+
+    fn successful_stdout<I, S>(&self, args: I) -> OutpostResult<Vec<u8>>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
@@ -45,7 +85,7 @@ impl GitInvoker {
         let argv = collect_argv(args);
         let output = self.output(&argv)?;
         match output.status.code() {
-            Some(0) => Ok(trimmed_lossy(&output.stdout)),
+            Some(0) => Ok(output.stdout),
             Some(code) => Err(git_failed(&argv, code, &output.stderr)),
             None => Err(git_terminated(&argv, output.status)),
         }
@@ -92,7 +132,10 @@ impl GitInvoker {
             .expect("argv log poisoned")
             .push(argv.to_vec());
 
-        Command::new("git")
+        let mut command = Command::new("git");
+        #[cfg(any(test, feature = "test-helpers"))]
+        isolate_git_test_command(&mut command);
+        command
             .current_dir(crate::path::git_path(&self.cwd))
             .envs(&self.env)
             // Keep argv as separate OS strings; no shell parses user input here.
@@ -102,6 +145,41 @@ impl GitInvoker {
                 path: self.cwd.clone(),
                 source,
             })
+    }
+}
+
+/// Clear Git's inherited repository selection before applying a fixture's explicit overrides.
+#[cfg(any(test, feature = "test-helpers"))]
+pub fn isolate_git_test_command(command: &mut Command) {
+    // An empty global config path disables the user's file. Fixture-specific
+    // configuration and identity can still be supplied by the caller.
+    command
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "");
+    // Repository-local variables from git rev-parse --local-env-vars, plus
+    // discovery and namespace settings which can redirect a fixture's refs.
+    for name in [
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_CEILING_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_CONFIG",
+        "GIT_CONFIG_COUNT",
+        "GIT_CONFIG_PARAMETERS",
+        "GIT_DIR",
+        "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+        "GIT_GRAFT_FILE",
+        "GIT_IMPLICIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_NAMESPACE",
+        "GIT_NO_REPLACE_OBJECTS",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_PREFIX",
+        "GIT_QUARANTINE_PATH",
+        "GIT_REPLACE_REF_BASE",
+        "GIT_SHALLOW_FILE",
+        "GIT_WORK_TREE",
+    ] {
+        command.env_remove(name);
     }
 }
 
@@ -198,9 +276,18 @@ fn signal_str(_status: ExitStatus) -> String {
 mod tests {
     use super::*;
 
+    fn empty_repo() -> tempfile::TempDir {
+        let directory = tempfile::tempdir().expect("temporary repository");
+        GitInvoker::at(directory.path())
+            .run_check(["init", "--quiet"])
+            .expect("initialize repository");
+        directory
+    }
+
     #[test]
     fn run_check_bad_command_preserves_failed_argv() {
-        let git = GitInvoker::at(env!("CARGO_MANIFEST_DIR"));
+        let directory = tempfile::tempdir().expect("command directory");
+        let git = GitInvoker::at(directory.path());
         let err = git
             .run_check([
                 "definitely-not-a-git-outpost-command",
@@ -235,7 +322,8 @@ mod tests {
 
     #[test]
     fn run_capture_keeps_leading_dash_value_positional_after_separator() {
-        let git = GitInvoker::at(env!("CARGO_MANIFEST_DIR"));
+        let directory = empty_repo();
+        let git = GitInvoker::at(directory.path());
         let stdout = git
             .run_capture(["rev-parse", "--", "--not-a-flag"])
             .expect("rev-parse should echo positional value");
@@ -253,7 +341,8 @@ mod tests {
 
     #[test]
     fn run_status_distinguishes_exit_one_from_real_failure() {
-        let git = GitInvoker::at(env!("CARGO_MANIFEST_DIR"));
+        let directory = empty_repo();
+        let git = GitInvoker::at(directory.path());
 
         assert!(
             !git.run_status(["rev-parse", "--verify", "--quiet", "refs/heads/missing"])

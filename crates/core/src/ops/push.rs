@@ -27,6 +27,7 @@ pub fn run(
         other => other,
     })?;
     let source = outpost.source_repo()?;
+    let remote = &outpost.metadata().remote_name;
 
     check_checked_out_source_policy(&source, &branch)?;
     if !source.branch_exists(&branch)? {
@@ -35,13 +36,15 @@ pub fn run(
         });
     }
 
-    check_source_fast_forwardable(outpost, &branch)?;
+    verify_source_route(outpost, &source)?;
+    let tracking_ref = format!("refs/remotes/{}/{}", remote.as_str(), branch.as_str());
+    check_source_fast_forwardable(outpost, &branch, &tracking_ref)?;
     let origin_before = source.origin_branch_oid(&branch)?;
     check_origin_fast_forwardable(outpost, &source, &branch, origin_before.as_deref())?;
 
-    let outpost_before = source
-        .git()
-        .run_capture(["rev-parse", &source_branch_ref(branch.as_str())])?;
+    let branch_ref = source_branch_ref(branch.as_str());
+    let intended_tip = outpost.git().run_capture(["rev-parse", &branch_ref])?;
+    let source_before = source.git().run_capture(["rev-parse", &branch_ref])?;
     reporter.step(
         StepKind::OutpostPush,
         &format!(
@@ -51,18 +54,20 @@ pub fn run(
             source.work_tree().display()
         ),
     );
-    let outpost_refspec = branch_refspec(branch.as_str());
-    outpost.git().run_check([
-        "push",
-        outpost.metadata().remote_name.as_str(),
-        &outpost_refspec,
-    ])?;
-    let outpost_after = source
+    verify_source_route(outpost, &source)?;
+    let refspec = branch_refspec(branch.as_str());
+    outpost
         .git()
-        .run_capture(["rev-parse", &source_branch_ref(branch.as_str())])?;
+        .run_check(["push", "--", remote.as_str(), &refspec])?;
+    let source_after = source.git().run_capture(["rev-parse", &branch_ref])?;
+    if source_after != intended_tip {
+        return Err(OutpostError::Divergence {
+            branch: branch.as_str().to_owned(),
+        });
+    }
 
     let source_to_origin_commits =
-        source_to_origin_commit_count(source.git(), origin_before.as_deref(), &outpost_after)?;
+        source_to_origin_commit_count(source.git(), origin_before.as_deref(), &source_after)?;
     reporter.step(
         StepKind::SourcePush,
         &format!(
@@ -72,10 +77,9 @@ pub fn run(
             branch.as_str()
         ),
     );
-    let source_refspec = branch_refspec(branch.as_str());
     source
         .git()
-        .run_check(["push", "--set-upstream", "origin", &source_refspec])?;
+        .run_check(["push", "--set-upstream", "origin", &refspec])?;
     let origin_after =
         source
             .origin_branch_oid(&branch)?
@@ -83,7 +87,7 @@ pub fn run(
                 branch: branch.as_str().to_owned(),
                 repo: source.work_tree().to_path_buf(),
             })?;
-    if origin_after != outpost_after {
+    if origin_after != source_after {
         return Err(OutpostError::Divergence {
             branch: branch.as_str().to_owned(),
         });
@@ -91,12 +95,26 @@ pub fn run(
 
     Ok(PushReport {
         outpost_to_source: StepResult::Pushed {
-            commits: pushed_commit_count(outpost, &outpost_before, &outpost_after)?,
+            commits: pushed_commit_count(outpost, &source_before, &source_after)?,
         },
         source_to_origin: StepResult::Pushed {
             commits: source_to_origin_commits,
         },
     })
+}
+
+fn verify_source_route(outpost: &Outpost, source: &SourceRepo) -> OutpostResult<()> {
+    let remote = &outpost.metadata().remote_name;
+    if let Some(actual) =
+        super::status::mismatched_source_route(outpost.git(), remote, source.work_tree())?
+    {
+        return Err(OutpostError::SourceRemoteMismatch {
+            remote: remote.as_str().to_owned(),
+            expected: source.work_tree().to_path_buf(),
+            actual,
+        });
+    }
+    Ok(())
 }
 
 fn check_checked_out_source_policy(source: &SourceRepo, branch: &BranchName) -> OutpostResult<()> {
@@ -120,16 +138,22 @@ fn check_checked_out_source_policy(source: &SourceRepo, branch: &BranchName) -> 
     }
 }
 
-fn check_source_fast_forwardable(outpost: &Outpost, branch: &BranchName) -> OutpostResult<()> {
+fn check_source_fast_forwardable(
+    outpost: &Outpost,
+    branch: &BranchName,
+    remote_tracking_ref: &str,
+) -> OutpostResult<()> {
     let remote = outpost.metadata().remote_name.as_str();
-    let remote_tracking_ref = format!("refs/remotes/{remote}/{}", branch.as_str());
     let fetch_refspec = format!("{}:{remote_tracking_ref}", branch.as_str());
     outpost.git().run_check(["fetch", remote, &fetch_refspec])?;
 
     let local_ref = source_branch_ref(branch.as_str());
-    let range = format!("{local_ref}...{remote_tracking_ref}");
-    let (_, behind) = ahead_behind(outpost.git(), &range)?;
-    if behind > 0 {
+    if outpost
+        .git()
+        .ahead_behind(&local_ref, remote_tracking_ref)?
+        .behind
+        > 0
+    {
         Err(OutpostError::Divergence {
             branch: branch.as_str().to_owned(),
         })
@@ -176,15 +200,7 @@ fn pushed_commit_count(outpost: &Outpost, before: &str, after: &str) -> OutpostR
 
     let range = format!("{before}..{after}");
     let output = outpost.git().run_capture(["rev-list", "--count", &range])?;
-    let count = output
-        .split_whitespace()
-        .next()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_rev_list_output(outpost, &output))?;
-    if output.split_whitespace().nth(1).is_some() {
-        return Err(invalid_rev_list_output(outpost, &output));
-    }
-    Ok(count)
+    parse_count(outpost.git(), &output)
 }
 
 fn source_to_origin_commit_count(
@@ -216,33 +232,6 @@ fn parse_count(git: &GitInvoker, output: &str) -> OutpostResult<u32> {
         return Err(invalid_count_output(git, output));
     }
     Ok(count)
-}
-
-fn ahead_behind(git: &GitInvoker, range: &str) -> OutpostResult<(u32, u32)> {
-    let output = git.run_capture(["rev-list", "--left-right", "--count", range])?;
-    let mut parts = output.split_whitespace();
-    let ahead = parts
-        .next()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_count_output(git, &output))?;
-    let behind = parts
-        .next()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_count_output(git, &output))?;
-    if parts.next().is_some() {
-        return Err(invalid_count_output(git, &output));
-    }
-    Ok((ahead, behind))
-}
-
-fn invalid_rev_list_output(outpost: &Outpost, output: &str) -> OutpostError {
-    OutpostError::IoAt {
-        path: outpost.work_tree().to_path_buf(),
-        source: std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("unexpected rev-list output: {output}"),
-        ),
-    }
 }
 
 fn invalid_count_output(git: &GitInvoker, output: &str) -> OutpostError {

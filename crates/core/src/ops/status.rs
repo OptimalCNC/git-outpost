@@ -11,6 +11,7 @@ use crate::{BranchName, GitInvoker, OutpostError, OutpostResult, RefName, Remote
 
 mod routes;
 mod source;
+pub(super) use routes::mismatched_source_route;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StatusReport {
@@ -75,21 +76,21 @@ impl RemoteUrlList {
         Self(values.into_iter().map(str::to_owned).collect())
     }
 
-    fn from_output(git: &GitInvoker, output: &str) -> OutpostResult<Self> {
-        let mut urls = Vec::new();
-        for line in output.lines().filter(|line| !line.trim().is_empty()) {
-            if !urls.iter().any(|existing| existing == line) {
-                urls.push(line.to_owned());
-            }
-        }
-        if urls.is_empty() {
+    fn from_output(git: &GitInvoker, lines: Vec<String>) -> OutpostResult<Self> {
+        if lines.is_empty() || lines.iter().any(|url| url.trim().is_empty()) {
             return Err(OutpostError::IoAt {
                 path: git.cwd().to_path_buf(),
                 source: std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "git remote get-url returned no URLs",
+                    "git remote get-url returned an empty URL",
                 ),
             });
+        }
+        let mut urls = Vec::new();
+        for line in lines {
+            if !urls.contains(&line) {
+                urls.push(line);
+            }
         }
         Ok(Self(urls))
     }
@@ -268,13 +269,7 @@ fn report_from_metadata(
 
     if source_present {
         let source = SourceRepo::at_with(&source_path, env)?;
-        check_local_remote(
-            git,
-            &outpost_path,
-            &source_path,
-            &remote_name,
-            &mut problems,
-        )?;
+        check_local_remote(git, &source_path, &remote_name, &mut problems)?;
         check_registry(&source, &outpost_path, &mut problems)?;
 
         if let Some(branch) = current_branch.as_ref() {
@@ -375,22 +370,17 @@ fn current_branch_or_detached(git: &GitInvoker) -> OutpostResult<Option<BranchNa
 
 fn check_local_remote(
     git: &GitInvoker,
-    outpost_path: &Path,
     configured: &Path,
     remote_name: &RemoteName,
     problems: &mut Vec<ConfigProblem>,
 ) -> OutpostResult<()> {
-    let actual = match git.run_capture(["remote", "get-url", remote_name.as_str()]) {
-        Ok(actual) => canonicalize_remote_path(outpost_path, &actual)?,
-        Err(OutpostError::GitFailed { .. }) => return Ok(()),
-        Err(err) => return Err(err),
-    };
-
-    if actual != configured {
-        problems.push(ConfigProblem::LocalRemoteMismatch {
+    match mismatched_source_route(git, remote_name, configured) {
+        Ok(Some(actual)) => problems.push(ConfigProblem::LocalRemoteMismatch {
             configured: configured.to_path_buf(),
             actual,
-        });
+        }),
+        Ok(None) | Err(OutpostError::GitFailed { code: 2, .. }) => {}
+        Err(err) => return Err(err),
     }
 
     Ok(())
@@ -545,40 +535,11 @@ fn ahead_behind_existing_refs(
         return Ok(None);
     }
 
-    let range = format!("{local_ref}...{remote_ref}");
-    let output = git.run_capture(["rev-list", "--left-right", "--count", &range])?;
-    parse_ahead_behind(git.cwd(), &output).map(Some)
+    git.ahead_behind(local_ref, remote_ref).map(Some)
 }
 
 fn ref_exists(git: &GitInvoker, ref_name: &str) -> OutpostResult<bool> {
     git.run_status(["rev-parse", "--verify", "--quiet", ref_name])
-}
-
-fn parse_ahead_behind(repo: &Path, output: &str) -> OutpostResult<AheadBehind> {
-    let mut parts = output.split_whitespace();
-    let ahead = parts
-        .next()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_ahead_behind_output(repo, output))?;
-    let behind = parts
-        .next()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_ahead_behind_output(repo, output))?;
-    if parts.next().is_some() {
-        return Err(invalid_ahead_behind_output(repo, output));
-    }
-
-    Ok(AheadBehind { ahead, behind })
-}
-
-fn invalid_ahead_behind_output(repo: &Path, output: &str) -> OutpostError {
-    OutpostError::IoAt {
-        path: repo.to_path_buf(),
-        source: std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("unexpected rev-list output: {output}"),
-        ),
-    }
 }
 
 fn canonicalize_remote_path(outpost_path: &Path, value: &str) -> OutpostResult<PathBuf> {

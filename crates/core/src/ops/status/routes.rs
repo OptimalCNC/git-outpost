@@ -1,7 +1,25 @@
+use std::path::{Path, PathBuf};
+
 use crate::source_repo::read_optional_config;
 use crate::{BranchName, GitInvoker, OutpostError, OutpostResult, RefName, RemoteName};
 
 use super::{RemoteRoutes, RemoteUrlList, RouteAvailability, TrackedUpstream};
+
+pub(crate) fn mismatched_source_route(
+    git: &GitInvoker,
+    remote: &RemoteName,
+    source: &Path,
+) -> OutpostResult<Option<PathBuf>> {
+    for direction in [RouteDirection::Fetch, RouteDirection::Push] {
+        for url in remote_urls(git, remote, direction)?.as_slice() {
+            let path = super::canonicalize_remote_path(git.cwd(), url)?;
+            if path != source {
+                return Ok(Some(path));
+            }
+        }
+    }
+    Ok(None)
+}
 
 pub(super) fn read_upstream(
     git: &GitInvoker,
@@ -49,16 +67,25 @@ pub(super) fn probe_urls(
     remote: &RemoteName,
     direction: RouteDirection,
 ) -> OutpostResult<RouteAvailability> {
-    let result = match direction {
-        RouteDirection::Fetch => git.run_capture(["remote", "get-url", "--all", remote.as_str()]),
-        RouteDirection::Push => {
-            git.run_capture(["remote", "get-url", "--push", "--all", remote.as_str()])
-        }
-    };
-
-    match result {
-        Ok(output) => RemoteUrlList::from_output(git, &output).map(RouteAvailability::Known),
+    match remote_urls(git, remote, direction) {
+        Ok(urls) => Ok(RouteAvailability::Known(urls)),
         Err(OutpostError::GitFailed { code: 2, .. }) => Ok(RouteAvailability::Unavailable),
         Err(error) => Err(error),
     }
+}
+
+fn remote_urls(
+    git: &GitInvoker,
+    remote: &RemoteName,
+    direction: RouteDirection,
+) -> OutpostResult<RemoteUrlList> {
+    let output = match direction {
+        RouteDirection::Fetch => {
+            git.run_capture_lines(["remote", "get-url", "--all", remote.as_str()])
+        }
+        RouteDirection::Push => {
+            git.run_capture_lines(["remote", "get-url", "--push", "--all", remote.as_str()])
+        }
+    }?;
+    RemoteUrlList::from_output(git, output)
 }

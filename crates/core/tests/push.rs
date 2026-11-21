@@ -261,6 +261,85 @@ fn push_when_origin_is_ahead_returns_divergence_before_source_mutation() {
 }
 
 #[test]
+fn push_refuses_an_outpost_write_url_pointing_away_from_its_source() {
+    let fixture = AbcFixture::new();
+    let checkout = fixture.add_outpost("C").expect("add outpost");
+    let old_source = fixture.root.join("old-source.git");
+    fixture
+        .invoker(&fixture.root)
+        .run_check([
+            OsStr::new("clone"),
+            OsStr::new("--bare"),
+            fixture.source.as_os_str(),
+            old_source.as_os_str(),
+        ])
+        .expect("keep a writable copy of the source");
+    fixture
+        .invoker(&checkout)
+        .run_check([
+            OsStr::new("config"),
+            OsStr::new("--add"),
+            OsStr::new("remote.local.pushurl"),
+            fixture.source.as_os_str(),
+        ])
+        .expect("configure the current source write path");
+    fixture
+        .invoker(&checkout)
+        .run_check([
+            OsStr::new("config"),
+            OsStr::new("--add"),
+            OsStr::new("remote.local.pushurl"),
+            old_source.as_os_str(),
+        ])
+        .expect("leave an obsolete secondary write path");
+    let original = fixture
+        .rev_parse(&fixture.source, "refs/heads/main")
+        .expect("source tip");
+    let intended = fixture
+        .commit_in_outpost(&checkout, "work for review")
+        .expect("new work");
+    let status = status_run_with(&checkout, &fixture.git_env).expect("outpost status");
+    let StatusReport::Outpost(status) = status else {
+        panic!("expected outpost status")
+    };
+    assert!(
+        status
+            .problems
+            .contains(&ConfigProblem::LocalRemoteMismatch {
+                configured: fs::canonicalize(&fixture.source).unwrap(),
+                actual: fs::canonicalize(&old_source).unwrap(),
+            })
+    );
+
+    let error = expect_error(
+        run(
+            &outpost(&fixture, &checkout),
+            PushOptions,
+            &mut CapturingReporter::default(),
+        ),
+        "refuse to publish outside the recorded source",
+    );
+    assert!(
+        matches!(error, OutpostError::SourceRemoteMismatch { ref remote, ref expected, ref actual }
+        if remote == "local" && *expected == fs::canonicalize(&fixture.source).unwrap() && *actual == fs::canonicalize(&old_source).unwrap())
+    );
+    for repo in [&fixture.source, &fixture.upstream, &old_source] {
+        assert_eq!(
+            fixture
+                .rev_parse(repo, "refs/heads/main")
+                .expect("preserved main"),
+            original
+        );
+    }
+    assert_eq!(
+        fixture
+            .rev_parse(&checkout, "HEAD")
+            .expect("outpost keeps its work"),
+        intended
+    );
+}
+
+#[test]
 fn push_reports_divergence_when_the_write_url_updates_a_different_repository() {
     let fixture = AbcFixture::new();
     let outpost_path = fixture.add_outpost("C").expect("add C");

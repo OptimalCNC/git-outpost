@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::ops::branch_analysis::{
     self, BranchCleanupCandidate, BranchCleanupFinding, BranchCleanupSkipReason,
@@ -497,7 +497,7 @@ fn probe_source_vs_remote_oid(
     }
 
     let local_ref = source_branch_ref(branch);
-    match ahead_behind_existing_refs(source.git(), &local_ref, remote_oid) {
+    match source.git().ahead_behind(&local_ref, remote_oid) {
         Ok(value) => Probe::Known(value),
         Err(err) => Probe::Unavailable(err.to_string()),
     }
@@ -573,45 +573,8 @@ fn branch_delete_safety(analysis: &branch_analysis::BranchCleanupAnalysis) -> Br
         })
 }
 
-fn ahead_behind_existing_refs(
-    git: &GitInvoker,
-    local_ref: &str,
-    remote_ref: &str,
-) -> OutpostResult<AheadBehind> {
-    let range = format!("{local_ref}...{remote_ref}");
-    let output = git.run_capture(["rev-list", "--left-right", "--count", &range])?;
-    parse_ahead_behind(git.cwd(), &output)
-}
-
 fn rev_parse(git: &GitInvoker, reference: &str) -> OutpostResult<String> {
     git.run_capture(["rev-parse", reference])
-}
-
-fn parse_ahead_behind(repo: &Path, output: &str) -> OutpostResult<AheadBehind> {
-    let mut parts = output.split_whitespace();
-    let ahead = parts
-        .next()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_ahead_behind_output(repo, output))?;
-    let behind = parts
-        .next()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_ahead_behind_output(repo, output))?;
-    if parts.next().is_some() {
-        return Err(invalid_ahead_behind_output(repo, output));
-    }
-
-    Ok(AheadBehind { ahead, behind })
-}
-
-fn invalid_ahead_behind_output(repo: &Path, output: &str) -> OutpostError {
-    OutpostError::IoAt {
-        path: repo.to_path_buf(),
-        source: std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("unexpected rev-list output: {output}"),
-        ),
-    }
 }
 
 fn source_branch_ref(branch: &BranchName) -> String {

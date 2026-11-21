@@ -77,7 +77,7 @@ fn push_allows_non_checked_out_source_branch_when_update_policy_refuses_checked_
 }
 
 #[test]
-fn push_stops_before_reporting_when_outpost_to_source_fetch_fails() {
+fn push_refuses_a_wrong_source_fetch_url_even_when_the_write_url_is_correct() {
     let fixture = AbcFixture::new();
     let outpost_path = fixture.add_outpost("C").expect("add C");
     fixture
@@ -92,7 +92,15 @@ fn push_stops_before_reporting_when_outpost_to_source_fetch_fails() {
             OsStr::new("local"),
             missing_remote.as_os_str(),
         ])
-        .expect("break local remote");
+        .expect("configure a missing source read path");
+    fixture
+        .invoker(&outpost_path)
+        .run_check([
+            OsStr::new("config"),
+            OsStr::new("remote.local.pushurl"),
+            fixture.source.as_os_str(),
+        ])
+        .expect("retain the correct source write path");
     let source_before = fixture
         .rev_parse(&fixture.source, "refs/heads/main")
         .expect("source before");
@@ -101,10 +109,15 @@ fn push_stops_before_reporting_when_outpost_to_source_fetch_fails() {
 
     let err = expect_error(
         push::run(&outpost, push::PushOptions, &mut reporter),
-        "broken source fetch should fail",
+        "refuse the mismatched source read path",
     );
 
-    assert!(matches!(err, OutpostError::GitFailed { .. }));
+    assert!(
+        matches!(err, OutpostError::SourceRemoteMismatch { remote, expected, actual }
+        if remote == "local"
+            && expected == fs::canonicalize(&fixture.source).expect("source path")
+            && actual == fs::canonicalize(&fixture.root).expect("fixture root").join("missing-source.git"))
+    );
     assert!(reporter.steps.is_empty());
     assert_eq!(
         fixture

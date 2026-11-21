@@ -16,6 +16,8 @@ pub mod source_repo;
 pub use config::{ConfigEntry, ConfigKey, ConfigShow, ConfigShowEntry, ConfigStore, ConfigValue};
 pub use error::{OutpostError, OutpostResult};
 pub use git::GitInvoker;
+#[cfg(any(test, feature = "test-helpers"))]
+pub use git::isolate_git_test_command;
 pub use metadata::Metadata;
 pub use outpost::{AheadBehind, Outpost};
 pub use outpost_id::{OutpostId, OutpostIdPrefix};

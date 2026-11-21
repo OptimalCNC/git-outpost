@@ -56,6 +56,19 @@ pub enum OutpostError {
     #[error("working tree is dirty in {}; {hint}", .repo.display())]
     DirtyTree { repo: PathBuf, hint: &'static str },
 
+    #[error("outpost has stashed changes in {}; {hint}", .repo.display())]
+    StashedChanges { repo: PathBuf, hint: &'static str },
+
+    #[error("remote {remote} must still fetch from the observed URL and push only there")]
+    UnverifiedPushDestination { remote: String },
+
+    #[error("source remote {remote} points to {}, expected the recorded source {}", .actual.display(), .expected.display())]
+    SourceRemoteMismatch {
+        remote: String,
+        expected: PathBuf,
+        actual: PathBuf,
+    },
+
     #[error("branch {branch} has unpushed commits in {}; {hint}", .repo.display())]
     UnpushedCommits {
         repo: PathBuf,
@@ -155,6 +168,8 @@ impl OutpostError {
             DestinationExists(_)
             | DestinationInsideRepo(_)
             | DirtyTree { .. }
+            | StashedChanges { .. }
+            | UnverifiedPushDestination { .. }
             | UnpushedCommits { .. }
             | OutpostLocked { .. } => 3,
             Divergence { .. }
@@ -167,6 +182,7 @@ impl OutpostError {
             BadRegistry { .. }
             | BadMetadata { .. }
             | BadConfig { .. }
+            | SourceRemoteMismatch { .. }
             | InvalidConfigValue { .. }
             | OutpostIdPrefixNotFound(_)
             | OutpostIdPrefixAmbiguous(_)
@@ -289,6 +305,27 @@ mod tests {
                     hint: "pass --force",
                 },
                 "working tree is dirty in /repo; pass --force",
+            ),
+            (
+                OutpostError::StashedChanges {
+                    repo: path("/repo"),
+                    hint: "pass --force",
+                },
+                "outpost has stashed changes in /repo; pass --force",
+            ),
+            (
+                OutpostError::UnverifiedPushDestination {
+                    remote: "origin".to_owned(),
+                },
+                "remote origin must still fetch from the observed URL and push only there",
+            ),
+            (
+                OutpostError::SourceRemoteMismatch {
+                    remote: "local".to_owned(),
+                    expected: path("/source"),
+                    actual: path("/old-source"),
+                },
+                "source remote local points to /old-source, expected the recorded source /source",
             ),
             (
                 OutpostError::UnpushedCommits {
@@ -468,6 +505,27 @@ mod tests {
             ),
             (OutpostError::DestinationExists(path("/dest")), 3),
             (OutpostError::DestinationInsideRepo(path("/dest")), 3),
+            (
+                OutpostError::StashedChanges {
+                    repo: path("/repo"),
+                    hint: "pass --force",
+                },
+                3,
+            ),
+            (
+                OutpostError::UnverifiedPushDestination {
+                    remote: "origin".to_owned(),
+                },
+                3,
+            ),
+            (
+                OutpostError::SourceRemoteMismatch {
+                    remote: "local".to_owned(),
+                    expected: path("/source"),
+                    actual: path("/old-source"),
+                },
+                6,
+            ),
             (
                 OutpostError::DirtyTree {
                     repo: path("/repo"),

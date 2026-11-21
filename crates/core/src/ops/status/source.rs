@@ -7,11 +7,10 @@ use crate::outpost_id::{OutpostId, shortest_unique_prefixes};
 use crate::source_repo::{SourceRepo, canonicalize_path, is_dirty};
 use crate::{GitInvoker, Outpost, OutpostError, OutpostIdPrefix, OutpostResult, RemoteName};
 
-use super::routes::{self, RouteDirection};
+use super::routes;
 use super::{
-    RegisteredOutpostHead, RegisteredOutpostStatus, RouteAvailability, SourceHead, SourceStatus,
-    StaleRegistration, canonicalize_existing_or_missing, canonicalize_remote_path,
-    current_branch_or_detached,
+    RegisteredOutpostHead, RegisteredOutpostStatus, SourceHead, SourceStatus, StaleRegistration,
+    canonicalize_existing_or_missing, current_branch_or_detached,
 };
 
 pub(super) fn build(
@@ -160,21 +159,13 @@ fn validate_recorded_remote(
     source_path: &Path,
     remote: &RemoteName,
 ) -> OutpostResult<()> {
-    for direction in [RouteDirection::Fetch, RouteDirection::Push] {
-        match routes::probe_urls(git, remote, direction)? {
-            RouteAvailability::Known(urls) => {
-                for url in urls.as_slice() {
-                    if canonicalize_remote_path(outpost_path, url)? != source_path {
-                        return Err(integrity_error(source_path, outpost_path));
-                    }
-                }
-            }
-            RouteAvailability::Unavailable => {
-                return Err(integrity_error(source_path, outpost_path));
-            }
+    match routes::mismatched_source_route(git, remote, source_path) {
+        Ok(None) => Ok(()),
+        Ok(Some(_)) | Err(OutpostError::GitFailed { code: 2, .. }) => {
+            Err(integrity_error(source_path, outpost_path))
         }
+        Err(error) => Err(error),
     }
-    Ok(())
 }
 
 fn integrity_error(source: &Path, outpost: &Path) -> OutpostError {
