@@ -51,9 +51,6 @@ pub enum BranchCleanupFinding {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BranchCleanupSkipReason {
-    CleanupDisabled,
-    NonInteractive,
-    MissingOutpost,
     DetachedHead,
     NoUpstreamTracking,
     UpstreamRemoteMismatch,

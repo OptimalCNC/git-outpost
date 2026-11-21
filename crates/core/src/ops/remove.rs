@@ -5,8 +5,7 @@ use crate::selector::{OutpostSelector, resolve_entry};
 use crate::{BranchName, OutpostError, OutpostResult, RemoteName, SourceRepo, safety};
 
 pub use crate::ops::branch_analysis::{
-    BranchCleanupCandidate, BranchCleanupProof, BranchCleanupSkipReason, CleanupEvidenceProvider,
-    MergedPullRequest,
+    BranchCleanupCandidate, BranchCleanupProof, CleanupEvidenceProvider, MergedPullRequest,
 };
 
 pub struct RemoveOptions {
@@ -44,6 +43,42 @@ pub enum BranchCleanupOutcome {
         branch: Option<BranchName>,
         message: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BranchCleanupSkipReason {
+    CleanupDisabled,
+    NonInteractive,
+    MissingOutpost,
+    DetachedHead,
+    NoUpstreamTracking,
+    UpstreamRemoteMismatch,
+    UpstreamNotBranch,
+    SourceBranchMissing,
+    OutpostHeadMismatch,
+    BranchCheckedOut,
+    DefaultBranch,
+    DefaultBranchUnknown,
+    NoProof,
+}
+
+impl From<branch_analysis::BranchCleanupSkipReason> for BranchCleanupSkipReason {
+    fn from(reason: branch_analysis::BranchCleanupSkipReason) -> Self {
+        use branch_analysis::BranchCleanupSkipReason as Analysis;
+
+        match reason {
+            Analysis::DetachedHead => Self::DetachedHead,
+            Analysis::NoUpstreamTracking => Self::NoUpstreamTracking,
+            Analysis::UpstreamRemoteMismatch => Self::UpstreamRemoteMismatch,
+            Analysis::UpstreamNotBranch => Self::UpstreamNotBranch,
+            Analysis::SourceBranchMissing => Self::SourceBranchMissing,
+            Analysis::OutpostHeadMismatch => Self::OutpostHeadMismatch,
+            Analysis::BranchCheckedOut => Self::BranchCheckedOut,
+            Analysis::DefaultBranch => Self::DefaultBranch,
+            Analysis::DefaultBranchUnknown => Self::DefaultBranchUnknown,
+            Analysis::NoProof => Self::NoProof,
+        }
+    }
 }
 
 pub trait BranchCleanupPrompt {
@@ -201,9 +236,10 @@ fn analyze_branch_cleanup(
 impl From<BranchCleanupFinding> for BranchCleanupOutcome {
     fn from(finding: BranchCleanupFinding) -> Self {
         match finding {
-            BranchCleanupFinding::Skipped { branch, reason } => {
-                BranchCleanupOutcome::Skipped { branch, reason }
-            }
+            BranchCleanupFinding::Skipped { branch, reason } => BranchCleanupOutcome::Skipped {
+                branch,
+                reason: reason.into(),
+            },
             BranchCleanupFinding::Warning { branch, message } => {
                 BranchCleanupOutcome::Warning { branch, message }
             }

@@ -351,13 +351,10 @@ fn canonicalize_existing_or_missing(path: &Path) -> OutpostResult<PathBuf> {
 }
 
 fn canonicalize_missing(path: &Path) -> PathBuf {
-    let Some(parent) = path.parent() else {
-        return path.to_path_buf();
-    };
-    match std::fs::canonicalize(parent) {
-        Ok(parent) => parent.join(path.file_name().unwrap_or_default()),
-        Err(_) => path.to_path_buf(),
-    }
+    path.parent()
+        .and_then(|parent| parent.canonicalize().ok())
+        .map(|parent| parent.join(path.file_name().unwrap_or_default()))
+        .unwrap_or_else(|| path.to_owned())
 }
 
 fn current_branch_or_detached(git: &GitInvoker) -> OutpostResult<Option<BranchName>> {

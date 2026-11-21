@@ -1,5 +1,5 @@
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 pub(crate) fn git_path(path: &Path) -> PathBuf {
     dunce::simplified(path).to_path_buf()
@@ -7,6 +7,20 @@ pub(crate) fn git_path(path: &Path) -> PathBuf {
 
 pub(crate) fn git_path_arg(path: &Path) -> OsString {
     git_path(path).into_os_string()
+}
+
+pub(crate) fn normalize_existing_or_missing(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
 }
 
 #[cfg(test)]

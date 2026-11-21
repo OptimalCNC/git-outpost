@@ -282,11 +282,12 @@ mod tests {
         let outpost = temp.path().join("outpost");
         init_repo(&source);
         init_repo(&outpost);
-        let metadata = Metadata {
-            source_repo: source.clone(),
-            remote_name: RemoteName::parse("local").unwrap(),
-        };
-        metadata::initialize(&GitInvoker::at(&outpost), &metadata).unwrap();
+        metadata::initialize(
+            &GitInvoker::at(&outpost),
+            &SourceRepo::at(&source).unwrap(),
+            &RemoteName::parse("local").unwrap(),
+        )
+        .unwrap();
 
         let outpost = Outpost::at(&outpost).expect("managed outpost");
 
@@ -304,11 +305,12 @@ mod tests {
         let outpost = temp.path().join("outpost");
         init_repo(&source);
         init_repo(&outpost);
-        let metadata = Metadata {
-            source_repo: source.clone(),
-            remote_name: RemoteName::parse("local").unwrap(),
-        };
-        metadata::initialize(&GitInvoker::at(&outpost), &metadata).unwrap();
+        metadata::initialize(
+            &GitInvoker::at(&outpost),
+            &SourceRepo::at(&source).unwrap(),
+            &RemoteName::parse("local").unwrap(),
+        )
+        .unwrap();
         fs::remove_dir_all(&source).expect("remove source");
 
         let outpost = Outpost::at(&outpost).expect("managed outpost");
@@ -345,16 +347,12 @@ mod tests {
         outpost_git
             .run_check(["branch", "--set-upstream-to", "local/main", "main"])
             .expect("set upstream");
-        let metadata = Metadata {
-            source_repo: source.clone(),
-            remote_name: RemoteName::parse("local").unwrap(),
-        };
-        metadata::initialize(&outpost_git, &metadata).unwrap();
+        let source = SourceRepo::at(&source).expect("source repo");
+        metadata::initialize(&outpost_git, &source, &RemoteName::parse("local").unwrap()).unwrap();
         outpost_git
             .run_check(["commit", "--allow-empty", "-m", "outpost"])
             .expect("outpost commit");
 
-        let source = SourceRepo::at(&source).expect("source repo");
         let outpost = Outpost::at(&outpost).expect("outpost");
 
         assert_eq!(outpost.unpushed_commits(&source).expect("unpushed"), 1);

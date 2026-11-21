@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::metadata::{self, Metadata};
+use crate::metadata;
 use crate::path::git_path_arg;
 use crate::registry::RegistryEntry;
 use crate::safety;
@@ -82,11 +82,7 @@ pub fn run_with_missing_branch(
     }
     apply_checkout(source, &outpost_git, &checkout, &branch, &remote_name)?;
     let entry = RegistryEntry::new(destination.clone(), remote_name.clone())?;
-    let metadata = Metadata {
-        source_repo: source.work_tree().to_path_buf(),
-        remote_name: remote_name.clone(),
-    };
-    metadata::initialize(&outpost_git, &metadata)?;
+    metadata::initialize(&outpost_git, source, &remote_name)?;
 
     reporter.step(
         StepKind::ConfigChange,

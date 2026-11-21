@@ -1,5 +1,6 @@
 use std::path::{Component, Path, PathBuf};
 
+use crate::path::normalize_existing_or_missing;
 use crate::{
     OutpostError, OutpostId, OutpostIdPrefix, OutpostResult, RegistryEntry, SourceRepo, safety,
 };
@@ -186,13 +187,10 @@ fn canonicalize_existing_or_missing(path: &Path) -> PathBuf {
     let mut missing = Vec::new();
     let mut existing = path;
     while !existing.exists() {
-        let Some(name) = existing.file_name() else {
+        let Some((name, parent)) = existing.file_name().zip(existing.parent()) else {
             return normalize_existing_or_missing(path);
         };
         missing.push(name.to_os_string());
-        let Some(parent) = existing.parent() else {
-            return normalize_existing_or_missing(path);
-        };
         existing = parent;
     }
 
@@ -202,18 +200,4 @@ fn canonicalize_existing_or_missing(path: &Path) -> PathBuf {
         canonical.push(component);
     }
     normalize_existing_or_missing(&canonical)
-}
-
-fn normalize_existing_or_missing(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    normalized
 }

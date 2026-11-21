@@ -1,7 +1,8 @@
 use std::ffi::OsString;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
+use crate::path::normalize_existing_or_missing;
 use crate::source_repo::remote_ref_oid;
 use crate::{
     BranchName, GitInvoker, Outpost, OutpostError, OutpostResult, RegistryEntry, SourceRepo,
@@ -279,13 +280,10 @@ fn canonicalize_existing_or_missing(path: &Path) -> OutpostResult<PathBuf> {
     let mut missing = Vec::new();
     let mut existing = path;
     while !existing.exists() {
-        let Some(name) = existing.file_name() else {
+        let Some((name, parent)) = existing.file_name().zip(existing.parent()) else {
             return Ok(normalize_existing_or_missing(path));
         };
         missing.push(name.to_os_string());
-        let Some(parent) = existing.parent() else {
-            return Ok(normalize_existing_or_missing(path));
-        };
         existing = parent;
     }
 
@@ -296,27 +294,13 @@ fn canonicalize_existing_or_missing(path: &Path) -> OutpostResult<PathBuf> {
     Ok(normalize_existing_or_missing(&canonical))
 }
 
-fn normalize_existing_or_missing(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    normalized
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
     use std::path::Path;
 
     use super::*;
-    use crate::{Metadata, RemoteName};
+    use crate::RemoteName;
 
     #[test]
     fn check_clean_reports_staged_changes_as_dirty() {
@@ -402,10 +386,8 @@ mod tests {
         let candidate_git = GitInvoker::at(&candidate);
         crate::metadata::initialize(
             &candidate_git,
-            &Metadata {
-                source_repo: other_source_path.clone(),
-                remote_name: RemoteName::parse("local").unwrap(),
-            },
+            &SourceRepo::at(&other_source_path).expect("other source repo"),
+            &RemoteName::parse("local").unwrap(),
         )
         .expect("metadata write");
         let source = SourceRepo::at(&source_path).expect("source repo");
@@ -427,15 +409,13 @@ mod tests {
         init_repo_at(&source_path);
         init_repo_at(&candidate);
         let candidate_git = GitInvoker::at(&candidate);
+        let source = SourceRepo::at(&source_path).expect("source repo");
         crate::metadata::initialize(
             &candidate_git,
-            &Metadata {
-                source_repo: source_path.clone(),
-                remote_name: RemoteName::parse("local").unwrap(),
-            },
+            &source,
+            &RemoteName::parse("local").unwrap(),
         )
         .expect("metadata write");
-        let source = SourceRepo::at(&source_path).expect("source repo");
 
         let outpost =
             check_path_is_managed_outpost_of(&source, &candidate).expect("matching source outpost");
@@ -555,18 +535,12 @@ mod tests {
         outpost_git
             .run_check(["branch", "--set-upstream-to", "local/main", "main"])
             .expect("set upstream");
-        crate::metadata::initialize(
-            &outpost_git,
-            &Metadata {
-                source_repo: source.clone(),
-                remote_name: RemoteName::parse("local").unwrap(),
-            },
-        )
-        .expect("metadata write");
+        let source = SourceRepo::at(&source).expect("source repo");
+        crate::metadata::initialize(&outpost_git, &source, &RemoteName::parse("local").unwrap())
+            .expect("metadata write");
         outpost_git
             .run_check(["commit", "--allow-empty", "-m", "outpost"])
             .expect("outpost commit");
-        let source = SourceRepo::at(&source).expect("source repo");
         let outpost = Outpost::at(&outpost).expect("outpost");
 
         let err = check_no_unpushed(&outpost, &source).expect_err("unpushed should fail");
@@ -597,10 +571,8 @@ mod tests {
             .expect("add source remote");
         crate::metadata::initialize(
             &outpost_git,
-            &Metadata {
-                source_repo: source.clone(),
-                remote_name: RemoteName::parse("local").unwrap(),
-            },
+            &SourceRepo::at(&source).expect("source repo"),
+            &RemoteName::parse("local").unwrap(),
         )
         .expect("metadata write");
         let outpost = Outpost::at(&outpost).expect("outpost");
@@ -649,10 +621,8 @@ mod tests {
             .expect("switch feature");
         crate::metadata::initialize(
             &outpost_git,
-            &Metadata {
-                source_repo: source.clone(),
-                remote_name: RemoteName::parse("local").unwrap(),
-            },
+            &SourceRepo::at(&source).expect("source repo"),
+            &RemoteName::parse("local").unwrap(),
         )
         .expect("metadata write");
         source_git

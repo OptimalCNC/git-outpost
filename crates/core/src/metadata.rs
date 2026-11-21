@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::source_repo::canonicalize_path;
-use crate::{GitInvoker, OutpostError, OutpostResult, RemoteName};
+use crate::{GitInvoker, OutpostError, OutpostResult, RemoteName, SourceRepo};
 
 const METADATA_VERSION: u32 = 1;
 
@@ -66,31 +66,41 @@ pub(crate) fn read(git_dir: &Path) -> OutpostResult<MetadataState> {
     }))
 }
 
-pub(crate) fn initialize(git: &GitInvoker, metadata: &Metadata) -> OutpostResult<()> {
-    let git_dir_raw = git.run_capture(["rev-parse", "--git-dir"])?;
-    let git_dir = resolve_git_dir(git.cwd(), &git_dir_raw)?;
-    initialize_in(&git_dir.join("outpost"), metadata)
-}
-
 pub(crate) fn metadata_path(git_dir: &Path) -> PathBuf {
     git_dir.join("outpost").join("metadata.json")
 }
 
-fn initialize_in(state_dir: &Path, metadata: &Metadata) -> OutpostResult<()> {
+pub(crate) fn initialize(
+    git: &GitInvoker,
+    source: &SourceRepo,
+    remote_name: &RemoteName,
+) -> OutpostResult<()> {
+    let git_dir = git.run_capture(["rev-parse", "--git-dir"])?;
+    let state_dir = canonicalize_path(&git.cwd().join(git_dir))?.join("outpost");
     let path = state_dir.join("metadata.json");
-    let source_repo = canonical_source_for_write(&metadata.source_repo)?;
+    let source_path = source.work_tree();
+    let source_repo = match source_path.canonicalize() {
+        Ok(path) => path,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => source_path.to_owned(),
+        Err(error) => {
+            return Err(OutpostError::IoAt {
+                path: source_path.to_owned(),
+                source: error,
+            });
+        }
+    };
     let file = MetadataFile {
         version: METADATA_VERSION,
         source_repo,
-        remote_name: metadata.remote_name.as_str().to_owned(),
+        remote_name: remote_name.as_str().to_owned(),
     };
-    fs::create_dir_all(state_dir).map_err(|source| OutpostError::IoAt {
+    fs::create_dir_all(&state_dir).map_err(|source| OutpostError::IoAt {
         path: state_dir.to_path_buf(),
         source,
     })?;
 
     let mut temp =
-        tempfile::NamedTempFile::new_in(state_dir).map_err(|source| OutpostError::IoAt {
+        tempfile::NamedTempFile::new_in(&state_dir).map_err(|source| OutpostError::IoAt {
             path: state_dir.to_path_buf(),
             source,
         })?;
@@ -118,33 +128,6 @@ struct MetadataFile {
     version: u32,
     source_repo: PathBuf,
     remote_name: String,
-}
-
-fn canonical_source_for_write(path: &Path) -> OutpostResult<PathBuf> {
-    if path.is_absolute() {
-        match fs::canonicalize(path) {
-            Ok(path) => Ok(path),
-            Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(path.to_path_buf()),
-            Err(source) => Err(OutpostError::IoAt {
-                path: path.to_path_buf(),
-                source,
-            }),
-        }
-    } else {
-        Err(OutpostError::BadMetadata {
-            outpost: path.to_path_buf(),
-            reason: "source_repo must be an absolute path".to_owned(),
-        })
-    }
-}
-
-fn resolve_git_dir(start: &Path, value: &str) -> OutpostResult<PathBuf> {
-    let path = PathBuf::from(value);
-    if path.is_absolute() {
-        canonicalize_path(&path)
-    } else {
-        canonicalize_path(&start.join(path))
-    }
 }
 
 #[cfg(test)]
@@ -178,22 +161,24 @@ mod tests {
         init_repo(&source);
         init_repo(&outpost);
         let git = GitInvoker::at(&outpost);
-        let metadata = Metadata {
-            source_repo: source,
-            remote_name: RemoteName::parse("local").expect("remote parses"),
-        };
-
-        initialize(&git, &metadata).expect("initialize metadata");
-        let error = initialize(&git, &metadata).expect_err("metadata must not be replaced");
+        let source = SourceRepo::at(&source).expect("source repo");
         let expected_path = fs::canonicalize(outpost.join(".git"))
             .expect("canonical git dir")
             .join("outpost/metadata.json");
+        let remote = RemoteName::parse("local").expect("remote parses");
+        initialize(&git, &source, &remote).expect("initialize metadata");
+        let before = fs::read(&expected_path).expect("original metadata");
+
+        let other_remote = RemoteName::parse("origin").expect("remote parses");
+        let error =
+            initialize(&git, &source, &other_remote).expect_err("metadata must not be replaced");
 
         let OutpostError::IoAt { path, source } = error else {
             panic!("expected path-qualified I/O error");
         };
         assert_eq!(path, expected_path);
         assert_eq!(source.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&path).expect("metadata after refusal"), before);
     }
 
     fn init_repo(path: &Path) {

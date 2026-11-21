@@ -7,9 +7,8 @@ use outpost_core::ops;
 use outpost_core::ops::analyze::{
     BranchDeleteSafety, Probe, RemoteBranchIdentity, SourcePushHazard, UpstreamRemote,
 };
-use outpost_core::ops::branch_analysis::{
-    BranchCleanupFinding, BranchCleanupProof, BranchCleanupSkipReason,
-};
+use outpost_core::ops::branch_analysis::{BranchCleanupFinding, BranchCleanupProof};
+use outpost_core::ops::remove::BranchCleanupSkipReason;
 use outpost_core::ops::status::{
     ConfigProblem, OutpostHeadStatus, OutpostStatus, RegisteredOutpostHead, RemoteRoutes,
     RouteAvailability, SourceHead, SourceLocation, SourceStatus, SourceUpstreamStatus,
@@ -497,7 +496,7 @@ fn print_safe_delete(report: &ops::analyze::AnalyzeReport) {
             println!("safe-delete: no");
             println!(
                 "safe-delete-reason: {}",
-                branch_cleanup_reason_text(*reason)
+                branch_cleanup_reason_text((*reason).into())
             );
         }
         BranchDeleteSafety::Unknown(reason) => {

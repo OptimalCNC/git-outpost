@@ -376,9 +376,6 @@ fn format_safe_delete(value: &BranchDeleteSafety) -> String {
 
 fn branch_cleanup_reason_text(reason: BranchCleanupSkipReason) -> &'static str {
     match reason {
-        BranchCleanupSkipReason::CleanupDisabled => "cleanup disabled",
-        BranchCleanupSkipReason::NonInteractive => "non-interactive",
-        BranchCleanupSkipReason::MissingOutpost => "outpost path was already missing",
         BranchCleanupSkipReason::DetachedHead => "outpost HEAD is detached",
         BranchCleanupSkipReason::NoUpstreamTracking => "outpost has no upstream tracking branch",
         BranchCleanupSkipReason::UpstreamRemoteMismatch => "outpost upstream remote mismatch",
