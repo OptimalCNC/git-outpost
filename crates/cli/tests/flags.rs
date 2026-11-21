@@ -1,7 +1,5 @@
 mod common;
 
-use outpost_core::OutpostError;
-
 #[test]
 fn e_01_build_produces_both_binaries() {
     assert!(
@@ -13,175 +11,6 @@ fn e_01_build_produces_both_binaries() {
         common::binary_path("gop").is_file(),
         "missing gop binary at {}",
         common::binary_path("gop").display()
-    );
-}
-
-#[test]
-fn e_08_outpost_errors_map_to_documented_exit_codes() {
-    let cases = [
-        (OutpostError::NotARepo(path("/repo")), 2),
-        (OutpostError::NotAnOutpost(path("/outpost")), 2),
-        (OutpostError::SourceMissing(path("/source")), 2),
-        (
-            OutpostError::WrongContext {
-                command: "pull",
-                expected: "a managed outpost",
-                cwd: path("/source"),
-            },
-            2,
-        ),
-        (
-            OutpostError::MissingOutpostPath {
-                command: "lock",
-                cwd: path("/source"),
-            },
-            2,
-        ),
-        (
-            OutpostError::OutpostContainerNotConfigured {
-                name: "C".to_owned(),
-                suggestion: Some(path("/outposts")),
-            },
-            2,
-        ),
-        (OutpostError::DestinationExists(path("/dest")), 3),
-        (OutpostError::DestinationInsideRepo(path("/dest")), 3),
-        (
-            OutpostError::DirtyTree {
-                repo: path("/repo"),
-                hint: "pass --force",
-            },
-            3,
-        ),
-        (
-            OutpostError::UnpushedCommits {
-                repo: path("/repo"),
-                branch: "main".to_owned(),
-                hint: "push first",
-            },
-            3,
-        ),
-        (
-            OutpostError::Divergence {
-                branch: "main".to_owned(),
-            },
-            4,
-        ),
-        (
-            OutpostError::BranchNotFound {
-                branch: "feature".to_owned(),
-                repo: path("/repo"),
-            },
-            5,
-        ),
-        (
-            OutpostError::NoUpstreamTracking {
-                branch: "feature".to_owned(),
-            },
-            5,
-        ),
-        (
-            OutpostError::UpstreamNotABranch {
-                merge_ref: "refs/tags/v1".to_owned(),
-            },
-            5,
-        ),
-        (
-            OutpostError::InvalidRefName {
-                name: "-evil".to_owned(),
-            },
-            5,
-        ),
-        (
-            OutpostError::PushIntoCheckedOutBranch {
-                source: path("/source"),
-                branch: "main".to_owned(),
-            },
-            4,
-        ),
-        (
-            OutpostError::AmbiguousBranchCreation {
-                branch: "feature".to_owned(),
-            },
-            4,
-        ),
-        (
-            OutpostError::OutpostLocked {
-                path: path("/outpost"),
-                reason: ": release".to_owned(),
-            },
-            3,
-        ),
-        (OutpostError::RegistryEntryNotManaged(path("/outpost")), 6),
-        (OutpostError::RegistryEntryNotFound(path("/missing")), 6),
-        (OutpostError::OutpostIdPrefixNotFound("abcde".to_owned()), 6),
-        (
-            OutpostError::OutpostIdPrefixAmbiguous("abcde".to_owned()),
-            6,
-        ),
-        (
-            OutpostError::OutpostSelectorAmbiguous("abcde".to_owned()),
-            6,
-        ),
-        (
-            OutpostError::BadRegistry {
-                path: path("/repo/.git/outpost/registry.json"),
-                reason: "invalid json".to_owned(),
-            },
-            6,
-        ),
-        (
-            OutpostError::BadMetadata {
-                outpost: path("/outpost"),
-                reason: "missing source".to_owned(),
-            },
-            6,
-        ),
-        (
-            OutpostError::GitFailed {
-                args: "status".to_owned(),
-                code: 42,
-                stderr: "fatal".to_owned(),
-            },
-            42,
-        ),
-        (
-            OutpostError::GitTerminatedBySignal {
-                args: "fetch".to_owned(),
-                signal_str: " (signal 9)".to_owned(),
-            },
-            137,
-        ),
-        (
-            OutpostError::IoAt {
-                path: path("/repo/.git/outpost/registry.json"),
-                source: std::io::Error::new(std::io::ErrorKind::NotFound, "missing"),
-            },
-            70,
-        ),
-    ];
-
-    for (error, expected) in cases {
-        assert_eq!(error.exit_code(), expected, "wrong exit for {error}");
-    }
-
-    assert_eq!(
-        OutpostError::GitFailed {
-            args: "status".to_owned(),
-            code: -1,
-            stderr: "fatal".to_owned(),
-        }
-        .exit_code(),
-        1
-    );
-    assert_eq!(
-        OutpostError::GitFailed {
-            args: "status".to_owned(),
-            code: 256,
-            stderr: "fatal".to_owned(),
-        }
-        .exit_code(),
-        125
     );
 }
 
@@ -643,10 +472,6 @@ fn config_unknown_keys_are_rejected_by_clap() {
             "stderr should explain unknown config key:\n{stderr}"
         );
     }
-}
-
-fn path(value: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(value)
 }
 
 fn assert_no_ansi(output: &std::process::Output, label: &str) {

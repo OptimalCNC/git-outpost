@@ -5,6 +5,7 @@ use std::fs;
 
 use common::fixture::AbcFixture;
 use outpost_core::ops::list::{OutpostHead, OutpostState, run};
+use outpost_core::selector::{OutpostSelector, resolve_entry};
 use outpost_core::{OutpostError, RegistryEntry, RemoteName, SourceRepo};
 
 #[test]
@@ -48,13 +49,24 @@ fn list_includes_short_unique_outpost_id_prefixes() {
 
     assert_eq!(summaries.len(), 2);
     for summary in summaries {
-        assert_eq!(summary.display_id.len(), 5);
-        assert!(summary.display_id.chars().all(|ch| ch.is_ascii_hexdigit()));
+        let id = summary.display_id;
         assert!(
-            summary
-                .display_id
-                .chars()
-                .all(|ch| !ch.is_ascii_uppercase())
+            !id.is_empty()
+                && id
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        );
+        let select = |prefix: &str| {
+            resolve_entry(
+                &source,
+                &OutpostSelector::from_cli_arg(source.work_tree(), prefix.into()),
+            )
+        };
+        let resolved = select(&id).expect("displayed ID selects a unique outpost");
+        assert_eq!(resolved.path, summary.path);
+        assert!(
+            select(&id[..id.len() - 1]).is_err(),
+            "a shorter ID would still work"
         );
     }
 }

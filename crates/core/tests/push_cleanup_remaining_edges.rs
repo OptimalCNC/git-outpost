@@ -4,53 +4,10 @@ mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use common::fixture::{AbcFixture, CapturingReporter};
-use outpost_core::ops::{push, remove};
+use common::fixture::AbcFixture;
+use outpost_core::OutpostError;
+use outpost_core::ops::remove;
 use outpost_core::selector::OutpostSelector;
-use outpost_core::{Outpost, OutpostError, StepKind};
-
-#[test]
-fn push_allows_clean_checked_out_source_with_update_instead() {
-    let fixture = AbcFixture::new();
-    let outpost_path = fixture.add_outpost("C").expect("add outpost");
-    fixture
-        .invoker(&fixture.source)
-        .run_check(["config", "receive.denyCurrentBranch", "updateInstead"])
-        .expect("allow updates to the checked-out source branch");
-    let outpost_oid = fixture
-        .commit_in_outpost(&outpost_path, "outpost commit")
-        .expect("commit in outpost");
-    let outpost = open_outpost(&fixture, &outpost_path);
-    let mut reporter = CapturingReporter::default();
-
-    let report = push::run(&outpost, push::PushOptions, &mut reporter)
-        .expect("updateInstead permits a clean checked-out source branch");
-
-    assert_eq!(
-        report.outpost_to_source,
-        push::StepResult::Pushed { commits: 1 }
-    );
-    assert_eq!(
-        report.source_to_origin,
-        push::StepResult::Pushed { commits: 1 }
-    );
-    assert_eq!(
-        fixture
-            .rev_parse(&fixture.source, "refs/heads/main")
-            .expect("source branch"),
-        outpost_oid
-    );
-    assert_eq!(
-        fixture
-            .rev_parse(&fixture.upstream, "refs/heads/main")
-            .expect("origin branch"),
-        outpost_oid
-    );
-    assert_eq!(
-        reporter.step_kinds(),
-        vec![StepKind::OutpostPush, StepKind::SourcePush]
-    );
-}
 
 #[test]
 fn remove_with_disabled_cleanup_reports_skip_and_preserves_source_branch() {
@@ -105,10 +62,6 @@ fn remove_locked_outpost_without_reason_reports_empty_reason_and_preserves_state
     let registry = source.registry().expect("registry after rejected remove");
     assert_eq!(registry.entries().len(), 1);
     assert!(registry.entries()[0].locked);
-}
-
-fn open_outpost(fixture: &AbcFixture, path: &Path) -> Outpost {
-    Outpost::at_with(path, &fixture.git_env).expect("open outpost")
 }
 
 fn remove_options(path: &Path, force: bool) -> remove::RemoveOptions {

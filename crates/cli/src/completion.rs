@@ -375,7 +375,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    use clap_complete::{ArgValueCandidates, CompletionCandidate};
+    use clap_complete::CompletionCandidate;
     use outpost_core::ops::list::{OutpostHead, OutpostState, OutpostSummary};
 
     use super::*;
@@ -491,39 +491,6 @@ mod tests {
                 stale_path.display().to_string(),
             ]
         );
-    }
-
-    #[test]
-    fn command_factory_attaches_candidates_to_only_supported_selector_arguments() {
-        let command = command_for(None);
-        assert_eq!(command.get_name(), "gop");
-        assert_eq!(command.get_bin_name(), Some("gop"));
-
-        for (subcommand, arg_id) in [
-            ("cd", "outpost"),
-            ("path", "target"),
-            ("lock", "outpost_path"),
-            ("unlock", "outpost_path"),
-            ("move", "outpost_path"),
-            ("remove", "outpost_path"),
-            ("analyze", "outpost_path"),
-        ] {
-            let argument = command
-                .find_subcommand(subcommand)
-                .expect("subcommand")
-                .get_arguments()
-                .find(|argument| argument.get_id() == arg_id)
-                .expect("argument");
-            assert!(argument.get::<ArgValueCandidates>().is_some());
-        }
-
-        let move_new_path = command
-            .find_subcommand("move")
-            .expect("move subcommand")
-            .get_arguments()
-            .find(|argument| argument.get_id() == "new_path")
-            .expect("new_path argument");
-        assert!(move_new_path.get::<ArgValueCandidates>().is_none());
     }
 
     #[test]

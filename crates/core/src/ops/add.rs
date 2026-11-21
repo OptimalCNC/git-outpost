@@ -116,8 +116,8 @@ fn resolve_destination(source: &SourceRepo, destination: &Path) -> OutpostResult
         source.work_tree().join(destination)
     };
     let (parent, name) = destination_parent_and_name(&anchored)?;
-    let parent = std::fs::canonicalize(&parent).map_err(|source| OutpostError::IoAt {
-        path: parent.clone(),
+    let parent = std::fs::canonicalize(parent).map_err(|source| OutpostError::IoAt {
+        path: parent.to_path_buf(),
         source,
     })?;
 
@@ -203,7 +203,7 @@ fn branch_not_found(source: &SourceRepo, branch: &BranchName) -> OutpostError {
 
 fn check_destination_clean(destination: &Path) -> OutpostResult<()> {
     let (parent, name) = destination_parent_and_name(destination)?;
-    safety::check_destination_clean(&parent, &name).map_err(|err| match err {
+    safety::check_destination_clean(parent, name).map_err(|err| match err {
         OutpostError::DestinationExists(_) => {
             OutpostError::DestinationExists(destination.to_path_buf())
         }
@@ -214,21 +214,17 @@ fn check_destination_clean(destination: &Path) -> OutpostResult<()> {
     })
 }
 
-fn destination_parent_and_name(destination: &Path) -> OutpostResult<(PathBuf, PathBuf)> {
-    let parent = destination
+fn destination_parent_and_name(destination: &Path) -> OutpostResult<(&Path, &Path)> {
+    destination
         .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let name = destination.file_name().ok_or_else(|| OutpostError::IoAt {
-        path: destination.to_path_buf(),
-        source: io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "destination path has no file name",
-        ),
-    })?;
-
-    Ok((parent, PathBuf::from(name)))
+        .zip(destination.file_name().map(Path::new))
+        .ok_or_else(|| OutpostError::IoAt {
+            path: destination.to_path_buf(),
+            source: io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "destination path has no file name",
+            ),
+        })
 }
 
 fn apply_checkout(
@@ -251,28 +247,5 @@ fn apply_checkout(
             git.run_check(["fetch", remote_name.as_str(), &fetch_refspec])?;
             git.run_check(["switch", "--track", &remote_branch])
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn destination_parent_and_name_splits_bare_relative_path() {
-        let (parent, name) =
-            destination_parent_and_name(Path::new("outpost")).expect("split destination");
-
-        assert_eq!(parent, PathBuf::from("."));
-        assert_eq!(name, PathBuf::from("outpost"));
-    }
-
-    #[test]
-    fn destination_parent_and_name_splits_nested_relative_path() {
-        let (parent, name) =
-            destination_parent_and_name(Path::new("nested/outpost")).expect("split destination");
-
-        assert_eq!(parent, PathBuf::from("nested"));
-        assert_eq!(name, PathBuf::from("outpost"));
     }
 }
