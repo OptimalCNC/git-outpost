@@ -17,7 +17,7 @@ import uuid
 sys.dont_write_bytecode = True
 
 from evidence import (
-    EvidenceError, analyze, archive_object_names, canonical_hash, current_commit, current_source_hashes,
+    REPOSITORY_IGNORES, EvidenceError, analyze, archive_object_names, canonical_hash, current_commit, current_source_hashes,
     eligible_lcov, read_json, sha256_file, test_results, validate_evidence, verify_evidence,
 )
 
@@ -185,7 +185,7 @@ def measure(commands: Commands, config: dict, run_id: str, require_zero: bool) -
     tree = {
         "schema": 1, "commit": commit, "file_hashes": source_hashes,
         "diff": commands.run("tested-diff", ["git", "diff", "--binary", "HEAD"], "tree-diff.log"),
-        "untrackedfiles": commands.run("untracked-inventory", ["git", "ls-files", "--others", "--exclude-standard"], "untracked.log").splitlines(),
+        "untrackedfiles": commands.run("untracked-inventory", ["git", "ls-files", "--others", REPOSITORY_IGNORES], "untracked.log").splitlines(),
     }
     write_json(commands.run_dir / "tree.json", tree)
     metadata = json.loads(commands.run("cargo-metadata", [cargo, "metadata", "--no-deps", "--locked",

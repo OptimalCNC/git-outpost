@@ -43,6 +43,21 @@ class RunnerTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"GIT_DIR": str(caller / ".git"), "GIT_WORK_TREE": str(caller)}):
                 self.assertEqual(set(current_source_hashes(measured)), {"measured"})
 
+    def test_personal_git_ignore_rules_do_not_change_source_provenance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "checkout"
+            ignore = Path(directory) / "personal-ignore"
+            ignore.write_text("local-input\n", encoding="utf-8")
+            git_env = {"PATH": os.defpath, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
+            subprocess.run(["git", "init", "-q", repo], check=True, env=git_env)
+            (repo / ".gitignore").write_text("build-output\n", encoding="utf-8")
+            for name in ("local-input", "build-output"):
+                (repo / name).write_text(name, encoding="utf-8")
+            before = current_source_hashes(repo)
+            subprocess.run(["git", "-C", repo, "config", "core.excludesFile", ignore], check=True, env=git_env)
+            self.assertEqual(set(before), {".gitignore", "local-input"})
+            self.assertEqual(current_source_hashes(repo), before)
+
     def test_failed_child_command_cannot_become_successful_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             commands = runner.Commands(Path(directory), dict(os.environ))

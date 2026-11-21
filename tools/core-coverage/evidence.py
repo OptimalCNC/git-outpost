@@ -19,6 +19,10 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
+# Use the checkout's ignore files consistently on developer machines and in CI.
+REPOSITORY_IGNORES = "--exclude-per-directory=.gitignore"
+
+
 class EvidenceError(ValueError):
     """Coverage evidence does not establish the measurement contract."""
 
@@ -456,7 +460,7 @@ def _git(root: Path, *arguments: str) -> bytes:
 def current_source_hashes(root: Path | str) -> dict[str, str]:
     """Bind Git files and every core source/test input, including ignored files."""
     root = Path(root).resolve()
-    names = _git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+    names = _git(root, "ls-files", "-z", "--cached", "--others", REPOSITORY_IGNORES)
     hashes: dict[str, str] = {}
     source_names: set[str] = set()
     for raw in names.split(b"\x00"):
