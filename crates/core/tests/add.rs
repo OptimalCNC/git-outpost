@@ -282,6 +282,56 @@ fn explicit_fetch_authorization_materializes_a_branch_and_retains_origin_routing
 }
 
 #[test]
+fn add_fetch_missing_keeps_an_existing_exact_fetch_rule() {
+    let fixture = AbcFixture::new();
+    let branch = BranchName::parse("review").expect("branch name");
+    fixture
+        .invoker(&fixture.upstream)
+        .run_check(["branch", branch.as_str(), "main"])
+        .expect("create the remote review branch");
+    let upstream_tip = fixture
+        .commit_in_upstream(branch.as_str(), "review work")
+        .expect("commit on the remote review branch");
+    let source_git = fixture.invoker(&fixture.source);
+    source_git
+        .run_check(["remote", "set-branches", "origin", "main", branch.as_str()])
+        .expect("configure exact fetch rules for both branches");
+    let fetch_rules = ["config", "--get-all", "remote.origin.fetch"];
+    let original_rules = source_git.run_capture(fetch_rules).expect("fetch rules");
+    let source = fixture.source_repo().expect("source repo");
+
+    let outpost = run_with_missing_branch(
+        &source,
+        AddOptions {
+            destination: fixture.root.join("C"),
+            checkout: AddCheckout::CheckoutExisting {
+                target_branch: Some(branch.clone()),
+            },
+            remote_name: RemoteName::parse("local").expect("remote name"),
+        },
+        MissingBranchAuthorization::AllowFetchFromOrigin,
+        &mut RecordingReporter::default(),
+    )
+    .expect("materialize the remote-only branch");
+
+    assert_eq!(branch_oid(&fixture, &branch), upstream_tip);
+    assert_eq!(
+        source.current_branch().expect("source checkout").as_str(),
+        "main"
+    );
+    assert_eq!(
+        fixture
+            .rev_parse(outpost.work_tree(), "HEAD")
+            .expect("outpost HEAD"),
+        upstream_tip
+    );
+    assert_eq!(
+        source_git.run_capture(fetch_rules).expect("fetch rules"),
+        original_rules
+    );
+}
+
+#[test]
 fn add_uses_a_source_branch_created_during_fetch_confirmation_without_refetching_it() {
     struct BranchCreatedDuringPrompt<'a>(&'a AbcFixture);
     impl MissingBranchAuthorizer for BranchCreatedDuringPrompt<'_> {
@@ -456,6 +506,44 @@ fn add_rejects_existing_non_empty_directory() {
         matches!(err, OutpostError::DestinationExists(path) if path == canonical_missing(&destination))
     );
     assert!(!destination.join(".git").exists());
+}
+
+#[test]
+fn add_rejects_a_destination_ending_in_parent_directory_before_creating_a_branch() {
+    let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let branch = BranchName::parse("feature/review").expect("branch name");
+    let destination = git_path(&fixture.source).join("..");
+    let notes = fixture.root.join("notes.txt");
+    fs::write(&notes, "workspace notes\n").expect("write notes in the parent");
+
+    let error = expect_error(
+        add_new_branch(&source, &destination, branch.clone(), None),
+        "the outpost destination needs its own directory name",
+    );
+
+    let OutpostError::IoAt {
+        path,
+        source: cause,
+    } = error
+    else {
+        panic!("expected invalid destination, got {error:?}");
+    };
+    assert_eq!(path, destination);
+    assert_eq!(cause.kind(), std::io::ErrorKind::InvalidInput);
+    assert_eq!(
+        fs::read_to_string(notes).expect("parent notes"),
+        "workspace notes\n"
+    );
+    assert!(!fixture.root.join(".git").exists());
+    assert!(!source.branch_exists(&branch).expect("source branch check"));
+    assert!(
+        source
+            .registry()
+            .expect("source registry")
+            .entries()
+            .is_empty()
+    );
 }
 
 #[test]
