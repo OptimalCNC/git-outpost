@@ -708,11 +708,10 @@ mod tests {
     fn suggested_outpost_container_uses_common_registered_parent() {
         let temp = tempfile::tempdir().expect("tempdir");
         let container = temp.path().join("outposts");
-        let one = container.join("one");
-        let two = container.join("two");
-        fs::create_dir(&container).expect("container dir");
-        fs::create_dir(&one).expect("one outpost dir");
-        fs::create_dir(&two).expect("two outpost dir");
+        let one = container.join("team-a").join("one");
+        let two = container.join("team-b").join("two");
+        fs::create_dir_all(&one).expect("one outpost dir");
+        fs::create_dir_all(&two).expect("two outpost dir");
         GitInvoker::at(temp.path())
             .run_check(["init", "--initial-branch=main"])
             .expect("init");
