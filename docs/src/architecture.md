@@ -1426,12 +1426,9 @@ Step-by-step:
    `HEAD` and return `Divergence` before mutating B when B→A would be
    non-fast-forward.
 5. `reporter.step(OutpostPush, "pushing outpost <C> branch <X> -> source <B>")`.
-6. Push from C → B. **No `--` before refspecs** — `--` in `git push`
-   introduces refspecs to disambiguate from a remote name, but with a
-   remote name in front it is redundant and not a security boundary
-   (refspecs are not paths). Argv-injection defense is the validated
-   `BranchName` / `RemoteName` (§5.3). Recipes:
-   - base: `git push <metadata.remote_name> <branch>:<branch>`
+6. Require every effective fetch and push URL of C's named source remote to
+   resolve to B. Push the matching branch through that remote. Before the
+   second step, read B's branch and require it to equal C's intended commit.
 7. `reporter.step(SourcePush, "pushing source <B> branch <X> -> origin/<X>")`.
 8. Run `git -C <source> push --set-upstream origin <branch>:<branch>`.
 
@@ -1535,9 +1532,9 @@ diagnostics from `RemoveReport` are rendered to stderr.
    `safety::check_entry_is_managed_outpost_of(source, &entry)`. On
    failure, return `RegistryEntryNotManaged` and delete nothing
    (R-08, R-09).
-6. If not `force`: `safety::check_clean` and
-   `safety::check_no_unpushed`. Both raise `DirtyTree { hint: "pass --force" }` /
-   `UnpushedCommits { hint: "pass --force" }`.
+6. Ordinary removal requires a clean checkout, an empty stash, a published
+   current branch, and a branch in the recorded source retaining each other
+   local branch tip. A refusal preserves the clone and its registration.
 7. In `run_with_cleanup` interactive mode only, analyze a branch cleanup
    candidate from the outpost's current branch upstream. The outpost upstream
    remote must equal the outpost metadata's `remote_name`; the upstream merge ref must be
@@ -1559,9 +1556,11 @@ diagnostics from `RemoveReport` are rendered to stderr.
 9. Remove the registry entry by path, save.
 10. `std::fs::remove_dir_all(path)`. Errors here surface as `IoAt`.
 11. After the outpost directory is removed, prompt to delete the source branch.
-    Source deletion uses `git update-ref -d refs/heads/BRANCH EXPECTED_OID`.
-12. If `<remote>/BRANCH` existed in the evidence snapshot, prompt separately
-    before upstream deletion. Upstream deletion uses:
+    Recheck worktree occupancy after consent and use
+    `git update-ref -d refs/heads/BRANCH EXPECTED_OID` for deletion.
+12. Offer a separate upstream prompt only when the upstream tip is the exact
+    proven source commit and the observed repository is the single write
+    destination. Check the destination again after consent and use a Git lease.
 
     ```text
     git push --force-with-lease=refs/heads/BRANCH:EXPECTED_OID <remote> :refs/heads/BRANCH
@@ -1605,7 +1604,7 @@ never deletes filesystem content or source-repo branches:
 
 1. **Entry is locked** → `locked_entries`; leave it registered
    even if the path is missing.
-2. **Path missing on disk** → `removed_entries`; remove from registry.
+2. **Path missing on disk** → record it in `removed_entries` for pruning.
 3. **Path exists and is a managed outpost, BUT its typed
    `metadata.source_repo` resolves to a non-existent directory** →
    `orphaned_source_missing`; leave registered.
@@ -1617,9 +1616,9 @@ The order matters: case 3 must run before the general existing-path
 case so source-missing managed outposts are reported instead of silently
 kept.
 
-When `opts.dry_run` is true, `run` collects what *would* be removed
-without calling `RegistryMut::save`. `verbose` only affects CLI
-output; the report always contains the full structured lists.
+After every entry has been inspected successfully, `run` removes the recorded
+paths and saves the registry. A dry run returns the same report and skips the
+registry update. The CLI uses `verbose` to format that report.
 
 ## 6. CLI Surface (clap derive)
 
@@ -2158,8 +2157,10 @@ with an empty map.
 
 `AbcFixture::add_outpost` and every test that exercises
 `ops::*::run` constructs `SourceRepo` / `Outpost` via the `_with`
-variants, threading `AbcFixture::git_env` (§10.2) explicitly. Tests
-remain hermetic and parallel-safe with no `std::env::set_var` races.
+variants, threading `AbcFixture::git_env` (§10.2) explicitly. The fixture
+launcher clears inherited Git repository and index overrides and disables
+global and system Git configuration before applying the fixture's own settings.
+This also applies to Git children started by CLI tests.
 
 `tempfile::TempDir` ensures each test sees a fresh A/B/C universe. No
 network. No shared state.

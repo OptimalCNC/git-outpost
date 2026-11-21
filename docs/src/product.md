@@ -486,6 +486,11 @@ branch on `origin` and records the source branch's upstream as
 exist; `gop push` refuses a branch that exists only in the outpost rather than
 creating it in the source repository.
 
+The outpost's source remote must read from and write only to the local source
+recorded in its metadata. If an old or additional write URL points elsewhere,
+push stops. Before publishing upstream it verifies that the source branch
+received the intended outpost commit.
+
 Use ordinary `git push` from the outpost when the branch should stop at the
 source repository and not be published upstream.
 
@@ -572,10 +577,15 @@ gop shell uninstall bash
 gop shell uninstall zsh
 ```
 
-`uninstall` removes only Git Outpost's managed source block and generated
-script. It does not remove manually pasted `gop shell init` snippets or change
-the integration already loaded by the current parent shell; it affects future
-shells that would source the managed block.
+Use separate paths for the startup file and generated script. Each existing
+destination must be a regular file. Outpost will replace or remove an existing
+script only when its first and last lines are the Git Outpost integration
+markers. For a symlinked startup file, pass its backing file with `--rc-file`
+so the link stays under the dotfile manager's control.
+
+`uninstall` removes the generated script and the startup block delimited by
+two complete marker lines. Manually pasted `gop shell init` snippets and the
+integration already loaded in the current shell remain available.
 
 After setup, `gop cd` changes to the associated source repository. `gop cd
 <outpost>` changes to the path resolved by `gop path <outpost>`. Existing
@@ -658,20 +668,23 @@ gop move abc12 ../D
 ### `remove <outpost>`
 
 Safely remove a managed outpost by path or unique ID prefix. The command
-refuses dirty outposts, outposts with unpushed commits, and locked outposts by
-default. After safety checks pass, it removes the source registry entry and
-deletes the outpost directory.
+refuses locked outposts, dirty checkouts, stashed work and unpublished commits
+by default. It checks the current branch against its source branch and verifies
+that each additional local branch tip is reachable from a branch in the
+recorded source. After safety checks pass, it removes the source registry entry
+and deletes the outpost directory.
 
 In interactive terminals, `remove` then analyzes the outpost's tracked source
 branch and prompts before branch cleanup when it can prove deletion is safe. It
 collects the upstream default, candidate branch, and merged-pull-request
 evidence in one provider snapshot; non-GitHub remotes use one batched
 `ls-remote` fallback. The default branch is fetched only when ancestry proof
-needs a commit object that is not already local. It deletes the local source
-branch with an exact-OID guard, so a branch that moves during cleanup is left
-intact. If `<remote>/<branch>` exists at the analyzed OID, the command prompts
-separately before deleting the upstream branch with `--force-with-lease`; that
-final lease rejects deletion if the remote branch has moved since the snapshot.
+needs a commit object that is not already local. After confirmation, Outpost
+checks that the source branch is still free of checkouts and deletes it only
+at the proven commit. It offers upstream deletion only when that same commit
+is the upstream tip and the remote has a single write destination matching
+the observed read URL. It rechecks the destination after separate consent.
+The final Git lease preserves an upstream branch that moved after observation.
 If proof is missing, prompts are declined, the command is non-interactive, or
 cleanup fails after the outpost directory is removed, outpost removal still
 succeeds and branches are left intact or reported as warnings. The CLI prints
@@ -680,7 +693,7 @@ branch-cleanup diagnostics to stderr after the stable stdout result
 `gh` is not installed or unavailable, merged-PR proof is reported as unavailable
 and cleanup falls back to local Git proof.
 
-`-f`/`--force` allows removal despite dirty state, unpushed commits, or a lock.
+`-f`/`--force` allows removal despite dirty state, stashes, unpublished commits, or a lock.
 It does not weaken branch cleanup proof. `--no-branch-cleanup` disables branch
 cleanup analysis and prompts.
 
