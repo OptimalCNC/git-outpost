@@ -45,21 +45,21 @@ fn config_write_reports_a_regular_state_parent() {
 
 #[test]
 #[cfg(target_os = "linux")]
-fn config_write_reports_invalid_utf8_in_a_container_path() {
+fn unrepresentable_container_path_preserves_the_saved_configuration() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source");
+    let saved = source
+        .set_outpost_container(&fixture.root)
+        .expect("save a usable container");
+    let config_path = source.config_path();
+    let original = fs::read(&config_path).expect("saved config");
     let container = fixture
         .root
         .join(OsString::from_vec(b"containers-\xff".to_vec()));
     fs::create_dir(&container).expect("non-UTF-8 container");
-    let config_path = source.config_path();
 
     let error = source
-        .config()
-        .set(
-            ConfigKey::OutpostContainer,
-            ConfigValue::OutpostContainer(container),
-        )
+        .set_outpost_container(&container)
         .expect_err("non-UTF-8 path cannot be serialized as JSON");
 
     assert!(matches!(
@@ -68,6 +68,14 @@ fn config_write_reports_invalid_utf8_in_a_container_path() {
             if path == config_path
                 && source.kind() == std::io::ErrorKind::Other
     ));
+    assert_eq!(
+        fs::read(&config_path).expect("config after failure"),
+        original
+    );
+    assert_eq!(
+        source.outpost_container().expect("saved container"),
+        Some(saved)
+    );
 }
 
 #[test]

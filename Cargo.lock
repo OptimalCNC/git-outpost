@@ -472,7 +472,6 @@ version = "0.7.0"
 dependencies = [
  "chrono",
  "dunce",
- "libc",
  "outpost-core",
  "serde",
  "serde_json",
