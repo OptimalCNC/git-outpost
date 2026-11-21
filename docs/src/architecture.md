@@ -1534,7 +1534,9 @@ diagnostics from `RemoveReport` are rendered to stderr.
    (R-08, R-09).
 6. Ordinary removal requires a clean checkout, an empty stash, a published
    current branch, and a branch in the recorded source retaining each other
-   local branch tip. A refusal preserves the clone and its registration.
+   local branch tip. Any additional worktree registered in the outpost's own
+   Git repository requires explicit force, including detached and offline
+   checkouts. A refusal preserves the clone and its registration.
 7. In `run_with_cleanup` interactive mode only, analyze a branch cleanup
    candidate from the outpost's current branch upstream. The outpost upstream
    remote must equal the outpost metadata's `remote_name`; the upstream merge ref must be

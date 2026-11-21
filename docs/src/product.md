@@ -671,8 +671,11 @@ Safely remove a managed outpost by path or unique ID prefix. The command
 refuses locked outposts, dirty checkouts, stashed work and unpublished commits
 by default. It checks the current branch against its source branch and verifies
 that each additional local branch tip is reachable from a branch in the
-recorded source. After safety checks pass, it removes the source registry entry
-and deletes the outpost directory.
+recorded source. It also refuses removal while Git lists any linked worktree
+owned by the outpost, even if that checkout is detached or temporarily offline.
+Run `git worktree list` in the outpost to find those checkouts. After safety
+checks pass, Outpost removes the source registry entry and deletes the outpost
+directory.
 
 In interactive terminals, `remove` then analyzes the outpost's tracked source
 branch and prompts before branch cleanup when it can prove deletion is safe. It
@@ -693,9 +696,10 @@ branch-cleanup diagnostics to stderr after the stable stdout result
 `gh` is not installed or unavailable, merged-PR proof is reported as unavailable
 and cleanup falls back to local Git proof.
 
-`-f`/`--force` allows removal despite dirty state, stashes, unpublished commits, or a lock.
-It does not weaken branch cleanup proof. `--no-branch-cleanup` disables branch
-cleanup analysis and prompts.
+`-f`/`--force` allows removal despite dirty state, stashes, unpublished
+commits, a lock, or linked worktrees. Forcing removal destroys the Git metadata
+and staged index that each linked checkout uses. Branch cleanup still requires
+proof. `--no-branch-cleanup` disables branch cleanup analysis and prompts.
 
 Examples:
 

@@ -59,6 +59,9 @@ pub enum OutpostError {
     #[error("outpost has stashed changes in {}; {hint}", .repo.display())]
     StashedChanges { repo: PathBuf, hint: &'static str },
 
+    #[error("outpost {} owns linked Git worktrees. Run `git worktree list` there before you {hint}", .repo.display())]
+    LinkedWorktrees { repo: PathBuf, hint: &'static str },
+
     #[error("remote {remote} must still fetch from the observed URL and push only there")]
     UnverifiedPushDestination { remote: String },
 
@@ -169,6 +172,7 @@ impl OutpostError {
             | DestinationInsideRepo(_)
             | DirtyTree { .. }
             | StashedChanges { .. }
+            | LinkedWorktrees { .. }
             | UnverifiedPushDestination { .. }
             | UnpushedCommits { .. }
             | OutpostLocked { .. } => 3,
@@ -312,6 +316,13 @@ mod tests {
                     hint: "pass --force",
                 },
                 "outpost has stashed changes in /repo; pass --force",
+            ),
+            (
+                OutpostError::LinkedWorktrees {
+                    repo: path("/repo"),
+                    hint: "pass --force",
+                },
+                "outpost /repo owns linked Git worktrees. Run `git worktree list` there before you pass --force",
             ),
             (
                 OutpostError::UnverifiedPushDestination {
@@ -507,6 +518,13 @@ mod tests {
             (OutpostError::DestinationInsideRepo(path("/dest")), 3),
             (
                 OutpostError::StashedChanges {
+                    repo: path("/repo"),
+                    hint: "pass --force",
+                },
+                3,
+            ),
+            (
+                OutpostError::LinkedWorktrees {
                     repo: path("/repo"),
                     hint: "pass --force",
                 },

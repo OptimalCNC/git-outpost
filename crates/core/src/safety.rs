@@ -38,6 +38,16 @@ pub fn check_no_unpushed(outpost: &Outpost, source: &SourceRepo) -> OutpostResul
 }
 
 pub(crate) fn check_removable_work(outpost: &Outpost, source: &SourceRepo) -> OutpostResult<()> {
+    let worktrees = outpost
+        .git()
+        .run_capture(["worktree", "list", "--porcelain", "-z"])?;
+    // Each worktree record ends in two NULs, regardless of its path or branch.
+    if worktrees.split_terminator("\0\0").nth(1).is_some() {
+        return Err(OutpostError::LinkedWorktrees {
+            repo: outpost.work_tree().to_path_buf(),
+            hint: FORCE_HINT,
+        });
+    }
     check_clean(outpost.work_tree(), outpost.git())?;
     if outpost
         .git()

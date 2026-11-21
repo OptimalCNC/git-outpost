@@ -22,7 +22,19 @@ fn remove_clean_fully_pushed_outpost_deletes_dir_and_registry_entry() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add C");
     let source = fixture.source_repo().expect("source repo");
-    let sentinel = create_unrelated_dir(&fixture, "unrelated-r01");
+    let source_worktree = fixture.root.join("source-checkout");
+    let source_tip = fixture
+        .rev_parse(&fixture.source, "HEAD")
+        .expect("source tip");
+    fixture
+        .invoker(&fixture.source)
+        .run_check([
+            OsStr::new("worktree"),
+            OsStr::new("add"),
+            OsStr::new("--detach"),
+            source_worktree.as_os_str(),
+        ])
+        .expect("add unrelated source worktree");
 
     remove::run(
         &source,
@@ -35,7 +47,12 @@ fn remove_clean_fully_pushed_outpost_deletes_dir_and_registry_entry() {
 
     assert!(!outpost.exists());
     assert_registry_empty(&source);
-    assert!(sentinel.exists());
+    assert_eq!(
+        fixture
+            .rev_parse(&source_worktree, "HEAD")
+            .expect("source worktree still usable"),
+        source_tip
+    );
     assert_source_branch_exists(&source, "main");
 }
 
@@ -165,6 +182,60 @@ fn remove_preserves_stashed_work_in_a_clean_outpost() {
             .rev_parse(&outpost, "refs/stash")
             .expect("preserved stash"),
         stash
+    );
+}
+
+#[test]
+fn remove_preserves_the_linked_worktree_index_even_when_its_checkout_is_offline() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add outpost");
+    let source = fixture.source_repo().expect("source repo");
+    let linked = fixture.root.join("linked-checkout");
+    fixture
+        .invoker(&outpost)
+        .run_check([
+            OsStr::new("worktree"),
+            OsStr::new("add"),
+            OsStr::new("--detach"),
+            linked.as_os_str(),
+        ])
+        .expect("add detached worktree to the outpost");
+    let draft = linked.join("draft");
+    fs::write(&draft, "staged version").expect("write draft");
+    let linked_git = fixture.invoker(&linked);
+    linked_git.run_check(["add", "draft"]).expect("stage draft");
+    fs::write(&draft, "working version").expect("revise working copy");
+
+    let options = |force| remove::RemoveOptions {
+        selector: OutpostSelector::from_path(outpost.clone()),
+        force,
+    };
+    let expect_refusal = || {
+        let err =
+            remove::run(&source, options(false)).expect_err("linked worktree needs its outpost");
+        assert!(
+            matches!(err, OutpostError::LinkedWorktrees { repo, .. } if repo == canonical(&outpost))
+        );
+        assert_eq!(single_entry(&source).path, canonical(&outpost));
+    };
+    expect_refusal();
+    let offline = fixture.root.join("offline");
+    fs::rename(&linked, &offline).expect("take linked checkout offline");
+    expect_refusal();
+    fs::rename(&offline, &linked).expect("bring linked checkout back");
+    assert_eq!(
+        linked_git
+            .run_capture(["show", ":draft"])
+            .expect("read saved index"),
+        "staged version"
+    );
+
+    remove::run(&source, options(true)).expect("explicitly force removal");
+    assert!(!outpost.exists());
+    assert_registry_empty(&source);
+    assert_eq!(
+        fs::read_to_string(&draft).expect("external working file"),
+        "working version"
     );
 }
 
