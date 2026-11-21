@@ -17,6 +17,67 @@ SPEC.loader.exec_module(runner)
 
 
 class RunnerTests(unittest.TestCase):
+    def test_collector_binds_integration_and_classifier_dependencies_in_their_own_workspaces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checkout = Path(directory) / "checkout"
+            run_dir = Path(directory) / "coverage"
+            groups = {
+                "production": {"outpost_core-aa": ["crates/core/src/lib.rs"]},
+                "execution": {"outpost_core-bb": ["crates/core/src/lib.rs"],
+                              "operation-cc": ["crates/core/tests/operation.rs", "fixtures/expected"]},
+                "classifier": {"outpost_core_coverage_classifier-dd": ["src/main.rs", "../../../formats/classification"],
+                               "outpost_core_coverage_classifier-ee": ["src/lib.rs"]},
+            }
+            for mode, binaries in groups.items():
+                deps = run_dir / f"{mode}-build/debug/deps"
+                deps.mkdir(parents=True)
+                for binary, inputs in binaries.items():
+                    (deps / f"{binary}.d").write_text(
+                        "object: " + " ".join(inputs) + "\n\n" + "".join(name + ":\n" for name in inputs),
+                        encoding="utf-8",
+                    )
+            core = checkout / "crates/core"
+            tools = checkout / "tools/core-coverage/classifier"
+            workspace = runner.CargoPackages({core / "src/lib.rs": core, core / "tests/operation.rs": core}, set(), {})
+            classifier = runner.CargoPackages({tools / "src/main.rs": tools, tools / "src/lib.rs": tools}, set(),
+                                              {tools / "src/lib.rs": "lib", tools / "src/main.rs": "bin"})
+            records = runner.compiler_input_evidence(run_dir, checkout, workspace, classifier)
+            targets = ["lib:outpost_core", "test:operation"]
+            self.assertEqual(runner.compiler_input_names(records, checkout, run_dir, targets, workspace, classifier), {
+                "crates/core/src/lib.rs", "crates/core/tests/operation.rs", "fixtures/expected",
+                "tools/core-coverage/classifier/src/main.rs", "tools/core-coverage/classifier/src/lib.rs", "formats/classification",
+            })
+            records["builds"]["classifier"].pop("debug/deps/outpost_core_coverage_classifier-dd.d")
+            with self.assertRaisesRegex(EvidenceError, "library and executable"):
+                runner.compiler_input_names(records, checkout, run_dir, targets, workspace, classifier)
+
+    def test_external_compile_inputs_need_locked_provenance_and_project_env_must_be_declared(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "checkout"
+            root.mkdir()
+            external = Path(directory) / "package"
+            crate = external / "lib.rs"
+            source = "registry+https://example.com/index"
+            lock = root / "Cargo.lock"
+            lock.write_text(f'[[package]]\nname="dependency"\nversion="1.0.0"\nsource="{source}"\nchecksum="{"a" * 64}"\n', encoding="utf-8")
+            package = {"id": "dep", "name": "dependency", "version": "1.0.0", "manifest_path": str(external / "Cargo.toml"),
+                       "source": None, "targets": [{"src_path": str(crate), "kind": ["lib"]}]}
+            metadata = {"packages": [package], "resolve": {"nodes": [{"id": "dep"}]}}
+            with self.assertRaisesRegex(EvidenceError, "external Cargo package"):
+                runner.cargo_packages(metadata, lock, root)
+            package["source"] = source
+            packages = runner.cargo_packages(metadata, lock, root)
+            other = external.parent / "mutable"
+            text = f"object: {crate} {other}\n{crate}:\n{other}:\n"
+            with self.assertRaisesRegex(EvidenceError, "no locked package provenance"):
+                runner.dep_info_inputs(text, root, root, root / "target", packages)
+            project = root / "src.rs"
+            packages.targets[project] = root
+            text = "object: src.rs\nsrc.rs:\n# env-dep:PROFILE_SETTING=private-value\n"
+            with self.assertRaisesRegex(EvidenceError, "undeclared.*PROFILE_SETTING") as error:
+                runner.dep_info_inputs(text, root, root, root / "target", packages)
+            self.assertNotIn("private-value", str(error.exception))
+
     def test_environment_owns_compiler_flags_and_wrappers(self):
         config = {"rust_release": "1.94.0", "limits": {"cargo_jobs": 2, "test_threads": 1}, "profile_properties": {}}
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, {

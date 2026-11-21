@@ -18,7 +18,8 @@ sys.dont_write_bytecode = True
 
 from evidence import (
     REPOSITORY_IGNORES, EvidenceError, analyze, archive_object_names, canonical_hash, current_commit, current_source_hashes,
-    eligible_lcov, read_json, sha256_file, test_results, validate_evidence, verify_evidence,
+    CargoPackages, cargo_packages, compiler_input_names, dep_info_inputs, eligible_lcov, measurement_source_hashes,
+    read_json, sha256_file, test_results, validate_evidence, verify_evidence,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -77,7 +78,7 @@ class Commands:
             (self.run_dir / f"{log}.stderr.log").write_text(diagnostic, encoding="utf-8")
             if stage.startswith(("production-", "execution-")) and ("warning:" in diagnostic or "error:" in diagnostic):
                 raise EvidenceError(f"{stage} emitted LLVM diagnostics: {diagnostic}")
-        self.records.append({"stage": stage, "argv": argv, "exit_code": result.returncode,
+        self.records.append({"stage": stage, "argv": argv, "cwd": str(cwd), "exit_code": result.returncode,
                              "duration_seconds": time.monotonic() - started, "log": log})
         write_json(self.run_dir / "commands.json", {"schema": 1, "commands": self.records})
         text = (self.run_dir / log).read_text(encoding="utf-8")
@@ -147,6 +148,30 @@ def compiler_sources(directory: Path, root: Path) -> list[str]:
     return sorted(sources)
 
 
+def compiler_input_evidence(run_dir: Path, root: Path, workspace: CargoPackages, classifier: CargoPackages) -> dict:
+    builds = {}
+    for mode in ("production", "execution", "classifier"):
+        directory = run_dir / f"{mode}-build"
+        base = root / "tools/core-coverage/classifier" if mode == "classifier" else root
+        packages = classifier if mode == "classifier" else workspace
+        records = {}
+        for dep in directory.rglob("*.d"):
+            if dep.parent.name != "deps" and not dep.name.startswith("build_script_"):
+                continue
+            text = dep.read_text(encoding="utf-8")
+            crate, _ = dep_info_inputs(text, base, root, run_dir, packages)
+            if packages.targets[crate].is_relative_to(root):
+                if dep.name.startswith("build_script_"):
+                    raise EvidenceError("project build-script runtime inputs require an explicit freshness rule")
+            else:
+                # Cargo dependencies carry their own build-time environment. Keep source
+                # rules for audit without exporting values of environment variables.
+                text = "\n".join(line for line in text.splitlines() if not line.startswith("# env-dep:"))
+            records[dep.relative_to(directory).as_posix()] = text
+        builds[mode] = records
+    return {"schema": 1, "builds": builds}
+
+
 def export_production(commands: Commands, llvm: Path, library: Path, suffix: str = "") -> None:
     objects_dir = commands.run_dir / f"production-objects{suffix}"
     objects_dir.mkdir()
@@ -177,19 +202,26 @@ def build_classifier(commands: Commands, cargo: Path) -> Path:
 
 def measure(commands: Commands, config: dict, run_id: str, require_zero: bool) -> dict:
     marker = commands.run_dir / "run-start.json"
-    write_json(marker, {"schema": 1, "run_id": run_id})
+    marker.touch(exist_ok=False)
     started_ns = marker.stat().st_mtime_ns
+    write_json(marker, {"schema": 2, "run_id": run_id, "started_ns": started_ns,
+                        "checkout": str(ROOT), "run_directory": str(commands.run_dir)})
     _, cargo, llvm, versions = toolchain(commands, config)
     source_hashes = current_source_hashes(ROOT)
+    static_inputs = measurement_source_hashes(ROOT, set())
+    source_hashes.update(static_inputs)
     commit = current_commit(ROOT)
     tree = {
         "schema": 1, "commit": commit, "file_hashes": source_hashes,
         "diff": commands.run("tested-diff", ["git", "diff", "--binary", "HEAD"], "tree-diff.log"),
         "untrackedfiles": commands.run("untracked-inventory", ["git", "ls-files", "--others", REPOSITORY_IGNORES], "untracked.log").splitlines(),
     }
-    write_json(commands.run_dir / "tree.json", tree)
-    metadata = json.loads(commands.run("cargo-metadata", [cargo, "metadata", "--no-deps", "--locked",
-                          "--offline", "--format-version", "1"], "cargo-metadata.json"))
+    metadata_args = [cargo, "metadata", "--locked", "--offline", "--format-version", "1", "--filter-platform", config["target"]]
+    metadata = json.loads(commands.run("cargo-metadata", [*metadata_args, "--features", "outpost-core/test-helpers"], "cargo-metadata.json"))
+    classifier_metadata = json.loads(commands.run("classifier-metadata", [*metadata_args, "--manifest-path", TOOL / "classifier/Cargo.toml"],
+                                                 "classifier-metadata.json"))
+    workspace_packages = cargo_packages(metadata, ROOT / "Cargo.lock", ROOT)
+    classifier_packages = cargo_packages(classifier_metadata, TOOL / "classifier/Cargo.lock", ROOT)
     targets = expected_targets(metadata, config["package"])
     write_json(commands.run_dir / "test-targets.json", {"schema": 1, "targets": targets})
     classifier = build_classifier(commands, cargo)
@@ -229,16 +261,30 @@ def measure(commands: Commands, config: dict, run_id: str, require_zero: bool) -
                      "--output-path", commands.run_dir / f"execution.{extension}"], f"execution-{extension}.log", env=env)
     write_json(commands.run_dir / "compiler-sources.json", {"schema": 1,
                "production": compiler_sources(production_dir, ROOT), "execution": compiler_sources(execution_dir, ROOT)})
-    report = analyze(commands.run_dir / "production.lcov", commands.run_dir / "execution.lcov",
-                     commands.run_dir / "production.json", commands.run_dir / "execution.json",
-                     commands.run_dir / "classification.json", ROOT)
-    write_json(commands.run_dir / "report.json", report)
-    (commands.run_dir / "eligible.lcov").write_text(eligible_lcov(report, ROOT), encoding="utf-8")
     commands.run("doctests", [cargo, "test", "--package", config["package"], "--doc", "--target", config["target"],
                  "--profile", config["profile"], "--locked", "--offline", "--jobs", "2", "--", "--test-threads=1"],
                  "doctest.log", env=dict(commands.env, CARGO_TARGET_DIR=str(execution_dir)))
-    if current_source_hashes(ROOT) != source_hashes or current_commit(ROOT) != commit:
+    dependency_records = compiler_input_evidence(commands.run_dir, ROOT, workspace_packages, classifier_packages)
+    compiler_inputs = compiler_input_names(dependency_records, ROOT, commands.run_dir, targets, workspace_packages, classifier_packages)
+    measured = measurement_source_hashes(ROOT, compiler_inputs)
+    if current_commit(ROOT) != commit or set(static_inputs) - set(measured):
         raise EvidenceError("tested source changed during the canonical run")
+    for name, digest in measured.items():
+        if name in source_hashes:
+            if source_hashes[name] != digest:
+                raise EvidenceError(f"measurement input changed during the canonical run: {name}")
+        elif name not in compiler_inputs:
+            raise EvidenceError(f"cannot establish measurement input at the start of this run: {name}")
+        else:
+            # An ignored include outside the normal trees was discovered by rustc.
+            source_hashes[name] = digest
+    report = analyze(commands.run_dir / "production.lcov", commands.run_dir / "execution.lcov",
+                     commands.run_dir / "production.json", commands.run_dir / "execution.json",
+                     commands.run_dir / "classification.json", ROOT, allowed_sources=set(measured))
+    write_json(commands.run_dir / "report.json", report)
+    (commands.run_dir / "eligible.lcov").write_text(eligible_lcov(report, ROOT), encoding="utf-8")
+    write_json(commands.run_dir / "compiler-inputs.json", dependency_records)
+    write_json(commands.run_dir / "tree.json", tree)
     binary_evidence = list((commands.run_dir / "production-objects").glob("*.o")) + libraries
     artifact_hashes = {
         path.relative_to(commands.run_dir).as_posix(): sha256_file(path)
@@ -247,15 +293,19 @@ def measure(commands: Commands, config: dict, run_id: str, require_zero: bool) -
         if path.stat().st_size > 0
     }
     manifest = {
-        "schema": 2, "status": "complete", "run_id": run_id, "started_ns": started_ns,
+        "schema": 3, "status": "complete", "run_id": run_id, "started_ns": started_ns,
         "finished_ns": time.time_ns(), "artifact_hashes": artifact_hashes,
+        "artifact_mtimes_ns": {name: (commands.run_dir / name).stat().st_mtime_ns for name in artifact_hashes},
         "commit": commit, "config": config, "config_sha256": canonical_hash(config),
-        "source_hashes": source_hashes, "versions": versions,
+        "source_hashes": source_hashes, "measurement_hashes": measured, "versions": versions,
         "host": {"system": platform.system(), "machine": platform.machine(),
                  "kernel": platform.release(), "os_release": platform.freedesktop_os_release()},
         "expected_test_targets": targets, "tests": tests,
     }
     checked = validate_evidence(commands.run_dir, ROOT, manifest, require_zero)
+    for name in measured:
+        if (ROOT / name).stat().st_ctime_ns > started_ns:
+            raise EvidenceError(f"measurement input changed during the canonical run: {name}")
     temporary = commands.run_dir / "manifest.json.tmp"
     write_json(temporary, manifest)
     temporary.replace(commands.run_dir / "manifest.json")

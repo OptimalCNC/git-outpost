@@ -13,6 +13,7 @@ import math
 import os
 import re
 import subprocess
+import tomllib
 import uuid
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -74,10 +75,16 @@ def read_json(path: Path | str) -> dict[str, Any]:
     return value
 
 
-def _source_key(source: str, root: Path) -> str:
+def _source_key(source: str, root: Path, recorded_root: Path | None = None) -> str:
     _require(bool(source) and "\x00" not in source, "empty or invalid source filename")
     path = Path(source)
-    if not path.is_absolute():
+    _require(".." not in path.parts, f"source path traverses a parent directory: {source}")
+    if recorded_root is not None and path.is_absolute() and path.is_relative_to(recorded_root):
+        relative = _relative_path(path.relative_to(recorded_root).as_posix(), "recorded source")
+        path = root / relative
+    elif recorded_root is not None and path.is_absolute() and path.is_relative_to(root):
+        raise EvidenceError(f"source path does not refer to the recorded checkout: {source}")
+    elif not path.is_absolute():
         path = root / path
     path = path.resolve()
     try:
@@ -103,7 +110,7 @@ def _relative_path(value: Any, context: str) -> str:
     return value
 
 
-def parse_raw_lcov(path: Path | str, root: Path | str) -> LcovReport:
+def parse_raw_lcov(path: Path | str, root: Path | str, recorded_root: Path | None = None) -> LcovReport:
     """Read physical DA lines and retain raw LF/LH function-summary counts.
 
     Paths in the workspace are relative to root; dependency paths outside it
@@ -141,7 +148,7 @@ def parse_raw_lcov(path: Path | str, root: Path | str) -> LcovReport:
             continue
         if tag == "SF":
             _require(source is None, f"LCOV source record is unfinished at {path}:{number}")
-            source = _source_key(value, root)
+            source = _source_key(value, root, recorded_root)
             continue
         _require(source is not None, f"LCOV {tag} appears before SF at {path}:{number}")
         saw_record_data = True
@@ -199,7 +206,9 @@ def _segment_lines(value: Any, source: str, root: Path, expected_lines: int) -> 
     at that same tag. This validates LLVM DA output; it does not invent a scope.
     """
     _require(isinstance(value, list), f"LLVM source segments missing for {source}")
-    path = Path(source) if Path(source).is_absolute() else root / source
+    _relative_path(source, "LLVM source path")
+    path = root / source
+    _require(path.resolve() == path and path.is_file(), f"LLVM source is not a regular file in the checkout: {source}")
     try:
         source_lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as error:
@@ -237,7 +246,8 @@ def _segment_lines(value: Any, source: str, root: Path, expected_lines: int) -> 
 
 
 def verify_llvm_json(
-    path: Path | str, lcov: LcovReport, root: Path | str
+    path: Path | str, lcov: LcovReport, root: Path | str, recorded_root: Path | None = None,
+    allowed_sources: set[str] | None = None,
 ) -> dict[str, Any]:
     """Check physical DA against segments and LF/LH against JSON summary counts.
 
@@ -259,7 +269,9 @@ def verify_llvm_json(
     total, covered = 0, 0
     for file in files:
         _require(isinstance(file, dict) and isinstance(file.get("filename"), str), "invalid LLVM source file")
-        source = _source_key(file["filename"], root)
+        source = _source_key(file["filename"], root, recorded_root)
+        if allowed_sources is not None:
+            _require(source in allowed_sources, f"LLVM source is not a hash-bound measurement input: {source}")
         _require(source not in seen, f"duplicate LLVM source file: {source}")
         seen.add(source)
         _require(source in lcov.lines, f"LLVM source absent from LCOV: {source}")
@@ -355,13 +367,15 @@ def analyze(
     execution_json: Path | str,
     classification_json: Path | str,
     root: Path | str,
+    recorded_root: Path | None = None,
+    allowed_sources: set[str] | None = None,
 ) -> dict[str, Any]:
     """Produce auditable exact counts, retaining missing execution as uncovered."""
     root = Path(root).resolve()
-    production_raw = parse_raw_lcov(production_lcov, root)
-    execution_raw = parse_raw_lcov(execution_lcov, root)
-    production_summaries = verify_llvm_json(production_json, production_raw, root)
-    execution_summaries = verify_llvm_json(execution_json, execution_raw, root)
+    production_raw = parse_raw_lcov(production_lcov, root, recorded_root)
+    execution_raw = parse_raw_lcov(execution_lcov, root, recorded_root)
+    production_summaries = verify_llvm_json(production_json, production_raw, root, recorded_root, allowed_sources)
+    execution_summaries = verify_llvm_json(execution_json, execution_raw, root, recorded_root, allowed_sources)
     production, execution = production_raw.lines, execution_raw.lines
     classification = _classification(classification_json, root)
     for source in set(production) | set(execution):
@@ -417,7 +431,7 @@ def analyze(
 
 def eligible_lcov(report: dict[str, Any], root: Path | str) -> str:
     """Publish only the report's exact eligible production executable lines."""
-    root = Path(root).resolve()
+    root = Path(root).absolute()
     _require(report.get("schema") == 1 and report.get("eligible_total", 0) > 0, "invalid eligible-line report")
     records: list[str] = []
     for file in report["files"]:
@@ -486,6 +500,142 @@ def current_source_hashes(root: Path | str) -> dict[str, str]:
     return dict(sorted(hashes.items()))
 
 
+def measurement_source_hashes(root: Path, compiler_inputs: set[str]) -> dict[str, str]:
+    """Include ignored inputs too. Cargo and Python build outputs are not inputs."""
+    specs = [
+        "crates/core", "tools/core-coverage", ".cargo",
+        *[f":(glob)**/{name}" for name in ("Cargo.toml", "Cargo.lock", "rust-toolchain",
+                                           "rust-toolchain.toml", ".cargo/config", ".cargo/config.toml")],
+        ":(exclude)target", ":(exclude)tools/core-coverage/classifier/target",
+        ":(exclude,glob)tools/core-coverage/**/__pycache__/**",
+    ]
+    entries = _git(root, "ls-files", "-z", "--cached", "--others", "--", *specs)
+    paths = set(compiler_inputs)
+    paths.update(entry.decode("utf-8") for entry in entries.split(b"\0") if entry)
+    hashes = {}
+    for name in sorted(paths):
+        _relative_path(name, "measurement input")
+        path = root / name
+        if not path.exists() and not path.is_symlink() and name not in compiler_inputs:
+            continue  # A tracked deletion is represented by absence from this inventory.
+        _require(path.is_file() and _source_key(name, root) == name,
+                 f"measurement input is missing, symlinked or not a regular file: {name}")
+        hashes[name] = sha256_file(path)
+    return hashes
+
+
+@dataclass
+class CargoPackages:
+    # rustc crate root -> owning package's manifest directory
+    targets: dict[Path, Path]
+    pinned: set[Path]
+    build_targets: dict[Path, str]
+
+
+def cargo_packages(metadata: dict, lock_file: Path, checkout: Path) -> CargoPackages:
+    _require(lock_file.resolve() == lock_file and lock_file.is_file(), "Cargo lock must be a regular checkout file")
+    with lock_file.open("rb") as stream:
+        lock = tomllib.load(stream)
+    pinned = {(pkg["name"], pkg["version"], pkg["source"]) for pkg in lock.get("package", [])
+              if isinstance(pkg.get("source"), str) and
+              (pkg["source"].startswith(("registry+", "sparse+")) and re.fullmatch("[a-f0-9]{64}", pkg.get("checksum", ""))
+               or pkg["source"].startswith("git+") and re.search(r"#(?:[a-f0-9]{40}|[a-f0-9]{64})$", pkg["source"]))}
+    packages = metadata.get("packages")
+    graph = metadata.get("resolve")
+    _require(isinstance(graph, dict) and isinstance(graph.get("nodes"), list), "Cargo metadata lacks the dependency graph")
+    ids = {node["id"] for node in graph["nodes"]}
+    _require(isinstance(packages, list) and bool(ids) and ids <= {p["id"] for p in packages},
+             "Cargo metadata is missing the locked dependency graph")
+    targets, external, build_targets = {}, set(), {}
+    for pkg in packages:
+        if pkg["id"] not in ids:
+            continue
+        manifest = Path(pkg["manifest_path"])
+        _require(manifest.is_absolute() and manifest.name == "Cargo.toml" and ".." not in manifest.parts, "invalid Cargo manifest path")
+        directory = manifest.parent
+        if not directory.is_relative_to(checkout):
+            _require((pkg["name"], pkg["version"], pkg["source"]) in pinned,
+                     f"external Cargo package has no locked registry checksum or Git revision: {pkg['name']}")
+            external.add(directory)
+        for target in pkg["targets"]:
+            path = Path(target["src_path"])
+            _require(path.is_absolute() and ".." not in path.parts, "invalid Cargo target source path")
+            if directory.is_relative_to(checkout):
+                _require(path.is_relative_to(checkout), "checkout Cargo target reads mutable source outside the checkout")
+            targets[path] = directory
+            for kind in target["kind"]:
+                if kind in ("lib", "bin"):
+                    build_targets[path] = kind
+    return CargoPackages(targets, external, build_targets)
+
+
+def dep_info_inputs(text: str, base: Path, checkout: Path, run_dir: Path, packages: CargoPackages) -> tuple[Path, set[str]]:
+    """Read rustc's empty make targets, one per dependency including include_bytes! inputs."""
+    paths = []
+    targets = []
+    for line in text.splitlines():
+        if not line.endswith(":") or ": " in line or line.startswith("# "):
+            continue
+        # rustc escapes spaces in make targets; avoid splitting on whitespace.
+        targets.append(line[:-1])
+        name = line[:-1].replace("\\ ", " ").replace("\\#", "#").replace("$$", "$")
+        path = Path(os.path.normpath(base / name))
+        paths.append(path)
+    _require(bool(paths) and paths[0] in packages.targets, "compiler crate root is absent from locked Cargo metadata")
+    directory = packages.targets[paths[0]]
+    project = directory.is_relative_to(checkout)
+    local = set()
+    for path in paths:
+        if path.is_relative_to(run_dir):
+            _require(not project, "project compiler inputs generated in the build require review")
+        elif path.is_relative_to(checkout):
+            local.add(path.relative_to(checkout).as_posix())
+        else:
+            _require(any(path.is_relative_to(pinned) for pinned in packages.pinned),
+                     f"compiler input outside the checkout has no locked package provenance: {path.name}")
+    if project:
+        for line in text.splitlines():
+            if line.startswith("# env-dep:"):
+                name, _, value = line.removeprefix("# env-dep:").partition("=")
+                _require(name == "CARGO_MANIFEST_DIR" and value == str(directory),
+                         f"undeclared project compiler environment input: {name}")
+    prerequisites = ": " + " ".join(targets)
+    rules = [line for line in text.splitlines() if line and not line.endswith(":") and not line.startswith("#")]
+    _require(bool(rules) and all(line.endswith(prerequisites) for line in rules),
+             "compiler input targets differ from rustc's dependency rules")
+    return paths[0], local
+
+
+def compiler_input_names(document: dict[str, Any], checkout: Path, run_dir: Path, targets: list[str],
+                         workspace: CargoPackages, classifier: CargoPackages) -> set[str]:
+    _require(document.get("schema") == 1, "invalid compiler input evidence")
+    groups = document.get("builds")
+    _require(isinstance(groups, dict) and set(groups) == {"production", "execution", "classifier"},
+             "compiler input evidence lacks a build")
+    inputs = set()
+    for mode, records in groups.items():
+        _require(isinstance(records, dict) and bool(records), f"missing {mode} dependency records")
+        base = checkout / "tools/core-coverage/classifier" if mode == "classifier" else checkout
+        target_names = set()
+        roots = set()
+        for key, text in records.items():
+            path = Path(_relative_path(key, "compiler dependency record"))
+            _require(isinstance(text, str) and path.suffix == ".d", "invalid compiler dependency record")
+            crate, sources = dep_info_inputs(text, base, checkout, run_dir, classifier if mode == "classifier" else workspace)
+            if crate.is_relative_to(checkout):
+                roots.add(crate)
+                target_names.add(path.stem.rsplit("-", 1)[0])
+            inputs.update(sources)
+        if mode == "classifier":
+            expected_roots = {path: kind for path, kind in classifier.build_targets.items() if classifier.targets[path] == base}
+            _require(set(expected_roots.values()) == {"lib", "bin"} and expected_roots.keys() <= roots,
+                     "classifier compiler evidence must include its library and executable")
+        expected = ({"outpost_core_coverage_classifier"} if mode == "classifier" else
+                    {target.split(":", 1)[1] for target in targets} if mode == "execution" else {"outpost_core"})
+        _require(expected <= target_names, f"{mode} dependency records omit expected compiler targets: {sorted(expected - target_names)}")
+    return inputs
+
+
 def current_commit(root: Path | str) -> str:
     value = _git(Path(root).resolve(), "rev-parse", "HEAD").decode("ascii").strip()
     _require(len(value) == 40 and all(char in "0123456789abcdef" for char in value), "invalid current commit identifier")
@@ -550,13 +700,16 @@ def archive_object_names(table: str) -> list[str]:
 
 def _verify_commands(
     commands: list[dict[str, Any]], contract: dict[str, Any],
-    artifacts: dict[str, str], run_dir: Path, root: Path,
+    artifacts: dict[str, str], run_dir: Path, recorded_run: Path, recorded_root: Path,
+    require_cwd: bool,
 ) -> None:
     required = (
         "cargo-metadata", "build-classifier", "classify-source", "build-production",
         "list-production-archive", "extract-production-map", "production-json", "production-lcov", "test-core",
         "execution-json", "execution-lcov", "doctests",
     )
+    if require_cwd:
+        required += ("classifier-metadata",)
     selected: dict[str, dict[str, Any]] = {}
     positions: dict[str, int] = {}
     for position, command in enumerate(commands):
@@ -578,10 +731,15 @@ def _verify_commands(
     cargo = selected["build-production"]["argv"][0]
     package, target, profile = contract["package"], contract["target"], contract["profile"]
     jobs = str(contract["limits"]["cargo_jobs"])
+    if require_cwd:
+        _require(positions["classifier-metadata"] < positions["build-classifier"], "classifier dependency metadata was recorded after its build")
+        for stage, command in selected.items():
+            cwd = recorded_run / "production-objects" if stage == "extract-production-map" else recorded_root
+            _require(command.get("cwd") == str(cwd), f"command working directory differs: {stage}")
     expected = {
         "cargo-metadata": [cargo, "metadata", "--no-deps", "--locked", "--offline", "--format-version", "1"],
-        "build-classifier": [cargo, "build", "--manifest-path", str(root / "tools/core-coverage/classifier/Cargo.toml"), "--locked", "--offline", "--jobs", jobs],
-        "classify-source": [str(run_dir / "classifier-build/debug/outpost-core-coverage-classifier"), str(root), contract["source_root"]],
+        "build-classifier": [cargo, "build", "--manifest-path", str(recorded_root / "tools/core-coverage/classifier/Cargo.toml"), "--locked", "--offline", "--jobs", jobs],
+        "classify-source": [str(recorded_run / "classifier-build/debug/outpost-core-coverage-classifier"), str(recorded_root), contract["source_root"]],
         "build-production": [cargo, "rustc", "--package", package, "--lib", "--target", target, "--profile", profile,
                              "--locked", "--offline", "--jobs", jobs, "--message-format", "json", "--", "-C", "instrument-coverage"],
         "test-core": [cargo, "llvm-cov", "--package", package, "--tests", "--target", target, "--profile", profile,
@@ -590,11 +748,17 @@ def _verify_commands(
         "doctests": [cargo, "test", "--package", package, "--doc", "--target", target, "--profile", profile,
                      "--locked", "--offline", "--jobs", jobs, "--", "--test-threads=1"],
     }
+    if require_cwd:
+        metadata = [cargo, "metadata", "--locked", "--offline", "--format-version", "1", "--filter-platform", target]
+        expected["cargo-metadata"] = [*metadata, "--features", "outpost-core/test-helpers"]
+        expected["classifier-metadata"] = [*metadata, "--manifest-path", str(recorded_root / "tools/core-coverage/classifier/Cargo.toml")]
+        _require(selected["cargo-metadata"]["log"] == "cargo-metadata.json" and
+                 selected["classifier-metadata"]["log"] == "classifier-metadata.json", "locked Cargo metadata is not retained")
     for extension, flag in (("json", "--json"), ("lcov", "--lcov")):
         expected[f"execution-{extension}"] = [
             cargo, "llvm-cov", "report", "--package", package, "--target", target, "--profile", profile,
             "--no-default-ignore-filename-regex", "--failure-mode", "any", flag,
-            "--output-path", str(run_dir / f"execution.{extension}"),
+            "--output-path", str(recorded_run / f"execution.{extension}"),
         ]
     for stage, argv in expected.items():
         _require(selected[stage]["argv"] == argv, f"command differs from the approved measurement: {stage}")
@@ -610,11 +774,11 @@ def _verify_commands(
         _require(type(actual_profile.get(key)) is type(expected_property) and actual_profile[key] == expected_property, f"ordinary production profile differs: {key}")
     filenames = compiler_artifact.get("filenames")
     _require(isinstance(filenames, list) and all(isinstance(name, str) for name in filenames), "ordinary production filenames are missing")
-    libraries = [Path(name).resolve() for name in filenames if name.endswith(".rlib")]
-    _require(len(libraries) == 1 and libraries[0].is_relative_to(run_dir / "production-build"), "ordinary production library is missing or outside its build directory")
+    libraries = [Path(name) for name in filenames if name.endswith(".rlib")]
+    _require(len(libraries) == 1 and libraries[0].is_relative_to(recorded_run / "production-build"), "ordinary production library is missing or outside its build directory")
     library = libraries[0]
-    library_key = library.relative_to(run_dir).as_posix()
-    _require(library_key in artifacts and library.stat().st_size > 0, "ordinary production library is not retained as hashed evidence")
+    library_key = _relative_path(library.relative_to(recorded_run).as_posix(), "production library")
+    _require(library_key in artifacts and (run_dir / library_key).stat().st_size > 0, "ordinary production library is not retained as hashed evidence")
     objects = sorted((run_dir / "production-objects").glob("*.o"))
     _require(bool(objects), "ordinary production object inventory is empty")
     archive_stage = selected["list-production-archive"]
@@ -635,28 +799,37 @@ def _verify_commands(
     llvm_ar = str(Path(llvm_cov).with_name("llvm-ar"))
     _require(archive_stage["argv"] == [llvm_ar, "t", str(library)], "production archive member listing differs")
     _require(selected["extract-production-map"]["argv"] == [llvm_ar, "x", str(library)], "production archive extraction differs")
-    object_arguments = [str(objects[0])]
+    object_arguments = [str(recorded_run / "production-objects" / objects[0].name)]
     for path in objects[1:]:
-        object_arguments.extend(["-object", str(path)])
+        object_arguments.extend(["-object", str(recorded_run / "production-objects" / path.name)])
     for extension, fmt in (("json", "text"), ("lcov", "lcov")):
         argv = [llvm_cov, "export", "--empty-profile", f"-format={fmt}", *object_arguments]
         _require(selected[f"production-{extension}"]["argv"] == argv, f"production export omitted or added objects: {extension}")
+
+
+def read_control_file(directory: Path, name: str) -> dict:
+    path = directory / name
+    _require(not path.is_symlink() and path.is_file() and path.resolve().parent == directory,
+             f"coverage control file must be a regular file in its run directory: {name}")
+    return read_json(path)
 
 
 def verify_evidence(
     run_dir: Path | str, root: Path | str, require_zero: bool
 ) -> dict[str, Any]:
     """Verify a published measurement against its artifacts and the current tree."""
-    manifest = read_json(Path(run_dir) / "manifest.json")
-    return validate_evidence(run_dir, root, manifest, require_zero)
+    manifest = read_control_file(Path(run_dir).resolve(), "manifest.json")
+    return validate_evidence(run_dir, root, manifest, require_zero, acquiring=False)
 
 
 def validate_evidence(
-    run_dir: Path | str, root: Path | str, manifest: dict[str, Any], require_zero: bool
+    run_dir: Path | str, root: Path | str, manifest: dict[str, Any], require_zero: bool,
+    *, acquiring: bool = True,
 ) -> dict[str, Any]:
     """Check the actual commands, tests, source selection and counts before publication or reuse."""
     run_dir, root = Path(run_dir).resolve(), Path(root).resolve()
-    _require(type(manifest.get("schema")) is int and manifest["schema"] == 2, "unsupported coverage-manifest schema")
+    schema = manifest.get("schema")
+    _require(type(schema) is int and schema in (2, 3), "unsupported coverage-manifest schema")
     _require(manifest.get("status") == "complete", "coverage run is incomplete")
     try:
         run_id = str(uuid.UUID(manifest.get("run_id", "")))
@@ -684,25 +857,47 @@ def validate_evidence(
         _require(llvm_version is not None and llvm_version.group(1) in approved_versions, f"{name} differs from the approved LLVM version")
     sources = manifest.get("source_hashes")
     _require(isinstance(sources, dict) and bool(sources), "source hashes are missing")
-    _require(sources == current_source_hashes(root), "coverage evidence is stale or the source inventory changed")
+    if schema == 2:
+        _require(sources == current_source_hashes(root), "coverage evidence is stale or the source inventory changed")
     artifacts = manifest.get("artifact_hashes")
     _require(isinstance(artifacts, dict), "artifact hashes are missing")
-    _require(REQUIRED_ARTIFACTS <= set(artifacts), f"required coverage artifacts are missing: {sorted(REQUIRED_ARTIFACTS - set(artifacts))}")
+    times = manifest.get("artifact_mtimes_ns")
+    if schema == 3:
+        _require(isinstance(times, dict) and times.keys() == artifacts.keys(), "acquisition timestamps do not cover the retained artifacts")
+    required = REQUIRED_ARTIFACTS | ({"compiler-inputs.json", "classifier-metadata.json"} if schema == 3 else set())
+    _require(required <= set(artifacts), f"required coverage artifacts are missing: {sorted(required - set(artifacts))}")
     started = _integer(manifest.get("started_ns"), "run start timestamp", 1)
     finished = _integer(manifest.get("finished_ns"), "run completion timestamp", 1)
     _require(started <= finished, "run completion precedes its start")
     start_path = run_dir / "run-start.json"
-    marker = read_json(start_path)
-    _require(type(marker.get("schema")) is int and marker["schema"] == 1 and marker.get("run_id") == run_id, "run start marker does not identify this run")
-    _require(started == start_path.stat().st_mtime_ns, "run start timestamp differs from its filesystem marker")
+    marker = read_control_file(run_dir, "run-start.json")
+    _require(type(marker.get("schema")) is int and marker["schema"] == schema - 1 and marker.get("run_id") == run_id, "run start marker does not identify this run")
+    recorded_root, recorded_run = root, run_dir
+    if schema == 2:
+        _require(started == start_path.stat().st_mtime_ns, "run start timestamp differs from its filesystem marker")
+    else:
+        _require(marker.get("started_ns") == started, "run start timestamp differs from its marker")
+        for key in ("checkout", "run_directory"):
+            value = marker.get(key)
+            _require(isinstance(value, str) and value.startswith("/") and os.path.normpath(value) == value,
+                     f"invalid recorded {key}")
+        recorded_root, recorded_run = Path(marker["checkout"]), Path(marker["run_directory"])
+        if acquiring:
+            _require((recorded_root, recorded_run) == (root, run_dir), "acquisition locations do not match the run marker")
     for name, digest in artifacts.items():
         name = _relative_path(name, "artifact path")
         artifact = run_dir / name
         _require(artifact.resolve().is_relative_to(run_dir), f"artifact escapes its run directory: {name}")
         _require(isinstance(digest, str) and len(digest) == 64, f"invalid artifact hash for {name}")
         _require(artifact.is_file(), f"coverage artifact is missing: {name}")
-        _require(name not in REQUIRED_ARTIFACTS or artifact.stat().st_size > 0, f"coverage artifact is empty: {name}")
-        _require(started <= artifact.stat().st_mtime_ns <= finished, f"coverage artifact is stale or outside this run: {name}")
+        _require(name not in required or artifact.stat().st_size > 0, f"coverage artifact is empty: {name}")
+        if schema == 3:
+            acquired = _integer(times[name], f"acquisition timestamp for {name}", 1)
+            _require(started <= acquired <= finished, f"coverage artifact was stale or outside this run at acquisition: {name}")
+            if acquiring:
+                _require(artifact.stat().st_mtime_ns == acquired, f"coverage artifact timestamp changed before publication: {name}")
+        else:
+            _require(started <= artifact.stat().st_mtime_ns <= finished, f"coverage artifact is stale or outside this run: {name}")
         _require(sha256_file(artifact) == digest, f"coverage artifact changed: {name}")
     tree = read_json(run_dir / "tree.json")
     _require(tree.get("schema") == 1 and tree.get("commit") == manifest["commit"] and tree.get("file_hashes") == sources, "tested-tree provenance differs from the manifest")
@@ -721,7 +916,7 @@ def validate_evidence(
         _require(type(duration) in (int, float) and math.isfinite(duration) and duration >= 0, "invalid command duration")
         log = _relative_path(command.get("log"), "command log")
         _require(log in artifacts, f"command log is not retained as hashed evidence: {log}")
-    _verify_commands(commands, contract, artifacts, run_dir, root)
+    _verify_commands(commands, contract, artifacts, run_dir, recorded_run, recorded_root, schema == 3)
     inventory = sorted(path.relative_to(root).as_posix() for path in (root / "crates/core/src").rglob("*.rs"))
     compiler = read_json(run_dir / "compiler-sources.json")
     _require(compiler.get("schema") == 1, "unsupported compiler-source inventory schema")
@@ -740,6 +935,13 @@ def validate_evidence(
     _require(all(isinstance(target, str) and target.startswith(("lib:", "test:")) for target in targets), "invalid expected test target")
     _require("lib:outpost_core" in targets, "unit-test execution was omitted")
     metadata = read_json(run_dir / "cargo-metadata.json")
+    if schema == 3:
+        workspace = cargo_packages(metadata, root / "Cargo.lock", recorded_root)
+        classifier = cargo_packages(read_json(run_dir / "classifier-metadata.json"), root / "tools/core-coverage/classifier/Cargo.lock", recorded_root)
+        inputs = compiler_input_names(read_json(run_dir / "compiler-inputs.json"), recorded_root, recorded_run, targets, workspace, classifier)
+        current = measurement_source_hashes(root, inputs)
+        _require(manifest.get("measurement_hashes") == current and all(sources.get(key) == digest for key, digest in current.items()),
+                 "coverage evidence is stale or the measurement input inventory changed")
     packages = metadata.get("packages")
     _require(isinstance(packages, list), "Cargo metadata packages are missing")
     core_packages = [package for package in packages if isinstance(package, dict) and package.get("name") == "outpost-core"]
@@ -779,13 +981,14 @@ def validate_evidence(
     report = analyze(
         run_dir / "production.lcov", run_dir / "execution.lcov",
         run_dir / "production.json", run_dir / "execution.json",
-        run_dir / "classification.json", root,
+        run_dir / "classification.json", root, recorded_root if schema == 3 else None,
+        set(current) if schema == 3 else set(sources),
     )
     _require(read_json(run_dir / "report.json") == report, "published report differs from raw measurement")
     try:
         published_lcov = (run_dir / "eligible.lcov").read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
         raise EvidenceError(f"cannot read eligible LCOV: {error}") from error
-    _require(published_lcov == eligible_lcov(report, root), "published LCOV differs from eligible production lines")
+    _require(published_lcov == eligible_lcov(report, recorded_root), "published LCOV differs from eligible production lines")
     _require(not require_zero or report["uncovered_total"] == 0, f"production executable lines remain uncovered: {report['uncovered_total']}")
     return report

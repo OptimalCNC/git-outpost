@@ -3,10 +3,13 @@
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import time
 import unittest
 from unittest import mock
+import zipfile
 
 import evidence
 
@@ -190,8 +193,146 @@ class EvidenceFixture(unittest.TestCase):
         self.document["artifact_hashes"][name] = evidence.sha256_file(self.run / name)
         self.update_manifest()
 
+    def portable_manifest(self):
+        test = "crates/core/tests/operation.rs"
+        classifier = "tools/core-coverage/classifier/src/main.rs"
+        classifier_lib = "tools/core-coverage/classifier/src/lib.rs"
+        included = "fixture-data/expected output"
+        for path in (test, classifier, classifier_lib, included):
+            (self.root / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / path).write_text("fixture\n", encoding="utf-8")
+        (self.root / ".gitignore").write_text("/fixture-data/\n*.ignored\n", encoding="utf-8")
+        self.manifest()
+        for directory, name, targets, output in (
+            ("crates/core", "outpost-core", [("outpost_core", "lib", SOURCE), ("operation", "test", test)], "cargo-metadata.json"),
+            ("tools/core-coverage/classifier", "outpost-core-coverage-classifier",
+             [("outpost_core_coverage_classifier", "lib", classifier_lib), ("outpost-core-coverage-classifier", "bin", classifier)], "classifier-metadata.json"),
+        ):
+            lock = self.root / ("Cargo.lock" if output == "cargo-metadata.json" else f"{directory}/Cargo.lock")
+            lock.write_text('version = 4\n', encoding="utf-8")
+            self.write_json(output, {"resolve": {"nodes": [{"id": name}]}, "packages": [{
+                "id": name, "name": name, "version": "0.1.0", "source": None,
+                "manifest_path": str(self.root / directory / "Cargo.toml"),
+                "targets": [{"name": target, "kind": [kind], "test": True, "src_path": str(self.root / path)}
+                            for target, kind, path in targets],
+            }]})
+        git_env = {"PATH": os.defpath, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
+        subprocess.run(["git", "init", "-q", self.root], env=git_env, check=True)
+        subprocess.run(["git", "-C", self.root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.com",
+                        "commit", "-qm", "fixture", "--allow-empty"], env=git_env, check=True)
+
+        def dep_info(*names):
+            escaped = [name.replace(" ", "\\ ") for name in names]
+            return "output: " + " ".join(escaped) + "\n\n" + "".join(name + ":\n" for name in escaped)
+
+        self.write_json("compiler-inputs.json", {"schema": 1, "builds": {
+            "production": {"debug/deps/outpost_core-ab.d": dep_info(SOURCE)},
+            "execution": {"debug/deps/outpost_core-bc.d": dep_info(SOURCE),
+                          "debug/deps/operation-cd.d": dep_info(test, included)},
+            "classifier": {"debug/deps/outpost_core_coverage_classifier-de.d": dep_info("src/main.rs"),
+                           "debug/deps/outpost_core_coverage_classifier-ef.d": dep_info("src/lib.rs")},
+        }})
+        measured = evidence.measurement_source_hashes(self.root, {SOURCE, test, classifier, included})
+        sources = evidence.current_source_hashes(self.root) | measured
+        commit = evidence.current_commit(self.root)
+        self.write_json("tree.json", {"schema": 1, "commit": commit, "diff": "", "untrackedfiles": list(sources),
+                                      "file_hashes": sources})
+        self.write_json("run-start.json", {"schema": 2, "run_id": RUN_ID, "started_ns": self.document["started_ns"],
+                                           "checkout": str(self.root), "run_directory": str(self.run)})
+        commands = evidence.read_json(self.run / "commands.json")
+        meta = commands["commands"][0]
+        argv = ["cargo", "metadata", "--locked", "--offline", "--format-version", "1", "--filter-platform", "x86_64-unknown-linux-gnu"]
+        meta.update(argv=[*argv, "--features", "outpost-core/test-helpers"], log="cargo-metadata.json")
+        commands["commands"].insert(1, {**meta, "stage": "classifier-metadata", "log": "classifier-metadata.json",
+                                        "argv": [*argv, "--manifest-path", str(self.root / "tools/core-coverage/classifier/Cargo.toml")]})
+        for command in commands["commands"]:
+            command["cwd"] = str(self.run / "production-objects" if command["stage"] == "extract-production-map" else self.root)
+        self.write_json("commands.json", commands)
+        names = set(self.document["artifact_hashes"]) | {"compiler-inputs.json", "classifier-metadata.json"}
+        self.document.update({
+            "schema": 3, "commit": commit, "source_hashes": sources, "measurement_hashes": measured,
+            "artifact_hashes": {name: evidence.sha256_file(self.run / name) for name in names},
+            "artifact_mtimes_ns": {name: (self.run / name).stat().st_mtime_ns for name in names},
+        })
+        self.update_manifest()
+        return included
+
 
 class MeasurementTests(EvidenceFixture):
+    def test_control_files_cannot_be_supplied_by_symlinks(self):
+        self.manifest()
+        for name in ("manifest.json", "run-start.json"):
+            path = self.run / name
+            outside = path.rename(self.base / name)
+            path.symlink_to(outside)
+            with self.subTest(file=name), self.assertRaisesRegex(evidence.EvidenceError, "control file.*regular file"):
+                self.verify()
+            path.unlink()
+            outside.rename(path)
+
+    def test_external_llvm_source_cannot_supply_line_bounds(self):
+        outside = self.base / "unmeasured.rs"
+        outside.write_text("fn unrelated() {}\n", encoding="utf-8")
+        self.maps({1: 0}, {1: 1}, extra_execution={str(outside): {1: 1}})
+        with self.assertRaisesRegex(evidence.EvidenceError, "LLVM source path must be a normalized relative path"):
+            self.analyze()
+
+    def test_downloaded_loose_files_verify_in_another_checkout_and_reject_tampering(self):
+        self.portable_manifest()
+        original = evidence.validate_evidence(self.run, self.root, self.document, True)
+        archive = self.base / "evidence.zip"
+        with zipfile.ZipFile(archive, "w") as bundle:
+            for path in self.run.rglob("*"):
+                if path.is_file():
+                    bundle.write(path, path.relative_to(self.run))
+        shutil.rmtree(self.run)
+        self.run = self.base / "download"
+        with zipfile.ZipFile(archive) as bundle:
+            bundle.extractall(self.run)
+        self.root = self.root.rename(self.base / "second checkout")
+        os.utime(self.run / "execution.lcov", ns=(1, 1))
+        self.assertEqual(evidence.verify_evidence(self.run, self.root, True), original)
+        log = self.run / "test.log"
+        contents = log.read_bytes()
+        log.write_bytes(contents + b"changed\n")
+        with self.assertRaisesRegex(evidence.EvidenceError, "artifact changed: test.log"):
+            evidence.verify_evidence(self.run, self.root, True)
+        log.write_bytes(contents)
+        commands = evidence.read_json(self.run / "commands.json")
+        export = next(cmd for cmd in commands["commands"] if cmd["stage"] == "production-json")
+        export["argv"][-1] = str(self.run / "production-objects/production.o")
+        self.write_json("commands.json", commands)
+        self.rehash("commands.json")
+        with self.assertRaisesRegex(evidence.EvidenceError, "export omitted or added objects"):
+            evidence.verify_evidence(self.run, self.root, True)
+
+    def test_freshness_tracks_compiled_and_ignored_inputs_beyond_the_git_inventory(self):
+        included = self.portable_manifest()
+        (self.root / "personal-note.md").write_text("review notes", encoding="utf-8")
+        self.assertEqual(evidence.verify_evidence(self.run, self.root, True)["covered_total"], 3)
+        for name in ("crates/core/tests/fixture.ignored", "tools/core-coverage/classifier/src/extra.ignored",
+                     ".cargo/config.toml", included):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            before = path.read_bytes() if path.exists() else None
+            path.write_text("changed input\n", encoding="utf-8")
+            with self.subTest(input=name), self.assertRaisesRegex(evidence.EvidenceError, "stale"):
+                evidence.verify_evidence(self.run, self.root, True)
+            if before is None:
+                path.unlink()
+            else:
+                path.write_bytes(before)
+
+    def test_acquisition_requires_events_from_this_run_before_publication(self):
+        self.portable_manifest()
+        artifact = self.run / "execution.lcov"
+        os.utime(artifact, ns=(1, 1))
+        with self.assertRaisesRegex(evidence.EvidenceError, "timestamp changed before publication"):
+            evidence.validate_evidence(self.run, self.root, self.document, True)
+        self.document["artifact_mtimes_ns"]["execution.lcov"] = 1
+        with self.assertRaisesRegex(evidence.EvidenceError, "stale or outside"):
+            evidence.validate_evidence(self.run, self.root, self.document, True)
+
     def test_unit_and_integration_hits_count_without_their_source(self):
         # The ordinary compile has zero hits. Test execution supplies production
         # hits, while the test bodies and integration source never enter scope.
@@ -405,7 +546,7 @@ class ManifestTests(EvidenceFixture):
         with mock.patch.object(evidence, "current_commit", return_value=COMMIT), \
              mock.patch.object(evidence, "current_source_hashes", return_value=self.document["source_hashes"]):
             self.assertEqual(evidence.validate_evidence(self.run, self.root, self.document, True)["uncovered_total"], 0)
-            with self.assertRaisesRegex(evidence.EvidenceError, "cannot read JSON evidence.*manifest.json"):
+            with self.assertRaisesRegex(evidence.EvidenceError, "control file.*manifest.json"):
                 evidence.verify_evidence(self.run, self.root, True)
 
     def test_missing_or_incompatible_host_metadata_cannot_pass(self):

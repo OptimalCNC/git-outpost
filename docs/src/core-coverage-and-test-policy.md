@@ -258,7 +258,16 @@ Each run holds a workspace lock and creates a fresh evidence directory. It
 records the tested tree, commands, tool versions, source and test inventories,
 compiler objects, raw maps, line counts, and test logs. After all commands
 succeed and the evidence checks pass, the runner publishes the final manifest
-by atomic rename.
+by atomic rename. The manifest keeps the full checkout inventory for provenance.
+Verification checks the recorded commit and the hashes of the inputs used to
+compile, exercise and measure core. Unrelated untracked notes may differ.
+Keep runtime fixtures under `crates/core` or `tools/core-coverage`, or register
+their paths in the input inventory. Rustc identifies compile-time includes.
+
+New runs record the original locations and acquisition timestamps. A complete
+downloaded archive can be verified in another checkout of the same commit.
+Verification checks artifact hashes and recorded commands even when extraction
+changes the archive location or file timestamps.
 
 `run.py verify <run-directory>` rejects missing, malformed, stale, incomplete,
 or inconsistent evidence. Adding `--require-zero`, or running `run.py gate`,
