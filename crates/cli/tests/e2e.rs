@@ -6,10 +6,14 @@ use std::fs::File;
 #[cfg(unix)]
 use std::io::{self, Read, Write};
 #[cfg(unix)]
-use std::os::fd::{FromRawFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd, RawFd};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::path::Path;
 #[cfg(unix)]
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
+#[cfg(unix)]
+use std::time::{Duration, Instant};
 
 fn git_ok(fixture: &common::CliFixture, repo: &Path, args: &[&str]) {
     let output = common::run(fixture.git(repo).args(args));
@@ -46,40 +50,81 @@ struct PtyOutput {
 }
 
 #[cfg(unix)]
+struct TerminalChild {
+    process: Child,
+    finished: bool,
+}
+
+#[cfg(unix)]
+impl Drop for TerminalChild {
+    fn drop(&mut self) {
+        if !self.finished {
+            // SAFETY: the child leads the process group created below and has not been reaped.
+            unsafe { libc::killpg(self.process.id() as libc::pid_t, libc::SIGKILL) };
+            let _ = self.process.wait();
+        }
+    }
+}
+
+#[cfg(unix)]
 fn run_with_terminal(mut command: Command, input: &[u8]) -> PtyOutput {
+    const MAX_TRANSCRIPT: usize = 64 * 1024;
+    let deadline = Instant::now() + Duration::from_secs(30);
     let (master_fd, slave_fd) = open_pty();
     // SAFETY: open_pty returned fresh owned file descriptors.
-    let master = unsafe { File::from_raw_fd(master_fd) };
+    let mut master = unsafe { File::from_raw_fd(master_fd) };
     // SAFETY: open_pty returned fresh owned file descriptors.
     let slave = unsafe { File::from_raw_fd(slave_fd) };
-    let mut input_writer = master.try_clone().expect("duplicate PTY master for input");
+    let nonblocking: libc::c_int = 1;
+    // SAFETY: master owns the PTY descriptor and FIONBIO reads an integer argument.
+    let result = unsafe { libc::ioctl(master.as_raw_fd(), libc::FIONBIO, &nonblocking) };
+    assert_eq!(result, 0, "nonblocking PTY: {}", io::Error::last_os_error());
     let slave_stdin = slave.try_clone().expect("duplicate PTY slave for stdin");
     command
+        .process_group(0)
         .stdin(Stdio::from(slave_stdin))
         .stderr(Stdio::from(slave))
         .stdout(Stdio::null());
 
-    let mut child = command.spawn().expect("spawn command on PTY");
+    let mut child = TerminalChild {
+        process: command.spawn().expect("spawn command on PTY"),
+        finished: false,
+    };
     drop(command);
-    let reader = std::thread::spawn(move || {
-        let mut master = master;
-        let mut bytes = Vec::new();
-        let mut buffer = [0_u8; 4096];
-        loop {
+    master.write_all(input).expect("write PTY input");
+    let mut bytes = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    let mut eof = false;
+    let status = loop {
+        assert!(
+            Instant::now() < deadline,
+            "terminal command exceeded 30 seconds; transcript:\n{}",
+            String::from_utf8_lossy(&bytes)
+        );
+        if eof {
+            if let Some(status) = child.process.try_wait().expect("wait for PTY command") {
+                child.finished = true;
+                break status;
+            }
+        } else {
             match master.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(count) => bytes.extend_from_slice(&buffer[..count]),
-                Err(err) if err.raw_os_error() == Some(libc::EIO) => break,
+                Ok(0) => eof = true,
+                Ok(count) => {
+                    assert!(
+                        bytes.len() + count <= MAX_TRANSCRIPT,
+                        "terminal transcript exceeded 64 KiB"
+                    );
+                    bytes.extend_from_slice(&buffer[..count]);
+                    continue;
+                }
+                Err(err) if err.raw_os_error() == Some(libc::EIO) => eof = true,
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {}
+                Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
                 Err(err) => panic!("read PTY output: {err}"),
             }
         }
-        bytes
-    });
-    input_writer.write_all(input).expect("write PTY input");
-    input_writer.flush().expect("flush PTY input");
-    drop(input_writer);
-    let status = child.wait().expect("wait for PTY command");
-    let bytes = reader.join().expect("join PTY reader");
+        std::thread::sleep(Duration::from_millis(10));
+    };
 
     PtyOutput {
         status,
@@ -2123,12 +2168,13 @@ fn shell_path() -> std::ffi::OsString {
 
 #[cfg(unix)]
 fn bash_script(script: &str, fixture: &common::CliFixture) -> std::process::Output {
-    let mut command = std::process::Command::new("bash");
+    let mut command = fixture.child_command("bash");
     command
         .arg("--noprofile")
         .arg("--norc")
         .arg("-c")
         .arg(script)
+        .env_remove("BASH_ENV")
         .env("GOP_BIN", common::binary_path("gop"))
         .env("PATH", shell_path())
         .env("SOURCE_DIR", &fixture.source)
@@ -2140,7 +2186,7 @@ fn bash_script(script: &str, fixture: &common::CliFixture) -> std::process::Outp
 fn zsh_script(script: &str, fixture: &common::CliFixture) -> std::io::Result<std::process::Output> {
     let zdotdir = fixture.root.join("zsh-home");
     fs::create_dir_all(&zdotdir).expect("create isolated ZDOTDIR");
-    let mut command = std::process::Command::new("zsh");
+    let mut command = fixture.child_command("zsh");
     command
         .arg("-f")
         .arg("-c")

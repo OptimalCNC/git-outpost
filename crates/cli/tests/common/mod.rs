@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -68,9 +68,13 @@ impl CliFixture {
     }
 
     pub fn git(&self, cwd: &Path) -> Command {
-        let mut command = Command::new("git");
+        let mut command = self.child_command("git");
         command.current_dir(cwd);
-        with_git_env(command, &self.git_env)
+        command
+    }
+
+    pub fn child_command(&self, program: impl AsRef<OsStr>) -> Command {
+        with_git_env(isolated_command(program), &self.git_env)
     }
 
     pub fn outpost(&self, name: &str) -> PathBuf {
@@ -138,7 +142,13 @@ impl CliFixture {
 }
 
 pub fn command(bin_name: &str) -> Command {
-    Command::new(binary_path(bin_name))
+    isolated_command(binary_path(bin_name))
+}
+
+fn isolated_command(program: impl AsRef<OsStr>) -> Command {
+    let mut command = Command::new(program);
+    outpost_core::isolate_git_test_command(&mut command);
+    command
 }
 
 pub fn git_outpost_command() -> Command {
@@ -150,7 +160,7 @@ pub fn gop_command() -> Command {
 }
 
 pub fn git_dispatch_command() -> Command {
-    let mut command = Command::new("git");
+    let mut command = isolated_command("git");
     command.arg("outpost").env("PATH", path_with_binary_dir());
     command
 }
