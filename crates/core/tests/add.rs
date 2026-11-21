@@ -226,6 +226,10 @@ fn explicit_fetch_authorization_materializes_a_branch_and_retains_origin_routing
     fixture
         .delete_source_branch(&branch)
         .expect("remove local branch");
+    let source_git = fixture.invoker(&fixture.source);
+    source_git
+        .run_check(["config", "--unset-all", "remote.origin.fetch"])
+        .expect("keep the origin URL without a default fetch rule");
     let source = fixture.source_repo().expect("source repo");
     let source_head = fixture
         .rev_parse(&fixture.source, "HEAD")
@@ -247,6 +251,12 @@ fn explicit_fetch_authorization_materializes_a_branch_and_retains_origin_routing
     .expect("explicit authorization permits remote-only branch materialization");
 
     assert_eq!(source.branch_oid(&branch).unwrap(), Some(expected.clone()));
+    assert_eq!(
+        source_git
+            .run_capture(["config", "--get-all", "remote.origin.fetch"])
+            .expect("saved fetch rule"),
+        "+refs/heads/feature/remote-only:refs/remotes/origin/feature/remote-only"
+    );
     assert_eq!(
         fixture.rev_parse(outpost.work_tree(), "HEAD").unwrap(),
         expected

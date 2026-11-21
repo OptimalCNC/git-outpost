@@ -1,6 +1,7 @@
 #[allow(dead_code)]
 mod common;
 
+use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 
@@ -256,6 +257,58 @@ fn push_when_origin_is_ahead_returns_divergence_before_source_mutation() {
             .rev_parse(&fixture.upstream, "refs/heads/main")
             .expect("origin after"),
         origin_oid
+    );
+}
+
+#[test]
+fn push_reports_divergence_when_the_write_url_updates_a_different_repository() {
+    let fixture = AbcFixture::new();
+    let outpost_path = fixture.add_outpost("C").expect("add C");
+    let old_origin = fixture.root.join("old-origin.git");
+    fixture
+        .invoker(&fixture.root)
+        .run_check([
+            OsStr::new("clone"),
+            OsStr::new("--bare"),
+            fixture.upstream.as_os_str(),
+            old_origin.as_os_str(),
+        ])
+        .expect("clone the original upstream");
+    fixture
+        .invoker(&fixture.source)
+        .run_check([
+            OsStr::new("config"),
+            OsStr::new("remote.origin.pushurl"),
+            old_origin.as_os_str(),
+        ])
+        .expect("point origin's write URL at the old repository");
+    let origin_before = fixture
+        .rev_parse(&fixture.upstream, "refs/heads/main")
+        .expect("advertised origin before push");
+    let outpost_oid = fixture
+        .commit_in_outpost(&outpost_path, "change for review")
+        .expect("outpost commit");
+    let outpost = outpost(&fixture, &outpost_path);
+
+    let err = expect_error(
+        run(&outpost, PushOptions, &mut CapturingReporter::default()),
+        "a push to the old repository cannot confirm publication on origin",
+    );
+
+    assert!(matches!(err, OutpostError::Divergence { branch } if branch == "main"));
+    for repo in [&outpost_path, &fixture.source, &old_origin] {
+        assert_eq!(
+            fixture.rev_parse(repo, "refs/heads/main").expect("main"),
+            outpost_oid,
+            "main in {}",
+            repo.display()
+        );
+    }
+    assert_eq!(
+        fixture
+            .rev_parse(&fixture.upstream, "refs/heads/main")
+            .expect("advertised origin after push"),
+        origin_before
     );
 }
 

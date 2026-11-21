@@ -1,6 +1,7 @@
 #[allow(dead_code)]
 mod common;
 
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -8,7 +9,7 @@ use common::fixture::{AbcFixture, CapturingReporter};
 use outpost_core::ops::analyze::{
     self, AnalyzeOptions, BranchDeleteSafety, Probe, SourcePushHazard,
 };
-use outpost_core::ops::branch_analysis::BranchCleanupSkipReason;
+use outpost_core::ops::branch_analysis::{BranchCleanupFinding, BranchCleanupSkipReason};
 use outpost_core::ops::cleanup_evidence::{
     CleanupEvidenceProvider, CleanupEvidenceRequest, CleanupEvidenceSnapshot, ObservedRemoteBranch,
 };
@@ -584,6 +585,53 @@ fn source_push_hazard_is_known_safe_for_a_branch_not_checked_out() {
             push_would_fail: false,
         })
     );
+}
+
+#[test]
+fn moved_native_worktree_does_not_make_its_branch_safe_to_push_or_delete() {
+    let fixture = AbcFixture::new();
+    let branch = feature_branch(&fixture, "topic", false);
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add topic outpost");
+    set_source_config(&fixture, "receive.denyCurrentBranch", "refuse");
+    let checkout_name = "portable-checkout";
+    let checkout = fixture.root.join(checkout_name);
+    fixture
+        .invoker(&fixture.source)
+        .run_check([
+            OsStr::new("worktree"),
+            OsStr::new("add"),
+            checkout.as_os_str(),
+            OsStr::new(branch.as_str()),
+        ])
+        .expect("check out topic in a native worktree");
+    fs::rename(&checkout, fixture.root.join("moved-checkout")).expect("move checkout directory");
+
+    let report = run_analysis(&fixture, outpost);
+
+    match &report.source_push_hazard {
+        Probe::Known(hazard) => assert!(hazard.checked_out && hazard.push_would_fail),
+        Probe::Unknown(reason) | Probe::Unavailable(reason) => {
+            assert!(reason.contains(checkout_name), "{reason}");
+        }
+    }
+    assert!(!matches!(report.safe_delete, BranchDeleteSafety::Yes(_)));
+    let explains_topic = report
+        .safe_delete_findings
+        .iter()
+        .any(|finding| match finding {
+            BranchCleanupFinding::Warning {
+                branch: Some(found),
+                message,
+            } => found == &branch && message.contains(checkout_name),
+            BranchCleanupFinding::Skipped {
+                branch: Some(found),
+                reason: BranchCleanupSkipReason::BranchCheckedOut,
+            } => found == &branch,
+            _ => false,
+        });
+    assert!(explains_topic, "{:?}", report.safe_delete_findings);
 }
 
 #[test]
