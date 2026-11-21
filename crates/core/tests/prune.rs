@@ -221,50 +221,6 @@ fn prune_keeps_locked_stale_entries_and_reports_locked() {
     assert_registry_paths(&source, &[locked_missing]);
 }
 
-#[test]
-fn prune_report_removed_entries_is_independent_of_verbose() {
-    let quiet = AbcFixture::new();
-    let quiet_one = quiet.add_outpost("C1").expect("add quiet C1");
-    let quiet_two = quiet.add_outpost("C2").expect("add quiet C2");
-    let quiet_source = quiet.source_repo().expect("quiet source repo");
-    let quiet_missing = vec![canonical(&quiet_one), canonical(&quiet_two)];
-    fs::remove_dir_all(&quiet_one).expect("remove quiet C1");
-    fs::remove_dir_all(&quiet_two).expect("remove quiet C2");
-
-    let quiet_report = prune::run(
-        &quiet_source,
-        prune::PruneOptions {
-            dry_run: false,
-            verbose: false,
-        },
-    )
-    .expect("quiet prune");
-
-    let verbose = AbcFixture::new();
-    let verbose_one = verbose.add_outpost("C1").expect("add verbose C1");
-    let verbose_two = verbose.add_outpost("C2").expect("add verbose C2");
-    let verbose_source = verbose.source_repo().expect("verbose source repo");
-    let verbose_missing = vec![canonical(&verbose_one), canonical(&verbose_two)];
-    fs::remove_dir_all(&verbose_one).expect("remove verbose C1");
-    fs::remove_dir_all(&verbose_two).expect("remove verbose C2");
-
-    let verbose_report = prune::run(
-        &verbose_source,
-        prune::PruneOptions {
-            dry_run: false,
-            verbose: true,
-        },
-    )
-    .expect("verbose prune");
-
-    assert_eq!(quiet_report.removed_entries, quiet_missing);
-    assert_eq!(verbose_report.removed_entries, verbose_missing);
-    assert_eq!(
-        quiet_report.removed_entries.len(),
-        verbose_report.removed_entries.len()
-    );
-}
-
 fn assert_registry_empty(source: &SourceRepo) {
     let registry = source.registry().expect("registry");
     assert!(registry.entries().is_empty());

@@ -234,6 +234,15 @@ impl RegistryMut {
         }
     }
 
+    pub(crate) fn remove_recorded_paths(&mut self, paths: &[PathBuf]) {
+        let paths: std::collections::HashSet<_> = paths.iter().collect();
+        let previous = self.inner.entries.len();
+        self.inner
+            .entries
+            .retain(|entry| !paths.contains(&entry.path));
+        self.dirty |= self.inner.entries.len() != previous;
+    }
+
     pub fn entries(&self) -> &[RegistryEntry] {
         self.inner.entries()
     }

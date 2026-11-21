@@ -16,7 +16,6 @@ pub struct PruneReport {
 
 pub fn run(source: &SourceRepo, opts: PruneOptions) -> OutpostResult<PruneReport> {
     let mut registry = source.registry_mut()?;
-    let entries = registry.entries().to_vec();
     let mut report = PruneReport {
         removed_entries: Vec::new(),
         orphaned_source_missing: Vec::new(),
@@ -24,24 +23,21 @@ pub fn run(source: &SourceRepo, opts: PruneOptions) -> OutpostResult<PruneReport
         dry_run: opts.dry_run,
     };
 
-    for entry in entries {
+    for entry in registry.entries() {
         if entry.locked {
-            report.locked_entries.push(entry.path);
+            report.locked_entries.push(entry.path.clone());
         } else if !entry.path.exists() {
             report.removed_entries.push(entry.path.clone());
-            if !opts.dry_run {
-                registry.remove_by_path(&entry.path)?;
-            }
         } else if source_missing_outpost(&entry.path)? {
-            report.orphaned_source_missing.push(entry.path);
+            report.orphaned_source_missing.push(entry.path.clone());
         }
     }
 
     if !opts.dry_run && !report.removed_entries.is_empty() {
+        registry.remove_recorded_paths(&report.removed_entries);
         registry.save()?;
     }
 
-    let _ = opts.verbose;
     Ok(report)
 }
 

@@ -166,12 +166,17 @@ fn prune_keeps_registered_unmanaged_git_directory() {
 }
 
 #[test]
-fn prune_propagates_invalid_metadata_for_existing_registered_directory() {
+fn prune_preserves_missing_registration_when_later_metadata_is_invalid() {
     let fixture = AbcFixture::new();
+    let source = fixture.source_repo().expect("source repo");
+    let missing_path = fixture.root.join("previously-removed");
+    fs::create_dir(&missing_path).expect("create registration directory");
+    register_path(&source, &missing_path);
+    fs::remove_dir(&missing_path).expect("remove registered directory");
     let outpost_path = fixture.add_outpost("C").expect("add outpost");
     let outpost = Outpost::at(&outpost_path).expect("open outpost");
     fs::write(outpost.metadata_path(), "not metadata").expect("corrupt metadata");
-    let source = fixture.source_repo().expect("source repo");
+    let before = fs::read(source.registry_path()).expect("registry before prune");
 
     let err = expect_error(
         prune::run(
@@ -186,6 +191,10 @@ fn prune_propagates_invalid_metadata_for_existing_registered_directory() {
 
     assert!(
         matches!(err, OutpostError::BadMetadata { outpost, .. } if outpost == canonical(&outpost_path))
+    );
+    assert_eq!(
+        fs::read(source.registry_path()).expect("registry after refusal"),
+        before
     );
 }
 
