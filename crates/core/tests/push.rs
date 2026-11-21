@@ -367,7 +367,7 @@ fn push_keeps_the_source_and_old_clone_when_origin_has_a_stale_second_write_url(
             OsStr::new("HEAD:refs/heads/main"),
         ])
         .expect("publish the intended commit directly to the advertised origin");
-    for destination in [&fixture.upstream, &old_origin] {
+    for destination in [Path::new("../A.git"), old_origin.as_path()] {
         fixture
             .invoker(&fixture.source)
             .run_check([

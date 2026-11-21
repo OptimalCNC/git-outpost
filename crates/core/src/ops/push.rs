@@ -414,22 +414,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn https_fetch_and_ssh_push_addresses_remain_network_routes() {
-        let repo = tempfile::tempdir().expect("temporary source repository");
-        let git = GitInvoker::at(repo.path());
-        git.run_check(["init", "--quiet"])
+    fn push_accepts_network_routes_and_a_local_read_mirror() {
+        let fixture = tempfile::tempdir().expect("temporary repositories");
+        let git = GitInvoker::at(fixture.path());
+        git.run_check(["init", "--quiet", "source"])
             .expect("initialize source");
-        let source = SourceRepo::at(repo.path()).expect("open source");
-        let https = "https://example.invalid/team/repo.git";
-        let ssh = "git@example.invalid:team/repo.git";
-        for (fetch, push) in [(https, ssh), (ssh, https)] {
-            git.run_check(["config", "remote.origin.url", fetch])
+        git.run_check(["init", "--quiet", "--bare", "mirror.git"])
+            .expect("initialize local read mirror");
+        let source = SourceRepo::at(fixture.path().join("source")).expect("open source");
+        let mirror = crate::path::git_path_arg(&fixture.path().join("mirror.git"));
+        let https = OsStr::new("https://example.invalid/team/repo.git");
+        let ssh = OsStr::new("git@example.invalid:team/repo.git");
+        for (fetch, push) in [(https, ssh), (ssh, https), (mirror.as_os_str(), ssh)] {
+            source
+                .git()
+                .run_check(["config".as_ref(), "remote.origin.url".as_ref(), fetch])
                 .expect("set fetch address");
-            git.run_check(["config", "remote.origin.pushurl", push])
+            source
+                .git()
+                .run_check(["config".as_ref(), "remote.origin.pushurl".as_ref(), push])
                 .expect("set push address");
             assert_eq!(
-                verify_origin_destinations(&source).expect("compatible network addresses"),
-                OsStr::new(fetch)
+                verify_origin_destinations(&source).expect("compatible Git addresses"),
+                fetch
             );
         }
     }
