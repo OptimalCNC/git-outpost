@@ -59,15 +59,7 @@ fragment PullRequestEvidence on PullRequest {
   statusCheckRollup: commits(last: 1) {
     nodes {
       commit {
-        statusCheckRollup {
-          contexts(first: 100) {
-            nodes {
-              __typename
-              ... on CheckRun { status conclusion }
-              ... on StatusContext { state }
-            }
-          }
-        }
+        statusCheckRollup { state }
       }
     }
   }
@@ -698,15 +690,16 @@ impl TryFrom<&GraphqlPullRequest> for PullRequestSummary {
 }
 
 fn graphql_check_summary(value: Option<&serde_json::Value>) -> String {
-    let contexts = value
-        .and_then(|value| value.get("nodes"))
-        .and_then(|value| value.as_array())
-        .and_then(|nodes| nodes.first())
-        .and_then(|value| value.get("commit"))
-        .and_then(|value| value.get("statusCheckRollup"))
-        .and_then(|value| value.get("contexts"))
-        .and_then(|value| value.get("nodes"));
-    check_summary(contexts)
+    let state = value
+        .and_then(|value| value.pointer("/nodes/0/commit/statusCheckRollup/state"))
+        .and_then(|state| state.as_str());
+    match state {
+        Some("SUCCESS") => "passing",
+        Some("EXPECTED" | "PENDING") => "pending",
+        Some("ERROR" | "FAILURE") => "failing",
+        _ => "unknown",
+    }
+    .to_owned()
 }
 
 fn invalid_graphql_response(message: String) -> OutpostError {
@@ -780,31 +773,27 @@ fn check_summary(value: Option<&serde_json::Value>) -> String {
     }
 
     let mut has_pending = false;
-    let mut has_success = false;
+    let mut all_passing = true;
     for item in items {
-        let status = item
-            .get("conclusion")
-            .or_else(|| item.get("status"))
-            .or_else(|| item.get("state"))
-            .and_then(|value| value.as_str())
-            .unwrap_or("unknown");
+        let status = ["conclusion", "status", "state"]
+            .iter()
+            .find_map(|field| item.get(*field)?.as_str().filter(|value| !value.is_empty()));
         match status {
-            "FAILURE" | "ERROR" | "CANCELLED" | "TIMED_OUT" | "ACTION_REQUIRED" => {
-                return "failing".to_owned();
+            Some(
+                "FAILURE" | "ERROR" | "CANCELLED" | "TIMED_OUT" | "ACTION_REQUIRED" | "STALE"
+                | "STARTUP_FAILURE",
+            ) => return "failing".to_owned(),
+            Some("PENDING" | "QUEUED" | "IN_PROGRESS" | "REQUESTED" | "WAITING" | "EXPECTED") => {
+                has_pending = true
             }
-            "PENDING" | "QUEUED" | "IN_PROGRESS" | "REQUESTED" | "WAITING" | "EXPECTED" => {
-                has_pending = true;
-            }
-            "SUCCESS" | "SKIPPED" | "NEUTRAL" => {
-                has_success = true;
-            }
-            _ => {}
+            Some("SUCCESS" | "SKIPPED" | "NEUTRAL") => {}
+            _ => all_passing = false,
         }
     }
 
     if has_pending {
         "pending".to_owned()
-    } else if has_success {
+    } else if all_passing {
         "passing".to_owned()
     } else {
         "unknown".to_owned()
@@ -896,13 +885,7 @@ mod tests {
         );
         let source_path = temp.path().join("source");
         fs::create_dir(&source_path).expect("source dir");
-        let init = Command::new("git")
-            .args(["init", "--initial-branch=main"])
-            .current_dir(&source_path)
-            .output()
-            .expect("git init");
-        assert!(init.status.success());
-        let source = SourceRepo::at_with(&source_path, &env).expect("source repo");
+        let source = init_source(&source_path, &env);
         let program = fake_executable(
             temp.path().join("gh-one-call"),
             "#!/bin/sh\nprintf 'call\\n' >> \"$GH_TEST_LOG\"\nif [ \"$1\" != api ] || [ \"$2\" != graphql ]; then\n  echo unexpected gh invocation >&2\n  exit 9\nfi\n/bin/cat \"$GH_TEST_RESPONSE\"\n",
@@ -1009,17 +992,7 @@ mod tests {
               "nodes": [
                 {
                   "commit": {
-                    "statusCheckRollup": {
-                      "contexts": {
-                        "nodes": [
-                          {
-                            "__typename": "CheckRun",
-                            "status": "COMPLETED",
-                            "conclusion": "SUCCESS"
-                          }
-                        ]
-                      }
-                    }
+                    "statusCheckRollup": { "state": "SUCCESS" }
                   }
                 }
               ]
@@ -1107,7 +1080,7 @@ mod tests {
     }
 
     #[test]
-    fn analyze_pr_summary_normalizes_empty_review_decision() {
+    fn analyze_pr_summary_reports_no_review_and_pending_checks() {
         let summary = PullRequestSummary::try_from(GhAnalyzePullRequest {
             number: Some(47),
             url: None,
@@ -1117,19 +1090,29 @@ mod tests {
             head_ref_name: Some("feat".to_owned()),
             _head_ref_oid: Some("abc123".to_owned()),
             review_decision: Some(String::new()),
-            status_check_rollup: None,
+            status_check_rollup: Some(serde_json::json!([
+                {"status": "COMPLETED", "conclusion": "SUCCESS"},
+                {"status": "IN_PROGRESS", "conclusion": null}
+            ])),
         })
         .expect("summary");
 
         assert_eq!(summary.review, "none");
+        assert_eq!(summary.checks, "pending");
     }
 
     fn test_source_repo() -> (tempfile::TempDir, SourceRepo) {
         let temp = tempfile::tempdir().expect("tempdir");
-        let init = Command::new("git")
-            .arg("init")
-            .arg("--initial-branch=main")
-            .current_dir(temp.path())
+        let source = init_source(temp.path(), &BTreeMap::new());
+        (temp, source)
+    }
+
+    fn init_source(path: &std::path::Path, env: &BTreeMap<OsString, OsString>) -> SourceRepo {
+        let mut command = Command::new("git");
+        outpost_core::isolate_git_test_command(&mut command);
+        let init = command
+            .args(["init", "--initial-branch=main"])
+            .current_dir(path)
             .output()
             .expect("git init");
         assert!(
@@ -1137,8 +1120,7 @@ mod tests {
             "git init failed:\n{}",
             String::from_utf8_lossy(&init.stderr)
         );
-        let source = SourceRepo::at(temp.path()).expect("source repo");
-        (temp, source)
+        SourceRepo::at_with(path, env).expect("source repo")
     }
 
     #[cfg(unix)]
