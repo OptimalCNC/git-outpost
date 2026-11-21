@@ -72,6 +72,13 @@ pub enum OutpostError {
         actual: PathBuf,
     },
 
+    #[error("remote {remote} reads from {} and would push to a different local repository at {}", .fetch.display(), .push.display())]
+    UpstreamRepositoryMismatch {
+        remote: String,
+        fetch: PathBuf,
+        push: PathBuf,
+    },
+
     #[error("branch {branch} has unpushed commits in {}; {hint}", .repo.display())]
     UnpushedCommits {
         repo: PathBuf,
@@ -187,6 +194,7 @@ impl OutpostError {
             | BadMetadata { .. }
             | BadConfig { .. }
             | SourceRemoteMismatch { .. }
+            | UpstreamRepositoryMismatch { .. }
             | InvalidConfigValue { .. }
             | OutpostIdPrefixNotFound(_)
             | OutpostIdPrefixAmbiguous(_)
@@ -337,6 +345,14 @@ mod tests {
                     actual: path("/old-source"),
                 },
                 "source remote local points to /old-source, expected the recorded source /source",
+            ),
+            (
+                OutpostError::UpstreamRepositoryMismatch {
+                    remote: "origin".to_owned(),
+                    fetch: path("/upstream"),
+                    push: path("/old-upstream"),
+                },
+                "remote origin reads from /upstream and would push to a different local repository at /old-upstream",
             ),
             (
                 OutpostError::UnpushedCommits {
@@ -541,6 +557,14 @@ mod tests {
                     remote: "local".to_owned(),
                     expected: path("/source"),
                     actual: path("/old-source"),
+                },
+                6,
+            ),
+            (
+                OutpostError::UpstreamRepositoryMismatch {
+                    remote: "origin".to_owned(),
+                    fetch: path("/upstream"),
+                    push: path("/old-upstream"),
                 },
                 6,
             ),

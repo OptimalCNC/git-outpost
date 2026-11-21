@@ -59,7 +59,7 @@ For source-only Git pushes, use an explicitly verified source remote and branch 
 
 `pull` and `source pull` use the source repository's remote `origin`. They can fast-forward files in whichever source worktree has the branch checked out, so include that worktree update in the intended scope. `gop pull` then integrates the full source branch, including source-only commits. `merge` and `rebase` do not refresh the source branch from upstream. These commands rely on Git rather than autostash.
 
-`gop push` requires the matching source branch and allows a missing `origin/B`. Successful execution confirms that both fast-forward pushes completed, that `origin/B` matches the published source commit, and that the source branch tracks `origin/B`. A dirty outpost does not block publication of committed history; a dirty checked-out source branch can make the first push fail.
+`gop push` requires the matching source branch and allows a missing `origin/B`. If the source reads from a local `origin`, a push URL pointing to another local repository stops publication before either push. Successful execution confirms that both fast-forward pushes completed, that `origin/B` matches the published source commit, and that the source branch tracks `origin/B`. A dirty outpost does not block publication of committed history; a dirty checked-out source branch can make the first push fail.
 
 A later step can fail after an earlier repository or checked-out worktree changed. After a failed synchronization, inspect affected worktrees for conflict or rebase state.
 

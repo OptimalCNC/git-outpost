@@ -1419,7 +1419,9 @@ Step-by-step:
    gets this from `gop add -b`; if a user made a branch only in C,
    `gop push` returns `AmbiguousBranchCreation { branch }` rather than
    creating a source branch silently.
-4. Fetch B's matching branch into C's source-remote tracking ref and refuse
+4. If B reads `origin` from a local repository, check that each effective
+   local write destination resolves to the same common Git directory.
+   Fetch B's matching branch into C's source-remote tracking ref and refuse
    non-fast-forward C→B publication as `Divergence`. This rejects both
    true divergence and a pure C-behind-B branch before any push side effect.
    If `origin/<branch>` already exists, preflight it as an ancestor of C

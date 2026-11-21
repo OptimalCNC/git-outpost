@@ -11,7 +11,7 @@ use crate::{BranchName, GitInvoker, OutpostError, OutpostResult, RefName, Remote
 
 mod routes;
 mod source;
-pub(super) use routes::mismatched_source_route;
+pub(super) use routes::{mismatched_source_route, push_urls};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StatusReport {

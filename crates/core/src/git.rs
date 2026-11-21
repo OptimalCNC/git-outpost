@@ -13,7 +13,7 @@ use std::os::unix::process::ExitStatusExt;
 #[derive(Clone)]
 pub struct GitInvoker {
     cwd: PathBuf,
-    env: BTreeMap<OsString, OsString>,
+    env: BTreeMap<OsString, Option<OsString>>,
     #[cfg(any(test, feature = "test-helpers"))]
     argv_log: std::sync::Arc<std::sync::Mutex<Vec<Vec<OsString>>>>,
 }
@@ -29,7 +29,12 @@ impl GitInvoker {
     }
 
     pub fn with_env(mut self, key: impl Into<OsString>, val: impl Into<OsString>) -> Self {
-        self.env.insert(key.into(), val.into());
+        self.env.insert(key.into(), Some(val.into()));
+        self
+    }
+
+    pub(crate) fn without_env(mut self, key: &str) -> Self {
+        self.env.insert(key.into(), None);
         self
     }
 
@@ -135,9 +140,19 @@ impl GitInvoker {
         let mut command = Command::new("git");
         #[cfg(any(test, feature = "test-helpers"))]
         isolate_git_test_command(&mut command);
+        command.envs(
+            self.env
+                .iter()
+                .filter_map(|(key, value)| value.as_ref().map(|value| (key, value))),
+        );
+        // Remove overrides last because Windows environment names ignore case.
+        for (key, value) in &self.env {
+            if value.is_none() {
+                command.env_remove(key);
+            }
+        }
         command
             .current_dir(crate::path::git_path(&self.cwd))
-            .envs(&self.env)
             // Keep argv as separate OS strings; no shell parses user input here.
             .args(argv)
             .output()

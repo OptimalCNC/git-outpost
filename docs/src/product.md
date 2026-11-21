@@ -491,6 +491,11 @@ recorded in its metadata. If an old or additional write URL points elsewhere,
 push stops. Before publishing upstream it verifies that the source branch
 received the intended outpost commit.
 
+When the source's `origin` reads from a local Git repository, every local push
+URL must resolve to that same repository. Outpost checks before either push.
+Different paths to the same repository are valid, including its linked
+worktrees. Network remotes can still use HTTPS for reads and SSH for writes.
+
 Use ordinary `git push` from the outpost when the branch should stop at the
 source repository and not be published upstream.
 

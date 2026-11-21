@@ -340,9 +340,9 @@ fn push_refuses_an_outpost_write_url_pointing_away_from_its_source() {
 }
 
 #[test]
-fn push_reports_divergence_when_the_write_url_updates_a_different_repository() {
+fn push_keeps_the_source_and_old_clone_when_origin_has_a_stale_second_write_url() {
     let fixture = AbcFixture::new();
-    let outpost_path = fixture.add_outpost("C").expect("add C");
+    let checkout = fixture.add_outpost("C").expect("add C");
     let old_origin = fixture.root.join("old-origin.git");
     fixture
         .invoker(&fixture.root)
@@ -353,42 +353,209 @@ fn push_reports_divergence_when_the_write_url_updates_a_different_repository() {
             old_origin.as_os_str(),
         ])
         .expect("clone the original upstream");
-    fixture
-        .invoker(&fixture.source)
-        .run_check([
-            OsStr::new("config"),
-            OsStr::new("remote.origin.pushurl"),
-            old_origin.as_os_str(),
-        ])
-        .expect("point origin's write URL at the old repository");
-    let origin_before = fixture
-        .rev_parse(&fixture.upstream, "refs/heads/main")
-        .expect("advertised origin before push");
-    let outpost_oid = fixture
-        .commit_in_outpost(&outpost_path, "change for review")
+    let original = fixture
+        .rev_parse(&fixture.source, "refs/heads/main")
+        .expect("original branch tip");
+    let intended = fixture
+        .commit_in_outpost(&checkout, "work for review")
         .expect("outpost commit");
-    let outpost = outpost(&fixture, &outpost_path);
+    fixture
+        .invoker(&checkout)
+        .run_check([
+            OsStr::new("push"),
+            fixture.upstream.as_os_str(),
+            OsStr::new("HEAD:refs/heads/main"),
+        ])
+        .expect("publish the intended commit directly to the advertised origin");
+    for destination in [&fixture.upstream, &old_origin] {
+        fixture
+            .invoker(&fixture.source)
+            .run_check([
+                OsStr::new("config"),
+                OsStr::new("--add"),
+                OsStr::new("remote.origin.pushurl"),
+                destination.as_os_str(),
+            ])
+            .expect("set origin's write destinations");
+    }
 
-    let err = expect_error(
+    let mut env = fixture.git_env.clone();
+    env.insert("GIT_COMMON_DIR".into(), ".git".into());
+    let outpost = Outpost::at_with(&checkout, &env).expect("open outpost");
+    let error = expect_error(
         run(&outpost, PushOptions, &mut CapturingReporter::default()),
-        "a push to the old repository cannot confirm publication on origin",
+        "a stale write destination must be refused before either push",
     );
 
-    assert!(matches!(err, OutpostError::Divergence { branch } if branch == "main"));
-    for repo in [&outpost_path, &fixture.source, &old_origin] {
+    assert!(
+        matches!(error, OutpostError::UpstreamRepositoryMismatch { remote, fetch, push }
+        if remote == "origin" && fetch == fs::canonicalize(&fixture.upstream).unwrap()
+        && push == fs::canonicalize(&old_origin).unwrap())
+    );
+    for repo in [&fixture.source, &old_origin] {
         assert_eq!(
-            fixture.rev_parse(repo, "refs/heads/main").expect("main"),
-            outpost_oid,
-            "main in {}",
-            repo.display()
+            fixture
+                .rev_parse(repo, "refs/heads/main")
+                .expect("preserved original branch"),
+            original
+        );
+    }
+    for repo in [&checkout, &fixture.upstream] {
+        assert_eq!(
+            fixture
+                .rev_parse(repo, "refs/heads/main")
+                .expect("preserved intended branch"),
+            intended
+        );
+    }
+}
+
+#[test]
+fn push_preserves_the_source_when_two_origin_addresses_are_pasted_into_one_url() {
+    let fixture = AbcFixture::new();
+    let checkout = fixture.add_outpost("C").expect("add C");
+    let original = fixture
+        .rev_parse(&fixture.source, "refs/heads/main")
+        .expect("original source branch");
+    let intended = fixture
+        .commit_in_outpost(&checkout, "unpublished work")
+        .expect("outpost commit");
+    let pasted = format!(
+        "{}\ngit@review.example:team/repo.git",
+        dunce::simplified(&fixture.upstream).display()
+    );
+    fixture
+        .invoker(&fixture.source)
+        .run_check(["config", "remote.origin.pushurl", &pasted])
+        .expect("store the pasted write address");
+
+    let error = expect_error(
+        run(
+            &outpost(&fixture, &checkout),
+            PushOptions,
+            &mut CapturingReporter::default(),
+        ),
+        "refuse ambiguous write addresses before publishing",
+    );
+
+    assert!(
+        matches!(error, OutpostError::IoAt { source, .. } if source.kind() == std::io::ErrorKind::InvalidData)
+    );
+    for repo in [&fixture.source, &fixture.upstream] {
+        assert_eq!(
+            fixture.rev_parse(repo, "refs/heads/main").expect("branch"),
+            original
         );
     }
     assert_eq!(
         fixture
-            .rev_parse(&fixture.upstream, "refs/heads/main")
-            .expect("advertised origin after push"),
-        origin_before
+            .rev_parse(&checkout, "HEAD")
+            .expect("outpost branch"),
+        intended
     );
+}
+
+#[test]
+fn push_preserves_unpublished_work_when_the_local_origin_write_repository_is_missing() {
+    let fixture = AbcFixture::new();
+    let origin_tip = fixture
+        .rev_parse(&fixture.upstream, "refs/heads/main")
+        .expect("published branch");
+    let source_tip = fixture
+        .commit_in_source("unpublished source commit")
+        .expect("source commit");
+    let checkout = fixture.add_outpost("C").expect("add C");
+    let outpost_tip = fixture
+        .commit_in_outpost(&checkout, "unpublished outpost commit")
+        .expect("outpost commit");
+    fixture
+        .invoker(&fixture.source)
+        .run_check(["remote", "set-url", "--push", "origin", "~/archive.git"])
+        .expect("configure the old archive address");
+    let home = dunce::simplified(&fixture.root);
+    let mut env = fixture.git_env.clone();
+    env.insert("HOME".into(), home.as_os_str().to_owned());
+    let outpost = Outpost::at_with(&checkout, &env).expect("open outpost");
+
+    let error = expect_error(
+        run(&outpost, PushOptions, &mut CapturingReporter::default()),
+        "refuse the missing archive before publishing any commits",
+    );
+
+    let OutpostError::IoAt { path, source } = error else {
+        panic!("expected a local repository diagnostic, got {error:?}");
+    };
+    assert_eq!(path, home.join("archive.git"));
+    assert_eq!(source.kind(), std::io::ErrorKind::InvalidData);
+    for (repo, expected) in [
+        (&checkout, outpost_tip),
+        (&fixture.source, source_tip),
+        (&fixture.upstream, origin_tip),
+    ] {
+        assert_eq!(
+            fixture.rev_parse(repo, "refs/heads/main").expect("branch"),
+            expected
+        );
+    }
+}
+
+#[test]
+fn push_accepts_a_relative_origin_and_a_file_url_to_its_linked_worktree() {
+    let fixture = AbcFixture::new();
+    fs::create_dir(fixture.root.join("outposts")).expect("separate outpost directory");
+    let checkout = fixture
+        .add_outpost("outposts/C")
+        .expect("add nested outpost");
+    let linked = fixture.root.join("origin checkout");
+    fixture
+        .invoker(&fixture.upstream)
+        .run_check([
+            OsStr::new("worktree"),
+            OsStr::new("add"),
+            OsStr::new("--detach"),
+            linked.as_os_str(),
+        ])
+        .expect("create a detached worktree of origin");
+    let source = fixture.invoker(&fixture.source);
+    source
+        .run_check(["remote", "set-url", "origin", "../A"])
+        .expect("relative origin without the .git suffix");
+    let write_path = dunce::simplified(&linked)
+        .to_str()
+        .expect("fixture path")
+        .replace('\\', "/")
+        .replace('%', "%25")
+        .replace(' ', "%20");
+    source
+        .run_check([
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            &format!("file://{write_path}"),
+        ])
+        .expect("write through the linked checkout");
+    let intended = fixture
+        .commit_in_outpost(&checkout, "publish via the alternate route")
+        .expect("outpost commit");
+
+    let report = run(
+        &outpost(&fixture, &checkout),
+        PushOptions,
+        &mut CapturingReporter::default(),
+    )
+    .expect("same origin repository");
+
+    assert_pushed_commits(&report.outpost_to_source, 1);
+    assert_pushed_commits(&report.source_to_origin, 1);
+    for repo in [&fixture.source, &fixture.upstream, &linked] {
+        assert_eq!(
+            fixture
+                .rev_parse(repo, "refs/heads/main")
+                .expect("published branch"),
+            intended
+        );
+    }
 }
 
 #[test]

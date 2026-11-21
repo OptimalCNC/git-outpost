@@ -74,6 +74,13 @@ pub(super) fn probe_urls(
     }
 }
 
+pub(in crate::ops) fn push_urls(
+    git: &GitInvoker,
+    remote: &RemoteName,
+) -> OutpostResult<RemoteUrlList> {
+    remote_urls(git, remote, RouteDirection::Push)
+}
+
 fn remote_urls(
     git: &GitInvoker,
     remote: &RemoteName,
@@ -87,5 +94,26 @@ fn remote_urls(
             git.run_capture_lines(["remote", "get-url", "--push", "--all", remote.as_str()])
         }
     }?;
+    // get-url separates addresses with LF, which may also occur inside a config value.
+    // Only a multiline result needs this check. Git applies pushurl before the url fallback.
+    if output.len() > 1 {
+        let push_key = format!("remote.{}.pushurl", remote.as_str());
+        let key = if matches!(direction, RouteDirection::Push)
+            && git.run_status(["config", "--get-all", &push_key])?
+        {
+            push_key
+        } else {
+            format!("remote.{}.url", remote.as_str())
+        };
+        if git.run_status(["config", "--get-all", &key, "\n"])? {
+            return Err(OutpostError::IoAt {
+                path: git.cwd().to_path_buf(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("{key} contains an address with an embedded newline"),
+                ),
+            });
+        }
+    }
     RemoteUrlList::from_output(git, output)
 }
