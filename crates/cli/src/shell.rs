@@ -8,8 +8,8 @@ pub use install::{
     InstallOptions, ShellInstallReport, default_rc_file, default_script_file, install, uninstall,
 };
 
-const BASH_ZSH_INIT_SCRIPT: &str = r#"# >>> git-outpost shell integration >>>
-# Git Outpost shell integration for Bash and Zsh.
+const INTEGRATION_START: &str = "# >>> git-outpost shell integration >>>\n";
+const BASH_ZSH_INIT_SCRIPT: &str = r#"# Git Outpost shell integration for Bash and Zsh.
 # Evaluate with:
 #   eval "$(gop shell init bash)"
 #   eval "$(gop shell init zsh)"
@@ -69,7 +69,8 @@ fn completion_loader(shell: Option<ShellKind>) -> &'static str {
 }
 
 pub fn init_script(shell: Option<ShellKind>) -> String {
-    let mut script = String::from(BASH_ZSH_INIT_SCRIPT);
+    let mut script = String::from(INTEGRATION_START);
+    script.push_str(BASH_ZSH_INIT_SCRIPT);
     script.push_str(completion_loader(shell));
     script.push_str(INTEGRATION_END);
     script

@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use outpost_core::{OutpostError, OutpostResult};
@@ -107,41 +107,42 @@ enum BlockRange {
 }
 
 fn managed_block_range(path: &Path, contents: &str) -> OutpostResult<BlockRange> {
-    let starts: Vec<_> = contents
-        .match_indices(INSTALL_START)
-        .map(|(idx, _)| idx)
-        .collect();
-    let ends: Vec<_> = contents
-        .match_indices(INSTALL_END)
-        .map(|(idx, _)| idx)
-        .collect();
+    let mut start = None;
+    let mut end = None;
+    let mut offset = 0;
+    for line in contents.split_inclusive('\n') {
+        let text = line
+            .strip_suffix("\r\n")
+            .or_else(|| line.strip_suffix('\n'))
+            .unwrap_or(line);
+        let duplicate = match text {
+            INSTALL_START => start.replace(offset),
+            INSTALL_END => end.replace(offset + line.len()),
+            _ => None,
+        };
+        if duplicate.is_some() {
+            return Err(invalid_marker(
+                path,
+                "multiple git-outpost shell install blocks found",
+            ));
+        }
+        offset += line.len();
+    }
 
-    match (starts.as_slice(), ends.as_slice()) {
-        ([], []) => Ok(BlockRange::Absent),
-        ([_], []) => Err(invalid_marker(
+    match (start, end) {
+        (None, None) => Ok(BlockRange::Absent),
+        (Some(_), None) => Err(invalid_marker(
             path,
             "missing git-outpost shell install end marker",
         )),
-        ([], [_]) => Err(invalid_marker(
+        (None, Some(_)) => Err(invalid_marker(
             path,
             "missing git-outpost shell install start marker",
         )),
-        ([start], [end]) if start < end => {
-            let mut end = end + INSTALL_END.len();
-            if contents[end..].starts_with("\r\n") {
-                end += 2;
-            } else if contents[end..].starts_with('\n') {
-                end += 1;
-            }
-            Ok(BlockRange::Present { start: *start, end })
-        }
-        ([_], [_]) => Err(invalid_marker(
+        (Some(start), Some(end)) if start < end => Ok(BlockRange::Present { start, end }),
+        (Some(_), Some(_)) => Err(invalid_marker(
             path,
             "git-outpost shell install end marker appears before start marker",
-        )),
-        _ => Err(invalid_marker(
-            path,
-            "multiple git-outpost shell install blocks found",
         )),
     }
 }
@@ -188,10 +189,10 @@ fn uninstall_contents(path: &Path, contents: &str) -> OutpostResult<(String, boo
     }
 }
 
-fn read_optional(path: &Path) -> OutpostResult<String> {
+fn read_optional(path: &Path) -> OutpostResult<Option<String>> {
     match fs::read_to_string(path) {
-        Ok(contents) => Ok(contents),
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Ok(contents) => Ok(Some(contents)),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(source) => Err(OutpostError::IoAt {
             path: path.to_path_buf(),
             source,
@@ -199,7 +200,7 @@ fn read_optional(path: &Path) -> OutpostResult<String> {
     }
 }
 
-fn write_text(path: &Path, contents: &str) -> OutpostResult<()> {
+fn write_text(path: &Path, contents: &str, replace: bool) -> OutpostResult<fs::File> {
     let parent = path.parent().ok_or_else(|| OutpostError::IoAt {
         path: path.to_path_buf(),
         source: std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no parent"),
@@ -218,11 +219,15 @@ fn write_text(path: &Path, contents: &str) -> OutpostResult<()> {
             path: path.to_path_buf(),
             source,
         })?;
-    temp.persist(path).map_err(|source| OutpostError::IoAt {
+    let file = if replace {
+        temp.persist(path)
+    } else {
+        temp.persist_noclobber(path)
+    };
+    file.map_err(|source| OutpostError::IoAt {
         path: path.to_path_buf(),
         source: source.error,
-    })?;
-    Ok(())
+    })
 }
 
 fn remove_file_if_exists(path: &Path) -> OutpostResult<bool> {
@@ -236,14 +241,128 @@ fn remove_file_if_exists(path: &Path) -> OutpostResult<bool> {
     }
 }
 
+fn existing_managed_script(path: &Path) -> OutpostResult<bool> {
+    fn inspect(path: &Path) -> std::io::Result<bool> {
+        let mut file = match fs::File::open(path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        let mut first = [0; super::INTEGRATION_START.len()];
+        let mut last = [0; super::INTEGRATION_END.len()];
+        if file.metadata()?.len() >= (first.len() + last.len()) as u64 {
+            file.read_exact(&mut first)?;
+            file.seek(SeekFrom::End(-(last.len() as i64)))?;
+            file.read_exact(&mut last)?;
+            if first == super::INTEGRATION_START.as_bytes()
+                && last == super::INTEGRATION_END.as_bytes()
+            {
+                return Ok(true);
+            }
+        }
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "existing script is not a Git Outpost generated integration file",
+        ))
+    }
+    inspect(path).map_err(|source| OutpostError::IoAt {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn destination_path(path: &Path) -> std::io::Result<PathBuf> {
+    let absolute = std::path::absolute(path)?;
+    let mut ancestor = absolute.as_path();
+    let mut missing = Vec::new();
+    loop {
+        match fs::symlink_metadata(ancestor) {
+            Ok(metadata) => {
+                if missing.is_empty() && !metadata.is_file() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "shell setup requires a regular file and cannot replace a symlink or directory",
+                    ));
+                }
+                let mut resolved = fs::canonicalize(ancestor)?;
+                for name in missing.into_iter().rev() {
+                    resolved.push(name);
+                }
+                return Ok(resolved);
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                let Some((name, parent)) = ancestor.file_name().zip(ancestor.parent()) else {
+                    return Err(err);
+                };
+                missing.push(name);
+                ancestor = parent;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+}
+
+fn overlapping_files(options: &InstallOptions) -> OutpostError {
+    OutpostError::IoAt {
+        path: options.script_file.clone(),
+        source: std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "generated script must be separate from startup file {}",
+                options.rc_file.display()
+            ),
+        ),
+    }
+}
+
+fn check_destinations(options: &InstallOptions) -> OutpostResult<()> {
+    let resolve = |path: &Path| {
+        destination_path(path).map_err(|source| OutpostError::IoAt {
+            path: path.to_path_buf(),
+            source,
+        })
+    };
+    let rc = resolve(&options.rc_file)?;
+    let script = resolve(&options.script_file)?;
+    let same_file = rc.is_file()
+        && script.is_file()
+        && same_file::is_same_file(&rc, &script).map_err(|source| OutpostError::IoAt {
+            path: options.script_file.clone(),
+            source,
+        })?;
+    if same_file || rc.starts_with(&script) || script.starts_with(&rc) {
+        return Err(overlapping_files(options));
+    }
+    Ok(())
+}
+
 pub fn install(options: InstallOptions) -> OutpostResult<ShellInstallReport> {
+    check_destinations(&options)?;
     let rc_before = read_optional(&options.rc_file)?;
     let block = managed_source_block(options.shell, &options.script_file);
-    let rc_after = install_contents(&options.rc_file, &rc_before, &block)?;
+    let rc_after = install_contents(
+        &options.rc_file,
+        rc_before.as_deref().unwrap_or_default(),
+        &block,
+    )?;
     let script = super::init_script(Some(options.shell));
 
-    write_text(&options.script_file, &script)?;
-    write_text(&options.rc_file, &rc_after)?;
+    let script_existed = existing_managed_script(&options.script_file)?;
+    let written = write_text(&options.script_file, &script, script_existed)?;
+    if let Err(error) = write_text(&options.rc_file, &rc_after, rc_before.is_some()) {
+        // Two originally absent names can alias on a case-insensitive filesystem.
+        if rc_before.is_none() && !script_existed {
+            let identity = same_file::Handle::from_file(written).ok();
+            if identity.is_some()
+                && same_file::Handle::from_path(&options.rc_file).ok() == identity
+                && same_file::Handle::from_path(&options.script_file).ok() == identity
+            {
+                remove_file_if_exists(&options.script_file)?;
+                return Err(overlapping_files(&options));
+            }
+        }
+        return Err(error);
+    }
 
     Ok(ShellInstallReport {
         shell: options.shell,
@@ -254,12 +373,15 @@ pub fn install(options: InstallOptions) -> OutpostResult<ShellInstallReport> {
 }
 
 pub fn uninstall(options: InstallOptions) -> OutpostResult<ShellInstallReport> {
+    check_destinations(&options)?;
     let rc_before = read_optional(&options.rc_file)?;
-    let (rc_after, rc_changed) = uninstall_contents(&options.rc_file, &rc_before)?;
+    let (rc_after, rc_changed) =
+        uninstall_contents(&options.rc_file, rc_before.as_deref().unwrap_or_default())?;
+    let script_exists = existing_managed_script(&options.script_file)?;
     if rc_changed {
-        write_text(&options.rc_file, &rc_after)?;
+        write_text(&options.rc_file, &rc_after, true)?;
     }
-    let script_removed = remove_file_if_exists(&options.script_file)?;
+    let script_removed = script_exists && remove_file_if_exists(&options.script_file)?;
 
     Ok(ShellInstallReport {
         shell: options.shell,
@@ -335,14 +457,11 @@ mod operation_tests {
     fn uninstall_removes_managed_block_and_script_only() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let options = paths(tmp.path());
-        std::fs::write(
-            &options.rc_file,
-            format!(
-                "# manual init remains\n{}\n# after\n",
-                super::super::init_script(Some(ShellKind::Bash))
-            ),
-        )
-        .expect("write rc");
+        let original = format!(
+            "alias show_gop_setup=\"sed -n '/{INSTALL_START}/,/{INSTALL_END}/p' ~/.bashrc\"\n{}\n# after\n",
+            super::super::init_script(Some(ShellKind::Bash))
+        );
+        fs::write(&options.rc_file, &original).expect("write rc");
         install(options.clone()).expect("install");
 
         let report = uninstall(options.clone()).expect("uninstall");
@@ -350,13 +469,92 @@ mod operation_tests {
 
         assert!(report.changed);
         assert!(!options.script_file.exists());
-        assert!(!rc.contains(INSTALL_START), "{rc}");
-        assert!(rc.contains("# manual init remains"), "{rc}");
         assert!(
-            rc.contains("# >>> git-outpost shell integration >>>"),
+            rc.strip_prefix(&original)
+                .is_some_and(|suffix| suffix.trim().is_empty()),
             "{rc}"
         );
-        assert!(rc.contains("# after"), "{rc}");
+    }
+
+    #[test]
+    fn setup_preserves_a_user_script_at_the_generated_script_path() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let options = paths(tmp.path());
+        install(options.clone()).expect("install integration");
+        let rc = fs::read(&options.rc_file).expect("installed startup file");
+        let user_script = format!(
+            "{}\n# my shell settings\n",
+            super::super::init_script(Some(options.shell))
+        );
+        fs::write(&options.script_file, &user_script).expect("user adds shell settings");
+
+        for operation in [install, uninstall] {
+            let error = operation(options.clone()).expect_err("preserve a user-edited script");
+            assert!(matches!(error, OutpostError::IoAt { path, source }
+                if path == options.script_file && source.kind() == std::io::ErrorKind::InvalidInput));
+            assert_eq!(fs::read(&options.rc_file).expect("startup file"), rc);
+            assert_eq!(
+                fs::read_to_string(&options.script_file).expect("user script"),
+                user_script
+            );
+        }
+    }
+
+    #[test]
+    fn overlapping_destinations_leave_the_startup_file_alone() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mut options = paths(tmp.path());
+        let original = "export EDITOR=vim\n";
+        fs::write(&options.rc_file, original).expect("write rc");
+        fs::create_dir(tmp.path().join("config")).expect("create config directory");
+        let linked = tmp.path().join("linked");
+        fs::hard_link(&options.rc_file, &linked).expect("link to startup file");
+
+        for alias in [tmp.path().join("config/../.bashrc"), linked] {
+            options.script_file = alias.clone();
+            for operation in [install, uninstall] {
+                let err = operation(options.clone()).expect_err("overlap must be refused");
+                assert!(
+                    err.to_string().contains("separate from startup file"),
+                    "{err}"
+                );
+                assert_eq!(
+                    fs::read_to_string(&options.rc_file).expect("startup file"),
+                    original
+                );
+                assert_eq!(fs::read_to_string(&alias).expect("aliased file"), original);
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_startup_file_is_preserved_before_changing_the_script() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let options = paths(tmp.path());
+        let target = tmp.path().join("dotfiles-bashrc");
+        let original = "export EDITOR=vim\n";
+        fs::write(&target, original).expect("write backing dotfile");
+        std::os::unix::fs::symlink(&target, &options.rc_file).expect("link startup file");
+        fs::create_dir(options.script_file.parent().unwrap()).expect("script directory");
+        fs::write(&options.script_file, "previous script\n").expect("write previous script");
+
+        for operation in [install, uninstall] {
+            let err = operation(options.clone()).expect_err("symlink must be refused");
+            assert!(err.to_string().contains("regular file"), "{err}");
+            assert_eq!(
+                fs::read_link(&options.rc_file).expect("startup link"),
+                target
+            );
+            assert_eq!(
+                fs::read_to_string(&target).expect("backing dotfile"),
+                original
+            );
+            assert_eq!(
+                fs::read_to_string(&options.script_file).expect("previous script"),
+                "previous script\n"
+            );
+        }
     }
 
     #[test]
