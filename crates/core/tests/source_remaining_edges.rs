@@ -114,6 +114,32 @@ fn remote_url_propagates_a_missing_remote_error() {
 
 #[cfg(unix)]
 #[test]
+fn remote_url_refuses_to_replace_bytes_in_a_git_address() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let directory = tempfile::tempdir().expect("temporary source");
+    let git = outpost_core::GitInvoker::at(directory.path());
+    git.run_check(["init", "--quiet"])
+        .expect("initialize source");
+    git.run_check([
+        OsStr::new("remote"),
+        OsStr::new("add"),
+        OsStr::new("archive"),
+        OsStr::from_bytes(b"git@example.invalid:archive/caf\xe9.git"),
+    ])
+    .expect("configure a legacy-encoded remote path");
+    let source = SourceRepo::at(directory.path()).expect("open source");
+
+    let err = source
+        .remote_url(&remote("archive"))
+        .expect_err("the exact address cannot be represented as UTF-8");
+    assert!(matches!(err, OutpostError::IoAt { path, source: error }
+        if path == source.work_tree() && error.kind() == std::io::ErrorKind::InvalidData));
+}
+
+#[cfg(unix)]
+#[test]
 fn resolve_destination_accepts_a_non_utf8_relative_path_as_relative() {
     use std::os::unix::ffi::OsStringExt;
 
