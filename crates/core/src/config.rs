@@ -157,7 +157,7 @@ impl<'src> ConfigStore<'src> {
     }
 
     fn save(&self, config: &SourceConfig) -> OutpostResult<()> {
-        write_file(&self.storage_path(), config)
+        write_file(&self.source.git_dir().join("outpost"), config)
     }
 }
 
@@ -196,22 +196,16 @@ pub(crate) fn read_file(path: &Path) -> OutpostResult<Option<SourceConfig>> {
     Ok(Some(SourceConfig { outpost_container }))
 }
 
-pub(crate) fn write_file(path: &Path, config: &SourceConfig) -> OutpostResult<()> {
-    let file = ConfigFile::from_config(path, config)?;
-    let parent = path.parent().ok_or_else(|| OutpostError::IoAt {
-        path: path.to_path_buf(),
-        source: std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "config path has no parent",
-        ),
-    })?;
-    fs::create_dir_all(parent).map_err(|source| OutpostError::IoAt {
-        path: parent.to_path_buf(),
+fn write_file(state_dir: &Path, config: &SourceConfig) -> OutpostResult<()> {
+    let path = state_dir.join("config.json");
+    let file = ConfigFile::from_config(&path, config)?;
+    fs::create_dir_all(state_dir).map_err(|source| OutpostError::IoAt {
+        path: state_dir.to_path_buf(),
         source,
     })?;
     let mut temp =
-        tempfile::NamedTempFile::new_in(parent).map_err(|source| OutpostError::IoAt {
-            path: parent.to_path_buf(),
+        tempfile::NamedTempFile::new_in(state_dir).map_err(|source| OutpostError::IoAt {
+            path: state_dir.to_path_buf(),
             source,
         })?;
     serde_json::to_writer_pretty(temp.as_file_mut(), &file).map_err(|source| {
@@ -225,7 +219,7 @@ pub(crate) fn write_file(path: &Path, config: &SourceConfig) -> OutpostResult<()
         path: path.to_path_buf(),
         source,
     })?;
-    temp.persist(path).map_err(|source| OutpostError::IoAt {
+    temp.persist(&path).map_err(|source| OutpostError::IoAt {
         path: path.to_path_buf(),
         source: source.error,
     })?;

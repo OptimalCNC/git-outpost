@@ -11,7 +11,7 @@ const REGISTRY_VERSION: u32 = 1;
 
 #[derive(Debug, Clone)]
 pub struct Registry {
-    path: PathBuf,
+    state_dir: PathBuf,
     version: u32,
     entries: Vec<RegistryEntry>,
 }
@@ -35,20 +35,21 @@ pub struct RegistryMut {
 
 impl Registry {
     pub fn load(source: &SourceRepo) -> OutpostResult<Self> {
-        let path = source.registry_path();
-        Ok(Self::read_file(&path)?.unwrap_or_else(|| Self::empty(path)))
+        let state_dir = source.git_dir().join("outpost");
+        Ok(Self::read_file(&state_dir)?.unwrap_or_else(|| Self::empty(state_dir)))
     }
 
-    pub(crate) fn empty(path: PathBuf) -> Self {
+    fn empty(state_dir: PathBuf) -> Self {
         Self {
-            path,
+            state_dir,
             version: REGISTRY_VERSION,
             entries: Vec::new(),
         }
     }
 
-    pub(crate) fn read_file(path: &Path) -> OutpostResult<Option<Self>> {
-        let contents = match fs::read_to_string(path) {
+    fn read_file(state_dir: &Path) -> OutpostResult<Option<Self>> {
+        let path = state_dir.join("registry.json");
+        let contents = match fs::read_to_string(&path) {
             Ok(contents) => contents,
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(None);
@@ -77,11 +78,11 @@ impl Registry {
         let entries = file
             .outposts
             .into_iter()
-            .map(|entry| entry.try_into_entry(path))
+            .map(|entry| entry.try_into_entry(&path))
             .collect::<OutpostResult<Vec<_>>>()?;
 
         Ok(Some(Self {
-            path: path.to_path_buf(),
+            state_dir: state_dir.to_path_buf(),
             version: REGISTRY_VERSION,
             entries,
         }))
@@ -92,26 +93,17 @@ impl Registry {
     }
 
     pub fn save(&self) -> OutpostResult<()> {
-        Self::write_file(&self.path, self)
-    }
-
-    pub(crate) fn write_file(path: &Path, registry: &Self) -> OutpostResult<()> {
-        let parent = path.parent().ok_or_else(|| OutpostError::IoAt {
-            path: path.to_path_buf(),
-            source: std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "registry path has no parent",
-            ),
-        })?;
-        fs::create_dir_all(parent).map_err(|source| OutpostError::IoAt {
-            path: parent.to_path_buf(),
+        let state_dir = &self.state_dir;
+        let path = state_dir.join("registry.json");
+        fs::create_dir_all(state_dir).map_err(|source| OutpostError::IoAt {
+            path: state_dir.to_path_buf(),
             source,
         })?;
 
-        let file = RegistryFile::from_registry(registry);
+        let file = RegistryFile::from_registry(self);
         let mut temp =
-            tempfile::NamedTempFile::new_in(parent).map_err(|source| OutpostError::IoAt {
-                path: parent.to_path_buf(),
+            tempfile::NamedTempFile::new_in(state_dir).map_err(|source| OutpostError::IoAt {
+                path: state_dir.to_path_buf(),
                 source,
             })?;
         serde_json::to_writer_pretty(temp.as_file_mut(), &file).map_err(|source| {
@@ -124,7 +116,7 @@ impl Registry {
             path: path.to_path_buf(),
             source,
         })?;
-        temp.persist(path).map_err(|source| OutpostError::IoAt {
+        temp.persist(&path).map_err(|source| OutpostError::IoAt {
             path: path.to_path_buf(),
             source: source.error,
         })?;
@@ -248,7 +240,7 @@ impl RegistryMut {
 
     pub fn save(mut self) -> OutpostResult<()> {
         self.saved = true;
-        let result = Registry::write_file(&self.inner.path, &self.inner);
+        let result = self.inner.save();
         if result.is_ok() {
             self.dirty = false;
         }

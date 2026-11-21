@@ -69,35 +69,29 @@ pub(crate) fn read(git_dir: &Path) -> OutpostResult<MetadataState> {
 pub(crate) fn initialize(git: &GitInvoker, metadata: &Metadata) -> OutpostResult<()> {
     let git_dir_raw = git.run_capture(["rev-parse", "--git-dir"])?;
     let git_dir = resolve_git_dir(git.cwd(), &git_dir_raw)?;
-    initialize_at_path(&metadata_path(&git_dir), metadata)
+    initialize_in(&git_dir.join("outpost"), metadata)
 }
 
 pub(crate) fn metadata_path(git_dir: &Path) -> PathBuf {
     git_dir.join("outpost").join("metadata.json")
 }
 
-fn initialize_at_path(path: &Path, metadata: &Metadata) -> OutpostResult<()> {
+fn initialize_in(state_dir: &Path, metadata: &Metadata) -> OutpostResult<()> {
+    let path = state_dir.join("metadata.json");
     let source_repo = canonical_source_for_write(&metadata.source_repo)?;
     let file = MetadataFile {
         version: METADATA_VERSION,
         source_repo,
         remote_name: metadata.remote_name.as_str().to_owned(),
     };
-    let parent = path.parent().ok_or_else(|| OutpostError::IoAt {
-        path: path.to_path_buf(),
-        source: std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "metadata path has no parent",
-        ),
-    })?;
-    fs::create_dir_all(parent).map_err(|source| OutpostError::IoAt {
-        path: parent.to_path_buf(),
+    fs::create_dir_all(state_dir).map_err(|source| OutpostError::IoAt {
+        path: state_dir.to_path_buf(),
         source,
     })?;
 
     let mut temp =
-        tempfile::NamedTempFile::new_in(parent).map_err(|source| OutpostError::IoAt {
-            path: parent.to_path_buf(),
+        tempfile::NamedTempFile::new_in(state_dir).map_err(|source| OutpostError::IoAt {
+            path: state_dir.to_path_buf(),
             source,
         })?;
     serde_json::to_writer_pretty(temp.as_file_mut(), &file).map_err(|source| {
@@ -110,7 +104,7 @@ fn initialize_at_path(path: &Path, metadata: &Metadata) -> OutpostResult<()> {
         path: path.to_path_buf(),
         source,
     })?;
-    temp.persist_noclobber(path)
+    temp.persist_noclobber(&path)
         .map_err(|source| OutpostError::IoAt {
             path: path.to_path_buf(),
             source: source.error,

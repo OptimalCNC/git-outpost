@@ -663,7 +663,7 @@ canonicalize the query first.
 
 ```rust
 pub struct Registry {
-    path: PathBuf,                    // remembers its own file location
+    state_dir: PathBuf,               // source repository's Outpost storage directory
     version: u32,
     entries: Vec<RegistryEntry>,
 }
@@ -680,7 +680,7 @@ pub struct RegistryEntry {
 impl Registry {
     pub fn load(source: &SourceRepo) -> OutpostResult<Self>;     // missing file -> empty registry, not error
     pub fn entries(&self) -> &[RegistryEntry];
-    pub fn save(&self) -> OutpostResult<()>;                     // uses self.path; tempfile-in-same-dir + atomic rename
+    pub fn save(&self) -> OutpostResult<()>;                     // atomically replaces registry.json in state_dir
     fn find(&self, path: &Path) -> Option<usize>;
 }
 
