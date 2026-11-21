@@ -3,7 +3,7 @@ mod common;
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -84,13 +84,32 @@ fn remove_dirty_outpost_returns_dirty_tree_with_force_hint() {
 }
 
 #[test]
-fn remove_unpushed_outpost_returns_unpushed_commits() {
+fn remove_preserves_unpushed_work_even_when_git_rewrites_the_source_url() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add C");
-    fixture
+    let outpost_tip = fixture
         .commit_in_outpost(&outpost, "outpost-only commit")
         .expect("commit in outpost");
     let source = fixture.source_repo().expect("source repo");
+    let source_tip = fixture
+        .rev_parse(&fixture.source, "HEAD")
+        .expect("source tip");
+    let replica = fixture.root.join("old-source.git");
+    let git = fixture.invoker(&outpost);
+    git.run_check([
+        OsStr::new("clone"),
+        OsStr::new("--bare"),
+        outpost.as_os_str(),
+        replica.as_os_str(),
+    ])
+    .expect("make an old read replica containing the outpost work");
+    let rewrite = format!("url.{}.insteadOf", replica.display());
+    git.run_check([
+        OsStr::new("config"),
+        OsStr::new(&rewrite),
+        crate::canonical(&fixture.source).as_os_str(),
+    ])
+    .expect("redirect Git reads of the source to the replica");
 
     let err = expect_error(
         remove::run(
@@ -108,6 +127,91 @@ fn remove_unpushed_outpost_returns_unpushed_commits() {
     );
     assert!(outpost.exists());
     assert_eq!(single_entry(&source).path, canonical(&outpost));
+    assert_eq!(fixture.rev_parse(&outpost, "HEAD").unwrap(), outpost_tip);
+    assert_eq!(
+        fixture.rev_parse(&fixture.source, "HEAD").unwrap(),
+        source_tip
+    );
+}
+
+#[test]
+fn remove_preserves_stashed_work_in_a_clean_outpost() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add outpost");
+    let source = fixture.source_repo().expect("source repo");
+    fs::write(outpost.join("notes"), "unfinished draft").expect("write draft");
+    let git = fixture.invoker(&outpost);
+    git.run_check(["stash", "push", "--include-untracked"])
+        .expect("stash draft");
+    let stash = fixture
+        .rev_parse(&outpost, "refs/stash")
+        .expect("stash tip");
+
+    let error = remove::run(
+        &source,
+        remove::RemoveOptions {
+            selector: OutpostSelector::from_path(outpost.clone()),
+            force: false,
+        },
+    )
+    .expect_err("stashed work needs explicit force");
+
+    assert!(
+        matches!(error, OutpostError::StashedChanges { repo, hint } if repo == canonical(&outpost) && hint == "pass --force")
+    );
+    assert_eq!(single_entry(&source).path, canonical(&outpost));
+    assert_eq!(
+        fixture
+            .rev_parse(&outpost, "refs/stash")
+            .expect("preserved stash"),
+        stash
+    );
+}
+
+#[test]
+fn remove_preserves_a_side_branch_until_its_commit_is_saved_in_the_source() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add outpost");
+    let source = fixture.source_repo().expect("source repo");
+    let git = fixture.invoker(&outpost);
+    git.run_check(["switch", "-c", "scratch"])
+        .expect("start side branch");
+    let tip = fixture
+        .commit_in_outpost(&outpost, "side work")
+        .expect("side branch commit");
+    git.run_check(["push", "local", "scratch:refs/heads/temporary"])
+        .expect("temporarily publish work");
+    git.run_check(["push", "local", "--delete", "temporary"])
+        .expect("drop the source's reference");
+    git.run_check(["switch", "main"])
+        .expect("return to synchronized branch");
+    let options = || remove::RemoveOptions {
+        selector: OutpostSelector::from_path(outpost.clone()),
+        force: false,
+    };
+
+    let error =
+        remove::run(&source, options()).expect_err("unpublished side work needs explicit force");
+
+    assert!(matches!(error, OutpostError::UnpushedCommits { branch, .. } if branch == "scratch"));
+    assert_eq!(single_entry(&source).path, canonical(&outpost));
+    assert_eq!(
+        fixture
+            .rev_parse(&outpost, "refs/heads/scratch")
+            .expect("preserved side branch"),
+        tip
+    );
+    git.run_check(["push", "local", "scratch:refs/heads/saved-scratch"])
+        .expect("save side branch in source");
+    remove::run(&source, options()).expect("remove once the side work is saved");
+    assert!(!outpost.exists());
+    assert_registry_empty(&source);
+    assert_eq!(
+        fixture
+            .rev_parse(&fixture.source, "refs/heads/saved-scratch")
+            .expect("saved work"),
+        tip
+    );
 }
 
 #[test]
@@ -499,7 +603,9 @@ fn remove_with_cleanup_accepts_matching_merged_pr_proof() {
         .default_branch
         .as_mut()
         .expect("default branch")
-        .oid = "0000000000000000000000000000000000000000".to_owned();
+        .oid = fixture
+        .commit_in_upstream("main", "new upstream default tip")
+        .expect("remote default ahead of source");
     let provider = FakeProvider::new(Some(snapshot));
     let mut prompt = TestPrompt::new([true], []);
 
@@ -594,7 +700,9 @@ fn remove_with_cleanup_rejects_mismatched_merged_pr_proof() {
         Some(remove::MergedPullRequest {
             id: "#12".to_owned(),
             head_ref_name: branch.clone(),
-            head_ref_oid: "0000000000000000000000000000000000000000".to_owned(),
+            head_ref_oid: fixture
+                .rev_parse(&fixture.source, "refs/heads/feat^")
+                .expect("previous feature tip"),
         }),
     )));
     let mut prompt = TestPrompt::new([true], []);
@@ -664,6 +772,241 @@ fn remove_with_cleanup_prompts_separately_for_upstream_branch() {
 }
 
 #[test]
+fn cleanup_keeps_a_collaborators_unmerged_upstream_tip() {
+    let fixture = AbcFixture::new();
+    let branch = fixture.create_source_branch("feat").expect("create branch");
+    fixture
+        .push_source_branch(&branch)
+        .expect("publish feature");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add outpost");
+    let new_tip = fixture
+        .commit_in_upstream("feat", "collaborator's unpublished-to-main work")
+        .expect("advance upstream feature");
+    let source = fixture.source_repo().expect("source repo");
+    let mut prompt = TestPrompt::new([true], [true]);
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            selector: OutpostSelector::from_path(outpost),
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("remove merged local branch");
+
+    assert_source_branch_missing(&source, "feat");
+    assert_eq!(
+        source.origin_branch_oid(&branch).expect("upstream feature"),
+        Some(new_tip)
+    );
+    assert!(prompt.upstream_prompts.is_empty());
+    assert!(report.branch_cleanup.iter().any(|outcome| matches!(outcome, remove::BranchCleanupOutcome::Warning { branch: Some(warned), message } if warned == &branch && message.contains("tip differs"))));
+}
+
+#[test]
+fn cleanup_preserves_a_branch_checked_out_during_confirmation() {
+    let fixture = AbcFixture::new();
+    let branch = fixture.create_source_branch("feat").expect("create branch");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add outpost");
+    let source = fixture.source_repo().expect("source repo");
+    let before = source.branch_oid(&branch).expect("original branch");
+    let checkout = fixture.root.join("native");
+    let mut prompt = PromptActions {
+        source: || {
+            fixture
+                .invoker(&fixture.source)
+                .run_check([
+                    OsStr::new("worktree"),
+                    OsStr::new("add"),
+                    checkout.as_os_str(),
+                    OsStr::new("feat"),
+                ])
+                .expect("check out feature before confirming");
+            true
+        },
+        upstream: || false,
+    };
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            selector: OutpostSelector::from_path(outpost),
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("finish outpost removal");
+
+    assert_eq!(
+        source
+            .branch_oid(&branch)
+            .expect("checked out branch retained"),
+        before
+    );
+    assert_eq!(
+        fixture.rev_parse(&checkout, "HEAD").expect("live checkout"),
+        before.expect("original commit")
+    );
+    assert!(
+        report
+            .branch_cleanup
+            .contains(&remove::BranchCleanupOutcome::Skipped {
+                branch: Some(branch),
+                reason: remove::BranchCleanupSkipReason::BranchCheckedOut
+            })
+    );
+}
+
+#[test]
+fn cleanup_requires_the_same_single_upstream_destination_through_confirmation() {
+    enum Configuration {
+        MultiplePushUrls,
+        ChangedDuringConfirmation,
+        DirectUrlWouldBeRewritten,
+    }
+    use Configuration::*;
+    for config in [
+        MultiplePushUrls,
+        ChangedDuringConfirmation,
+        DirectUrlWouldBeRewritten,
+    ] {
+        let fixture = AbcFixture::new();
+        let branch = fixture.create_source_branch("feat").expect("create branch");
+        fixture
+            .push_source_branch(&branch)
+            .expect("publish feature");
+        let outpost = fixture
+            .add_outpost_on_branch("C", Some(branch.clone()))
+            .expect("add outpost");
+        let other = fixture.root.join("old-upstream.git");
+        fixture
+            .invoker(&fixture.root)
+            .run_check([
+                OsStr::new("clone"),
+                OsStr::new("--bare"),
+                fixture.upstream.as_os_str(),
+                other.as_os_str(),
+            ])
+            .expect("clone old upstream with the same feature tip");
+        let original = fixture
+            .rev_parse(&fixture.upstream, "refs/heads/feat")
+            .expect("feature tip");
+        let git = fixture.invoker(&fixture.source);
+        assert_eq!(
+            fixture
+                .rev_parse(&fixture.source, "refs/remotes/origin/feat")
+                .expect("feature is tracked"),
+            original
+        );
+        let observed_url = git
+            .run_capture(["remote", "get-url", "origin"])
+            .expect("origin URL");
+        if matches!(config, MultiplePushUrls | DirectUrlWouldBeRewritten) {
+            git.run_check(["remote", "set-url", "--push", "origin", &observed_url])
+                .expect("pin origin's first push URL");
+        }
+        match config {
+            MultiplePushUrls => {
+                git.run_check([
+                    OsStr::new("remote"),
+                    OsStr::new("set-url"),
+                    OsStr::new("--add"),
+                    OsStr::new("--push"),
+                    OsStr::new("origin"),
+                    other.as_os_str(),
+                ])
+                .expect("configure push destinations");
+            }
+            DirectUrlWouldBeRewritten => {
+                let mut setting = OsString::from("url.");
+                setting.push(other.as_os_str());
+                setting.push(".pushInsteadOf");
+                git.run_check([OsStr::new("config"), &setting, OsStr::new(&observed_url)])
+                    .expect("redirect bare URL pushes to the old repository");
+            }
+            ChangedDuringConfirmation => {}
+        }
+        let upstream_prompted = Cell::new(false);
+        let mut prompt = PromptActions {
+            source: || true,
+            upstream: || {
+                upstream_prompted.set(true);
+                if matches!(config, ChangedDuringConfirmation) {
+                    git.run_check([
+                        OsStr::new("remote"),
+                        OsStr::new("set-url"),
+                        OsStr::new("origin"),
+                        other.as_os_str(),
+                    ])
+                    .expect("change remote while confirming deletion");
+                }
+                true
+            },
+        };
+        let source = fixture.source_repo().expect("source repo");
+
+        let report = remove::run_with_cleanup(
+            &source,
+            remove::RemoveOptions {
+                selector: OutpostSelector::from_path(outpost),
+                force: false,
+            },
+            remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+                provider: None,
+                prompt: &mut prompt,
+            }),
+        )
+        .expect("outpost removal");
+
+        assert_source_branch_missing(&source, "feat");
+        assert_eq!(upstream_prompted.get(), !matches!(config, MultiplePushUrls));
+        assert_eq!(
+            fixture
+                .rev_parse(&other, "refs/heads/feat")
+                .expect("old repository is untouched"),
+            original
+        );
+        if matches!(config, DirectUrlWouldBeRewritten) {
+            assert!(report.branch_cleanup.iter().any(|outcome| matches!(outcome, remove::BranchCleanupOutcome::DeletedUpstreamBranch { branch: deleted, .. } if deleted == &branch)), "{:?}", report.branch_cleanup);
+            assert!(
+                !fixture
+                    .invoker(&fixture.upstream)
+                    .run_status(["show-ref", "--verify", "--quiet", "refs/heads/feat"])
+                    .expect("inspected upstream branch")
+            );
+            assert!(
+                !git.run_status([
+                    "show-ref",
+                    "--verify",
+                    "--quiet",
+                    "refs/remotes/origin/feat"
+                ])
+                .expect("source tracking ref")
+            );
+        } else {
+            assert_eq!(
+                fixture
+                    .rev_parse(&fixture.upstream, "refs/heads/feat")
+                    .expect("inspected upstream is untouched"),
+                original
+            );
+            assert!(report.branch_cleanup.iter().any(|outcome| matches!(outcome, remove::BranchCleanupOutcome::Warning { branch: Some(warned), message } if warned == &branch && message.contains("upstream branch was not deleted"))));
+        }
+    }
+}
+
+#[test]
 fn remove_with_cleanup_uses_final_lease_when_upstream_moves_after_source_prompt() {
     let fixture = AbcFixture::new();
     ensure_origin_head(&fixture);
@@ -682,14 +1025,19 @@ fn remove_with_cleanup_uses_final_lease_when_upstream_moves_after_source_prompt(
         .branch_oid(&branch)
         .expect("source branch query")
         .expect("source branch");
-    let mut snapshot = cleanup_snapshot(&source, None);
-    snapshot.upstream_oid = Some(source_oid.clone());
-    let provider = FakeProvider::new(Some(snapshot));
-    let mut prompt = RemoteRacePrompt {
-        fixture: &fixture,
-        branch: branch.clone(),
-        moved_oid: moved_oid.clone(),
-        upstream_prompted: false,
+    let upstream_prompted = Cell::new(false);
+    let mut prompt = PromptActions {
+        source: || {
+            fixture
+                .invoker(&fixture.upstream)
+                .run_check(["update-ref", "refs/heads/feat", &moved_oid])
+                .expect("move upstream branch during confirmation");
+            true
+        },
+        upstream: || {
+            upstream_prompted.set(true);
+            true
+        },
     };
 
     let report = remove::run_with_cleanup(
@@ -699,14 +1047,14 @@ fn remove_with_cleanup_uses_final_lease_when_upstream_moves_after_source_prompt(
             force: false,
         },
         remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
-            provider: Some(&provider),
+            provider: None,
             prompt: &mut prompt,
         }),
     )
     .expect("outpost removal survives leased remote deletion failure");
 
     assert_source_branch_missing(&source, "feat");
-    assert!(prompt.upstream_prompted);
+    assert!(upstream_prompted.get());
     assert_eq!(
         fixture
             .invoker(&fixture.upstream)
@@ -741,14 +1089,6 @@ fn remove_with_cleanup_uses_final_lease_when_upstream_moves_after_source_prompt(
             .all(|argv| argv.first() != Some(&OsString::from("ls-remote"))),
         "no upstream observation should run after source deletion: {after_source_delete:?}"
     );
-    assert!(after_source_delete.iter().any(|argv| {
-        argv == &vec![
-            OsString::from("push"),
-            OsString::from(format!("--force-with-lease=refs/heads/feat:{source_oid}")),
-            OsString::from("origin"),
-            OsString::from(":refs/heads/feat"),
-        ]
-    }));
 }
 
 #[test]
@@ -795,10 +1135,15 @@ fn remove_with_cleanup_source_branch_oid_race_leaves_branch_intact() {
         .commit_in_source("main moved locally")
         .expect("commit on main");
     let source = fixture.source_repo().expect("source repo");
-    let mut prompt = RacePrompt {
-        fixture: &fixture,
-        branch: branch.clone(),
-        new_oid: new_oid.clone(),
+    let mut prompt = PromptActions {
+        source: || {
+            fixture
+                .invoker(&fixture.source)
+                .run_check(["update-ref", "refs/heads/feat", &new_oid])
+                .expect("move source branch during confirmation");
+            true
+        },
+        upstream: || false,
     };
 
     let report = remove::run_with_cleanup(
@@ -1042,59 +1387,18 @@ impl remove::BranchCleanupPrompt for TestPrompt {
     }
 }
 
-struct RacePrompt<'a> {
-    fixture: &'a AbcFixture,
-    branch: BranchName,
-    new_oid: String,
+struct PromptActions<S, U> {
+    source: S,
+    upstream: U,
 }
 
-struct RemoteRacePrompt<'a> {
-    fixture: &'a AbcFixture,
-    branch: BranchName,
-    moved_oid: String,
-    upstream_prompted: bool,
-}
-
-impl remove::BranchCleanupPrompt for RemoteRacePrompt<'_> {
-    fn confirm_source_branch_delete(
-        &mut self,
-        _candidate: &remove::BranchCleanupCandidate,
-    ) -> bool {
-        let branch_ref = format!("refs/heads/{}", self.branch.as_str());
-        self.fixture
-            .invoker(&self.fixture.upstream)
-            .run_check(["update-ref", &branch_ref, &self.moved_oid])
-            .expect("move upstream branch during source prompt");
-        true
+impl<S: FnMut() -> bool, U: FnMut() -> bool> remove::BranchCleanupPrompt for PromptActions<S, U> {
+    fn confirm_source_branch_delete(&mut self, _: &remove::BranchCleanupCandidate) -> bool {
+        (self.source)()
     }
 
-    fn confirm_upstream_branch_delete(
-        &mut self,
-        _candidate: &remove::BranchCleanupCandidate,
-    ) -> bool {
-        self.upstream_prompted = true;
-        true
-    }
-}
-
-impl remove::BranchCleanupPrompt for RacePrompt<'_> {
-    fn confirm_source_branch_delete(
-        &mut self,
-        _candidate: &remove::BranchCleanupCandidate,
-    ) -> bool {
-        let branch_ref = format!("refs/heads/{}", self.branch.as_str());
-        self.fixture
-            .invoker(&self.fixture.source)
-            .run_check(["update-ref", &branch_ref, &self.new_oid])
-            .expect("move branch during cleanup prompt");
-        true
-    }
-
-    fn confirm_upstream_branch_delete(
-        &mut self,
-        _candidate: &remove::BranchCleanupCandidate,
-    ) -> bool {
-        false
+    fn confirm_upstream_branch_delete(&mut self, _: &remove::BranchCleanupCandidate) -> bool {
+        (self.upstream)()
     }
 }
 

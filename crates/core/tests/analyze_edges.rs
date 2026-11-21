@@ -728,19 +728,29 @@ fn provider_error_is_warned_and_git_fallback_still_produces_report() {
 }
 
 #[test]
-fn invalid_provider_oid_is_unavailable_and_hydration_failure_is_warned() {
+fn analysis_keeps_the_default_comparison_when_the_observed_feature_is_deleted() {
     let fixture = AbcFixture::new();
     let branch = feature_branch(&fixture, "feat", true);
     let outpost = fixture
         .add_outpost_on_branch("C", Some(branch.clone()))
         .expect("add outpost");
+    fixture
+        .push_source_branch(&branch)
+        .expect("publish feature");
+    let observed = fixture
+        .commit_in_upstream("feat", "remote-only change")
+        .expect("remote commit");
+    fixture
+        .invoker(&fixture.upstream)
+        .run_check(["update-ref", "-d", "refs/heads/feat", &observed])
+        .expect("collaborator deletes observed branch");
     let provider = SnapshotProvider {
         snapshot: CleanupEvidenceSnapshot {
             default_branch: Some(ObservedRemoteBranch {
                 branch: BranchName::parse("main".to_owned()).expect("main"),
                 oid: main_oid(&fixture),
             }),
-            upstream_oid: Some("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef".to_owned()),
+            upstream_oid: Some(observed.clone()),
             merged_pull_request: None,
         },
     };
@@ -750,7 +760,7 @@ fn invalid_provider_oid_is_unavailable_and_hydration_failure_is_warned() {
 
     assert!(matches!(
         report.source_vs_upstream,
-        Probe::Unavailable(reason) if reason.contains("observed remote commit deadbeef")
+        Probe::Unavailable(reason) if reason.contains(&observed)
     ));
     assert!(matches!(
         report.source_vs_upstream_default,
@@ -765,40 +775,6 @@ fn invalid_provider_oid_is_unavailable_and_hydration_failure_is_warned() {
             .iter()
             .any(|warning| warning.contains("fetch"))
     );
-}
-
-#[test]
-fn invalid_provider_oid_syntax_is_an_unavailable_probe_error() {
-    let fixture = AbcFixture::new();
-    let branch = feature_branch(&fixture, "feat", true);
-    let outpost = fixture
-        .add_outpost_on_branch("C", Some(branch))
-        .expect("add outpost");
-    let provider = SnapshotProvider {
-        snapshot: CleanupEvidenceSnapshot {
-            default_branch: Some(ObservedRemoteBranch {
-                branch: BranchName::parse("main".to_owned()).expect("main"),
-                oid: "not an object name".to_owned(),
-            }),
-            upstream_oid: Some("not an object name".to_owned()),
-            merged_pull_request: None,
-        },
-    };
-    let mut reporter = CapturingReporter::default();
-
-    let report = run_analysis_with_reporter(&fixture, outpost, Some(&provider), &mut reporter);
-
-    assert!(matches!(
-        report.source_vs_upstream,
-        Probe::Unavailable(reason) if reason.contains("not an object name")
-    ));
-    assert!(matches!(
-        report.source_vs_upstream_default,
-        Probe::Unavailable(reason) if reason.contains("not an object name")
-    ));
-    assert!(reporter.steps.iter().any(|(_, message)| {
-        message.contains("unavailable:") && message.contains("not an object name")
-    }));
 }
 
 #[test]

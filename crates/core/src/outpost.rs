@@ -135,22 +135,18 @@ impl Outpost {
             .run_check(["fetch", self.metadata.remote_name.as_str(), &fetch_refspec])?;
 
         let local_ref = format!("refs/heads/{}", branch.as_str());
-        let range = format!("{local_ref}...{remote_tracking_ref}");
-        parse_ahead_behind(
-            &self.work_tree,
-            self.git
-                .run_capture(["rev-list", "--left-right", "--count", &range])?,
-        )
+        self.git.ahead_behind(&local_ref, &remote_tracking_ref)
     }
 
     pub fn unpushed_commits(&self, source: &SourceRepo) -> OutpostResult<u32> {
         let branch = self.current_branch()?;
-        if !source.branch_exists(&branch)? {
-            return Err(OutpostError::BranchNotFound {
-                branch: branch.as_str().to_owned(),
-                repo: source.work_tree().to_path_buf(),
-            });
-        }
+        let source_oid =
+            source
+                .branch_oid(&branch)?
+                .ok_or_else(|| OutpostError::BranchNotFound {
+                    branch: branch.as_str().to_owned(),
+                    repo: source.work_tree().to_path_buf(),
+                })?;
 
         let upstream =
             self.upstream_tracking()?
@@ -180,10 +176,14 @@ impl Outpost {
             remote_branch
         );
         let fetch_refspec = format!("{}:{remote_tracking_ref}", upstream.merge_ref.as_str());
-        self.git
-            .run_check(["fetch", self.metadata.remote_name.as_str(), &fetch_refspec])?;
+        self.git.run_check([
+            OsString::from("fetch"),
+            OsString::from("--"),
+            crate::path::git_path_arg(source.work_tree()),
+            OsString::from(fetch_refspec),
+        ])?;
         let local_ref = format!("refs/heads/{}", branch.as_str());
-        let range = format!("{remote_tracking_ref}..{local_ref}");
+        let range = format!("{source_oid}..{local_ref}");
         let output = self.git.run_capture(["rev-list", "--count", &range])?;
         parse_count(&self.work_tree, &output)
     }
@@ -215,24 +215,7 @@ impl Outpost {
     }
 }
 
-fn parse_ahead_behind(repo: &Path, output: String) -> OutpostResult<AheadBehind> {
-    let mut parts = output.split_whitespace();
-    let ahead = parts
-        .next()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_ahead_behind_output(repo, &output))?;
-    let behind = parts
-        .next()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_ahead_behind_output(repo, &output))?;
-    if parts.next().is_some() {
-        return Err(invalid_ahead_behind_output(repo, &output));
-    }
-
-    Ok(AheadBehind { ahead, behind })
-}
-
-fn invalid_ahead_behind_output(repo: &Path, output: &str) -> OutpostError {
+fn invalid_count_output(repo: &Path, output: &str) -> OutpostError {
     OutpostError::IoAt {
         path: repo.to_path_buf(),
         source: std::io::Error::new(
@@ -247,9 +230,9 @@ fn parse_count(repo: &Path, output: &str) -> OutpostResult<u32> {
         .split_whitespace()
         .next()
         .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_ahead_behind_output(repo, output))?;
+        .ok_or_else(|| invalid_count_output(repo, output))?;
     if output.split_whitespace().nth(1).is_some() {
-        return Err(invalid_ahead_behind_output(repo, output));
+        return Err(invalid_count_output(repo, output));
     }
     Ok(count)
 }

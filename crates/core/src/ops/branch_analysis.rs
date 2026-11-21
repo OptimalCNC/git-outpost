@@ -233,7 +233,19 @@ fn analyze_candidate(
         return None;
     }
 
-    let upstream_oid = observation.snapshot.upstream_oid.clone();
+    let upstream_oid = observation
+        .snapshot
+        .upstream_oid
+        .clone()
+        .filter(|oid| *oid == source_oid);
+    if observation.snapshot.upstream_oid.is_some() && upstream_oid.is_none() {
+        findings.push(BranchCleanupFinding::Warning {
+            branch: Some(branch.clone()),
+            message:
+                "upstream branch will be kept because its tip differs from the source branch tip"
+                    .to_owned(),
+        });
+    }
 
     if let Some(merged_pr) = observation.snapshot.merged_pull_request.clone() {
         if merged_pr.head_ref_name == branch && merged_pr.head_ref_oid == source_oid {
@@ -353,7 +365,10 @@ fn collect_cleanup_evidence(
     findings: &mut Vec<BranchCleanupFinding>,
 ) -> Option<CleanupEvidenceSnapshot> {
     if let Some(provider) = provider {
-        match provider.snapshot(request) {
+        match provider
+            .snapshot(request)
+            .and_then(|snapshot| snapshot.map(CleanupEvidenceSnapshot::checked).transpose())
+        {
             Ok(Some(snapshot)) => return Some(snapshot),
             Ok(None) => {}
             Err(err) => findings.push(warning(

@@ -37,6 +37,52 @@ pub fn check_no_unpushed(outpost: &Outpost, source: &SourceRepo) -> OutpostResul
     }
 }
 
+pub(crate) fn check_removable_work(outpost: &Outpost, source: &SourceRepo) -> OutpostResult<()> {
+    check_clean(outpost.work_tree(), outpost.git())?;
+    if outpost
+        .git()
+        .run_status(["show-ref", "--verify", "--quiet", "refs/stash"])?
+    {
+        return Err(OutpostError::StashedChanges {
+            repo: outpost.work_tree().to_path_buf(),
+            hint: FORCE_HINT,
+        });
+    }
+    check_no_unpushed(outpost, source)?;
+
+    let current = outpost.current_branch()?;
+    let branches = outpost.git().run_capture_lines([
+        "for-each-ref",
+        "--format=%(refname:lstrip=2)",
+        "refs/heads/",
+    ])?;
+    for branch in branches.into_iter().filter(|name| name != current.as_str()) {
+        let tip = outpost
+            .git()
+            .run_capture(["rev-parse", &format!("refs/heads/{branch}")])?;
+        if !source.has_commit_oid(&tip)?
+            || source
+                .git()
+                .run_capture([
+                    "for-each-ref",
+                    "--count=1",
+                    "--format=%(refname)",
+                    "--contains",
+                    &tip,
+                    "refs/heads/",
+                ])?
+                .is_empty()
+        {
+            return Err(OutpostError::UnpushedCommits {
+                repo: outpost.work_tree().to_path_buf(),
+                branch,
+                hint: FORCE_HINT,
+            });
+        }
+    }
+    Ok(())
+}
+
 pub fn check_no_divergence(
     outpost: &Outpost,
     local_branch: &BranchName,
@@ -187,24 +233,10 @@ fn check_no_divergence_with_fetch(
     }
 
     let local_ref = format!("refs/heads/{}", local_branch.as_str());
-    let range = format!("{local_ref}...{remote_tracking_ref}");
-    let output = outpost
+    let counts = outpost
         .git()
-        .run_capture(["rev-list", "--left-right", "--count", &range])?;
-    let mut parts = output.split_whitespace();
-    let ahead = parts
-        .next()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_rev_list_output(outpost.work_tree(), &output))?;
-    let behind = parts
-        .next()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_rev_list_output(outpost.work_tree(), &output))?;
-    if parts.next().is_some() {
-        return Err(invalid_rev_list_output(outpost.work_tree(), &output));
-    }
-
-    if ahead > 0 && behind > 0 {
+        .ahead_behind(&local_ref, &remote_tracking_ref)?;
+    if counts.ahead > 0 && counts.behind > 0 {
         Err(OutpostError::Divergence {
             branch: local_branch.as_str().to_owned(),
         })
@@ -216,16 +248,6 @@ fn check_no_divergence_with_fetch(
 fn upstream_branch_exists(outpost: &Outpost, upstream: &UpstreamRef) -> OutpostResult<bool> {
     remote_ref_oid(outpost.git(), &upstream.remote, upstream.merge_ref.as_str())
         .map(|oid| oid.is_some())
-}
-
-fn invalid_rev_list_output(repo: &Path, output: &str) -> OutpostError {
-    OutpostError::IoAt {
-        path: repo.to_path_buf(),
-        source: std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("unexpected rev-list output: {output}"),
-        ),
-    }
 }
 
 fn resolve_destination(parent: &Path, dest: &Path) -> OutpostResult<PathBuf> {
@@ -488,18 +510,13 @@ mod tests {
 
     #[test]
     fn destination_clean_resolves_relative_path_under_parent_before_exists_check() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let cwd_dest = tempfile::tempdir_in(".").expect("cwd dest dir");
-        let dest = PathBuf::from(cwd_dest.path().file_name().expect("cwd dest file name"));
-        let parent = temp.path().join("parent");
-        fs::create_dir_all(parent.join(&dest)).expect("dest dir");
-        fs::write(parent.join(&dest).join("child"), "child").expect("child");
-
-        let result = check_destination_clean(&parent, &dest);
-
-        assert!(cwd_dest.path().exists());
+        let parent = tempfile::tempdir().expect("destination parent");
+        let dest = Path::new("checkout");
+        check_destination_clean(parent.path(), dest).expect("unused destination under parent");
+        fs::create_dir(parent.path().join(dest)).expect("create destination");
+        fs::write(parent.path().join(dest).join("child"), "child").expect("occupy destination");
         assert!(matches!(
-            result,
+            check_destination_clean(parent.path(), dest),
             Err(OutpostError::DestinationExists(path)) if path == dest
         ));
     }

@@ -1,7 +1,7 @@
 #[allow(dead_code)]
 mod common;
 
-use std::fs;
+use std::{ffi::OsStr, fs};
 
 use common::fixture::{AbcFixture, CapturingReporter};
 use outpost_core::ops::source::{SourcePullOptions, pull};
@@ -21,6 +21,19 @@ fn sp01_source_pull_fast_forwards_unchecked_out_source_branch_without_switching(
         .invoker(&fixture.source)
         .run_check(["switch", "main"])
         .expect("switch source back to main");
+    let portable_checkout = fixture.root.join("portable");
+    fixture
+        .invoker(&fixture.source)
+        .run_check([
+            OsStr::new("worktree"),
+            OsStr::new("add"),
+            OsStr::new("-b"),
+            OsStr::new("unrelated"),
+            portable_checkout.as_os_str(),
+        ])
+        .expect("register unrelated native worktree");
+    fs::rename(&portable_checkout, fixture.root.join("moved-portable"))
+        .expect("move unrelated checkout");
     let upstream_oid = fixture
         .commit_file_in_upstream(
             feature.as_str(),

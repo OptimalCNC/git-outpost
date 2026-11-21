@@ -273,16 +273,24 @@ fn unknown_default_branch_is_a_typed_skip_and_retains_evidence() {
 
 #[test]
 fn mismatched_provider_proof_warns_then_uses_ancestor_fallback() {
-    let (_fixture, source, outpost, branch) = feature_setup();
+    let (fixture, source, outpost, branch) = feature_setup_with_commit("feature");
+    let previous_tip = source_branch_oid(&source, &branch_name("main"));
+    source
+        .test_invoker()
+        .run_check(["merge", "--ff-only", branch.as_str()])
+        .expect("merge feature");
+    fixture
+        .push_source_branch(&branch_name("main"))
+        .expect("publish merged default branch");
     let source_oid = source_branch_oid(&source, &branch);
     let default_oid = source_branch_oid(&source, &branch_name("main"));
     let provider = StubProvider::snapshot(Some(snapshot(
         Some(("main", default_oid.clone())),
         None,
         Some(MergedPullRequest {
-            id: "#bad".to_owned(),
+            id: "#12".to_owned(),
             head_ref_name: branch.clone(),
-            head_ref_oid: "0000000000000000000000000000000000000000".to_owned(),
+            head_ref_oid: previous_tip,
         }),
     )));
 
@@ -319,12 +327,12 @@ fn mismatched_provider_proof_and_divergent_history_yield_no_proof() {
         .expect("outpost head before analysis");
     let registry_before = source.registry().expect("registry").entries().to_vec();
     let provider = StubProvider::snapshot(Some(snapshot(
-        Some(("main", default_oid)),
+        Some(("main", default_oid.clone())),
         None,
         Some(MergedPullRequest {
-            id: "#bad".to_owned(),
+            id: "#12".to_owned(),
             head_ref_name: branch.clone(),
-            head_ref_oid: "0000000000000000000000000000000000000000".to_owned(),
+            head_ref_oid: default_oid,
         }),
     )));
 
@@ -541,10 +549,10 @@ fn fetch_failure_warns_and_yields_no_proof() {
 }
 
 #[test]
-fn unavailable_default_oid_warns_after_fetching() {
-    let (_fixture, source, outpost, branch) = feature_setup();
+fn a_provider_revision_expression_cannot_prove_an_unmerged_branch_is_safe() {
+    let (_fixture, source, outpost, branch) = feature_setup_with_commit("feature");
     let provider = StubProvider::snapshot(Some(snapshot(
-        Some(("main", "HEAD~not-a-number".to_owned())),
+        Some(("main", format!("refs/heads/{}", branch.as_str()))),
         None,
         None,
     )));
@@ -552,13 +560,18 @@ fn unavailable_default_oid_warns_after_fetching() {
     let analysis = analyze_branch_cleanup(&source, &outpost, Some(&provider));
 
     assert_eq!(analysis.candidate, None);
-    assert_eq!(analysis.findings.len(), 2);
     assert_eq!(
-        analysis.findings[0],
-        warning(
-            &branch,
-            "observed upstream default commit is unavailable after fetch"
-        )
+        analysis
+            .evidence
+            .expect("Git fallback evidence")
+            .snapshot
+            .default_branch
+            .expect("default branch")
+            .oid,
+        source_branch_oid(&source, &branch_name("main"))
+    );
+    assert!(
+        matches!(&analysis.findings[0], BranchCleanupFinding::Warning { message, .. } if message.contains("expected a full commit OID"))
     );
     assert_eq!(
         analysis.findings[1],
@@ -567,16 +580,17 @@ fn unavailable_default_oid_warns_after_fetching() {
 }
 
 #[test]
-fn fetched_default_object_still_missing_warns_and_yields_no_proof() {
-    let (_fixture, source, outpost, branch) = feature_setup();
-    let provider = StubProvider::snapshot(Some(snapshot(
-        Some((
-            "main",
-            "0000000000000000000000000000000000000000".to_owned(),
-        )),
-        None,
-        None,
-    )));
+fn rewritten_default_branch_cannot_substitute_for_the_observed_commit() {
+    let (fixture, source, outpost, branch) = feature_setup();
+    let original = source_branch_oid(&source, &branch_name("main"));
+    let observed = fixture
+        .commit_in_upstream("main", "previous default tip")
+        .expect("remote commit");
+    fixture
+        .invoker(&fixture.upstream)
+        .run_check(["update-ref", "refs/heads/main", &original, &observed])
+        .expect("rewind remote before cleanup");
+    let provider = StubProvider::snapshot(Some(snapshot(Some(("main", observed)), None, None)));
 
     let analysis = analyze_branch_cleanup(&source, &outpost, Some(&provider));
 

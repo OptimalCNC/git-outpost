@@ -107,8 +107,7 @@ fn run_internal(
 
     let outpost = safety::check_entry_is_managed_outpost_of(source, &entry)?;
     if !opts.force {
-        safety::check_clean(outpost.work_tree(), outpost.git())?;
-        safety::check_no_unpushed(&outpost, source)?;
+        safety::check_removable_work(&outpost, source)?;
     }
 
     let candidate = match &mut mode {
@@ -139,8 +138,15 @@ fn run_internal(
         source,
     })?;
 
-    if let (Some(candidate), BranchCleanupMode::Prompt(options)) = (candidate, mode) {
-        perform_branch_cleanup(source, candidate, options.prompt, &mut branch_cleanup);
+    if let (Some((candidate, observed_url)), BranchCleanupMode::Prompt(options)) = (candidate, mode)
+    {
+        perform_branch_cleanup(
+            source,
+            candidate,
+            &observed_url,
+            options.prompt,
+            &mut branch_cleanup,
+        );
     }
 
     Ok(RemoveReport {
@@ -177,7 +183,7 @@ fn analyze_branch_cleanup(
     outpost: &crate::Outpost,
     provider: Option<&dyn CleanupEvidenceProvider>,
     outcomes: &mut Vec<BranchCleanupOutcome>,
-) -> Option<BranchCleanupCandidate> {
+) -> Option<(BranchCleanupCandidate, String)> {
     let analysis = branch_analysis::analyze_branch_cleanup(source, outpost, provider);
     outcomes.extend(
         analysis
@@ -185,7 +191,11 @@ fn analyze_branch_cleanup(
             .into_iter()
             .map(BranchCleanupOutcome::from),
     );
-    analysis.candidate
+    analysis.candidate.zip(
+        analysis
+            .evidence
+            .map(|observation| observation.request.upstream_url),
+    )
 }
 
 impl From<BranchCleanupFinding> for BranchCleanupOutcome {
@@ -204,6 +214,7 @@ impl From<BranchCleanupFinding> for BranchCleanupOutcome {
 fn perform_branch_cleanup(
     source: &SourceRepo,
     candidate: BranchCleanupCandidate,
+    observed_url: &str,
     prompt: &mut dyn BranchCleanupPrompt,
     outcomes: &mut Vec<BranchCleanupOutcome>,
 ) {
@@ -214,6 +225,24 @@ fn perform_branch_cleanup(
         return;
     }
 
+    match source.is_branch_checked_out(&candidate.branch) {
+        Ok(true) => {
+            outcomes.push(BranchCleanupOutcome::Skipped {
+                branch: Some(candidate.branch),
+                reason: BranchCleanupSkipReason::BranchCheckedOut,
+            });
+            return;
+        }
+        Err(err) => {
+            outcomes.push(warning(
+                Some(candidate.branch),
+                "cannot inspect checked-out source branches",
+                err,
+            ));
+            return;
+        }
+        Ok(false) => {}
+    }
     if let Err(err) = source.delete_branch_if_oid(&candidate.branch, &candidate.source_oid) {
         outcomes.push(warning(
             Some(candidate.branch),
@@ -230,6 +259,16 @@ fn perform_branch_cleanup(
         return;
     };
 
+    if let Err(err) =
+        source.verify_remote_deletion_destination(&candidate.upstream_remote, observed_url)
+    {
+        outcomes.push(warning(
+            Some(candidate.branch),
+            "upstream branch was not deleted",
+            err,
+        ));
+        return;
+    }
     if !prompt.confirm_upstream_branch_delete(&candidate) {
         outcomes.push(BranchCleanupOutcome::DeclinedUpstreamBranch {
             remote: candidate.upstream_remote,
@@ -238,8 +277,9 @@ fn perform_branch_cleanup(
         return;
     }
 
-    match source.delete_remote_branch_if_oid(
+    match source.delete_observed_remote_branch_if_oid(
         &candidate.upstream_remote,
+        observed_url,
         &candidate.branch,
         expected_upstream_oid,
     ) {

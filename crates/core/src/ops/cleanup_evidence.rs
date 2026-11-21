@@ -31,6 +31,34 @@ pub struct CleanupEvidenceSnapshot {
     pub merged_pull_request: Option<MergedPullRequest>,
 }
 
+impl CleanupEvidenceSnapshot {
+    pub(super) fn checked(mut self) -> OutpostResult<Self> {
+        let oids = self
+            .default_branch
+            .iter_mut()
+            .map(|branch| &mut branch.oid)
+            .chain(self.upstream_oid.iter_mut())
+            .chain(
+                self.merged_pull_request
+                    .iter_mut()
+                    .map(|pr| &mut pr.head_ref_oid),
+            );
+        for oid in oids {
+            if !valid_oid(oid) {
+                return Err(OutpostError::IoAt {
+                    path: PathBuf::from("cleanup evidence provider"),
+                    source: io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "expected a full commit OID",
+                    ),
+                });
+            }
+            oid.make_ascii_lowercase();
+        }
+        Ok(self)
+    }
+}
+
 pub trait CleanupEvidenceProvider {
     fn snapshot(
         &self,
@@ -161,7 +189,9 @@ fn set_once<T>(slot: &mut Option<T>, value: T, output: &str, message: &str) -> O
 }
 
 fn valid_oid(value: &str) -> bool {
-    matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    matches!(value.len(), 40 | 64)
+        && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && value.bytes().any(|byte| byte != b'0')
 }
 
 fn invalid_ls_remote_output(output: &str, message: &str) -> OutpostError {
@@ -175,7 +205,6 @@ fn invalid_ls_remote_output(output: &str, message: &str) -> OutpostError {
 mod tests {
     use std::ffi::OsString;
     use std::path::{Path, PathBuf};
-    use std::process::Command;
 
     use super::*;
     use crate::{BranchName, RemoteName, SourceRepo};
@@ -381,15 +410,8 @@ mod tests {
     }
 
     fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) {
-        let output = Command::new("git")
-            .current_dir(cwd)
-            .args(args)
-            .output()
-            .expect("run git");
-        assert!(
-            output.status.success(),
-            "git failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        crate::GitInvoker::at(cwd)
+            .run_check(args)
+            .expect("run fixture Git");
     }
 }

@@ -180,13 +180,13 @@ impl SourceRepo {
 
     pub fn checked_out_worktree_for(&self, branch: &BranchName) -> OutpostResult<Option<PathBuf>> {
         let output = self.git.run_capture(["worktree", "list", "--porcelain"])?;
-        let mut current_path: Option<PathBuf> = None;
+        let mut current_path = None;
         for line in output.lines() {
             if let Some(path) = line.strip_prefix("worktree ") {
-                current_path = Some(canonicalize_path(Path::new(path))?);
+                current_path = Some(Path::new(path));
             } else if let Some(value) = line.strip_prefix("branch refs/heads/") {
                 if value == branch.as_str() {
-                    return Ok(current_path);
+                    return current_path.map(canonicalize_path).transpose();
                 }
             }
         }
@@ -214,7 +214,16 @@ impl SourceRepo {
     }
 
     pub fn remote_url(&self, remote: &RemoteName) -> OutpostResult<String> {
-        self.git.run_capture(["remote", "get-url", remote.as_str()])
+        let urls = self
+            .git
+            .run_capture_lines(["remote", "get-url", remote.as_str()])?;
+        match urls.as_slice() {
+            [url] if !url.is_empty() => Ok(url.clone()),
+            _ => Err(invalid_git_output(
+                &self.git,
+                "expected one nonempty remote URL",
+            )),
+        }
     }
 
     pub fn branch_exists(&self, branch: &BranchName) -> OutpostResult<bool> {
@@ -389,8 +398,7 @@ impl SourceRepo {
     }
 
     pub fn is_branch_checked_out(&self, branch: &BranchName) -> OutpostResult<bool> {
-        self.checked_out_worktree_for(branch)
-            .map(|path| path.is_some())
+        Ok(self.checked_out_branches()?.contains(branch))
     }
 
     pub fn delete_branch_if_oid(
@@ -416,13 +424,49 @@ impl SourceRepo {
         branch: &BranchName,
         expected_oid: &str,
     ) -> OutpostResult<()> {
+        let observed_url = self.remote_url(remote)?;
+        self.delete_observed_remote_branch_if_oid(remote, &observed_url, branch, expected_oid)
+    }
+
+    pub(crate) fn verify_remote_deletion_destination(
+        &self,
+        remote: &RemoteName,
+        observed_url: &str,
+    ) -> OutpostResult<()> {
+        let push_urls = self.git.run_capture_lines([
+            "remote",
+            "get-url",
+            "--push",
+            "--all",
+            remote.as_str(),
+        ])?;
+        if self.remote_url(remote)? != observed_url
+            || !matches!(push_urls.as_slice(), [url] if url == observed_url)
+        {
+            return Err(OutpostError::UnverifiedPushDestination {
+                remote: remote.as_str().to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn delete_observed_remote_branch_if_oid(
+        &self,
+        remote: &RemoteName,
+        observed_url: &str,
+        branch: &BranchName,
+        expected_oid: &str,
+    ) -> OutpostResult<()> {
+        self.verify_remote_deletion_destination(remote, observed_url)?;
         let lease = format!(
             "--force-with-lease=refs/heads/{}:{expected_oid}",
             branch.as_str()
         );
         let delete_refspec = format!(":refs/heads/{}", branch.as_str());
+        // Keep the named remote's explicit push URL and fetch mappings. Passing its
+        // expanded URL instead can apply pushInsteadOf again and leave stale tracking refs.
         self.git
-            .run_check(["push", &lease, remote.as_str(), &delete_refspec])
+            .run_check(["push", &lease, "--", remote.as_str(), &delete_refspec])
     }
 
     pub fn fast_forward_branch_from_origin(&self, branch: &BranchName) -> OutpostResult<()> {
