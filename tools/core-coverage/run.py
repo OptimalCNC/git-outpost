@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run and verify the pinned core measurement inside a supervised Linux cgroup."""
+"""Measure and verify production executable line coverage for outpost-core."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import json
 import os
 from pathlib import Path
 import platform
-import signal
 import subprocess
 import sys
 import time
@@ -19,7 +18,7 @@ sys.dont_write_bytecode = True
 
 from evidence import (
     EvidenceError, analyze, archive_object_names, canonical_hash, current_commit, current_source_hashes,
-    eligible_lcov, read_json, sha256_file, test_results, verify_evidence, verify_pending_evidence,
+    eligible_lcov, read_json, sha256_file, test_results, validate_evidence, verify_evidence,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -36,9 +35,10 @@ def environment(run_dir: Path, config: dict) -> dict[str, str]:
     prefixes = ("GIT_", "RUST", "LLVM_", "__CARGO_LLVM", "CARGO_PROFILE_",
                 "CARGO_BUILD_", "CARGO_TARGET_", "CARGO_ENCODED_", "CARGO_LLVM_")
     env = {key: value for key, value in os.environ.items() if not key.startswith(prefixes)}
-    if "RUSTUP_TOOLCHAIN" in os.environ:
-        env["RUSTUP_TOOLCHAIN"] = os.environ["RUSTUP_TOOLCHAIN"]
-    cargo_bin = Path.home() / ".cargo/bin"
+    env["RUSTUP_TOOLCHAIN"] = config["rust_release"]
+    if "RUSTUP_HOME" in os.environ:
+        env["RUSTUP_HOME"] = os.environ["RUSTUP_HOME"]
+    cargo_bin = Path(env.get("CARGO_HOME", Path.home() / ".cargo")) / "bin"
     env["PATH"] = f"{cargo_bin}:/usr/bin:/bin"
     env.update({
         "CARGO_TERM_COLOR": "never", "CARGO_BUILD_JOBS": str(config["limits"]["cargo_jobs"]),
@@ -87,28 +87,6 @@ class Commands:
             print(text[-12000:], file=sys.stderr, flush=True)
             raise EvidenceError(f"{stage} failed with exit {result.returncode}; see {log}")
         return text
-
-
-def cgroup_limits(config: dict, ci: bool, seconds: int, unit: str) -> dict:
-    member = Path("/proc/self/cgroup").read_text().strip().split("::", 1)[1]
-    cgroup = Path("/sys/fs/cgroup") / member.lstrip("/")
-    expected = {
-        "memory.max": config["limits"]["ci_memory_bytes" if ci else "local_memory_bytes"],
-        "memory.swap.max": config["limits"]["memory_swap_bytes"],
-        "memory.oom.group": 1, "pids.max": config["limits"]["pids_max"],
-    }
-    for name, limit in expected.items():
-        actual = (cgroup / name).read_text().strip()
-        if actual != str(limit):
-            raise EvidenceError(f"{name} is {actual}, expected enforced {limit}")
-    return {
-        "wall_time_seconds": seconds, "cargo_jobs": config["limits"]["cargo_jobs"],
-        "test_threads": config["limits"]["test_threads"], "memory_bytes": expected["memory.max"],
-        "memory_swap_bytes": expected["memory.swap.max"], "pids_max": expected["pids.max"],
-        "enforcement": "cgroup-v2", "memory_oom_group": 1, "kill_mode": "control-group",
-        "timeout_stop_seconds": config["limits"]["stop_timeout_seconds"],
-        "cgroup": str(cgroup), "unit": unit,
-    }
 
 
 def toolchain(commands: Commands, config: dict) -> tuple[Path, Path, Path, dict]:
@@ -197,10 +175,11 @@ def build_classifier(commands: Commands, cargo: Path) -> Path:
     return target / "debug/outpost-core-coverage-classifier"
 
 
-def canonical_worker(commands: Commands, config: dict, run_id: str, started_ns: int, limits: dict,
-                     require_zero: bool) -> None:
-    rustc, cargo, llvm, versions = toolchain(commands, config)
-    del rustc
+def measure(commands: Commands, config: dict, run_id: str, require_zero: bool) -> dict:
+    marker = commands.run_dir / "run-start.json"
+    write_json(marker, {"schema": 1, "run_id": run_id})
+    started_ns = marker.stat().st_mtime_ns
+    _, cargo, llvm, versions = toolchain(commands, config)
     source_hashes = current_source_hashes(ROOT)
     commit = current_commit(ROOT)
     tree = {
@@ -260,192 +239,82 @@ def canonical_worker(commands: Commands, config: dict, run_id: str, started_ns: 
                  "doctest.log", env=dict(commands.env, CARGO_TARGET_DIR=str(execution_dir)))
     if current_source_hashes(ROOT) != source_hashes or current_commit(ROOT) != commit:
         raise EvidenceError("tested source changed during the canonical run")
-    write_json(commands.run_dir / "supervisor.json", {
-        "schema": 1, "unit": limits["unit"], "result": "pending", "returncode": None,
-    })
     binary_evidence = list((commands.run_dir / "production-objects").glob("*.o")) + libraries
     artifact_hashes = {
         path.relative_to(commands.run_dir).as_posix(): sha256_file(path)
         for path in sorted(commands.run_dir.glob("*.json")) + sorted(commands.run_dir.glob("*.log"))
                     + sorted(commands.run_dir.glob("*.lcov")) + sorted(binary_evidence)
-        if path.name not in ("pending-manifest.json", "manifest.json") and path.stat().st_size > 0
+        if path.stat().st_size > 0
     }
     manifest = {
-        "schema": 1, "status": "pending-supervision", "run_id": run_id, "started_ns": started_ns,
+        "schema": 2, "status": "complete", "run_id": run_id, "started_ns": started_ns,
         "finished_ns": time.time_ns(), "artifact_hashes": artifact_hashes,
         "commit": commit, "config": config, "config_sha256": canonical_hash(config),
-        "source_hashes": source_hashes, "versions": versions, "limits_actual": limits,
+        "source_hashes": source_hashes, "versions": versions,
         "host": {"system": platform.system(), "machine": platform.machine(),
                  "kernel": platform.release(), "os_release": platform.freedesktop_os_release()},
         "expected_test_targets": targets, "tests": tests,
     }
-    write_json(commands.run_dir / "pending-manifest.json", manifest)
-    checked = verify_pending_evidence(commands.run_dir, ROOT, require_zero=require_zero)
-    manifest["data_verification"] = {"status": "passed", "counts": {
-        key: value for key, value in checked.items() if key.endswith("_total")
-    }}
-    write_json(commands.run_dir / "pending-manifest.json", manifest)
+    checked = validate_evidence(commands.run_dir, ROOT, manifest, require_zero)
+    temporary = commands.run_dir / "manifest.json.tmp"
+    write_json(temporary, manifest)
+    temporary.replace(commands.run_dir / "manifest.json")
+    return checked
 
 
-def worker(args: argparse.Namespace, config: dict) -> None:
-    # The service holds this lease, so caller disconnection cannot allow another
-    # compiler/LLVM workload to overlap its still-running descendants.
-    with (ROOT / "target/core-coverage/workload.lock").open("a") as lease:
-        try:
-            fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise EvidenceError("another bounded build/test/coverage workload is running") from error
-        run_worker(args, config)
+def self_test(commands: Commands, config: dict) -> None:
+    from validate_measurement import validate
+
+    rustc, cargo, llvm, _ = toolchain(commands, config)
+    target = commands.run_dir / "classifier-build"
+    env = dict(commands.env, CARGO_TARGET_DIR=str(target))
+    commands.run("test-classifier", [cargo, "test", "--manifest-path", TOOL / "classifier/Cargo.toml",
+                 "--locked", "--offline", "--jobs", "2", "--", "--test-threads=1"], "classifier-test.log", env=env)
+    commands.run("test-evidence", [sys.executable, "-m", "unittest", "discover", "-s", TOOL,
+                 "-p", "test_*.py", "-v"], "evidence-test.log")
+    validate(commands, rustc, llvm, target / "debug/outpost-core-coverage-classifier")
+    print("Measurement tooling validation passed", flush=True)
 
 
-def run_worker(args: argparse.Namespace, config: dict) -> None:
-    run_dir = Path(args.run_dir).resolve()
-    # Inode timestamps can use a coarser clock than Python CLOCK_REALTIME. The
-    # fresh supervisor marker supplies a filesystem-clock boundary before launch.
-    started_ns = (run_dir / "run-start.json").stat().st_mtime_ns
-    limits = cgroup_limits(config, args.ci, args.seconds, args.unit)
-    commands = Commands(run_dir, environment(run_dir, config))
-    if args.mode in ("baseline", "gate"):
-        canonical_worker(commands, config, args.run_id, started_ns, limits, require_zero=args.mode == "gate")
-    elif args.mode == "self-test":
-        from validate_measurement import validate
-        rustc, cargo, llvm, _ = toolchain(commands, config)
-        if not (TOOL / "classifier/Cargo.lock").exists():
-            commands.run("lock-classifier", [cargo, "generate-lockfile", "--manifest-path", TOOL / "classifier/Cargo.toml",
-                         "--offline"], "classifier-lock.log")
-        env = dict(commands.env, CARGO_TARGET_DIR=str(run_dir / "classifier-build"))
-        commands.run("test-classifier", [cargo, "test", "--manifest-path", TOOL / "classifier/Cargo.toml",
-                     "--locked", "--offline", "--jobs", "2", "--", "--test-threads=1"], "classifier-test.log", env=env)
-        commands.run("test-evidence", [sys.executable, "-m", "unittest", "discover", "-s", TOOL,
-                     "-p", "test_*.py", "-v"], "evidence-test.log")
-        classifier = run_dir / "classifier-build/debug/outpost-core-coverage-classifier"
-        validate(commands, rustc, llvm, classifier)
-        print("Measurement tooling validation passed", flush=True)
-    elif args.mode == "check":
-        _, cargo, _, _ = toolchain(commands, config)
-        arguments = args.command[1:] if args.command[:1] == ["--"] else args.command
-        if arguments[:1] != ["cargo"]:
-            raise EvidenceError("bounded checks must explicitly invoke cargo")
-        commands.run("focused-check", [cargo, *arguments[1:]], "check.log")
-    elif args.mode == "verify":
-        report = verify_evidence(Path(args.evidence_dir), ROOT, args.require_zero)
-        write_json(run_dir / "verified-counts.json", {
-            key: value for key, value in report.items() if key.endswith("_total")
-        })
-        print((run_dir / "verified-counts.json").read_text(), flush=True)
-
-
-def record_ci_run_directory(run_dir: Path, ci: bool, env: dict[str, str]) -> None:
-    if ci and env.get("GITHUB_OUTPUT"):
-        with Path(env["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
-            output.write(f"run_directory={run_dir}\n")
-
-
-def supervise(args: argparse.Namespace, config: dict) -> Path:
-    run_id = str(uuid.uuid4())
-    run_dir = ROOT / "target/core-coverage" / run_id
-    run_dir.mkdir(parents=True)
-    record_ci_run_directory(run_dir, args.ci, os.environ)
-    unit = f"outpost-core-coverage-{run_id}.service"
-    write_json(run_dir / "run-start.json", {"schema": 1, "run_id": run_id, "unit": unit})
-    seconds = config["limits"]["wall_time_seconds"] if args.mode in ("baseline", "gate") else args.seconds
-    memory = config["limits"]["ci_memory_bytes" if args.ci else "local_memory_bytes"]
-    manager = ["sudo", "-n", "systemd-run", f"--uid={os.getuid()}", f"--gid={os.getgid()}"] if args.ci else ["systemd-run", "--user"]
-    stop = ["sudo", "-n", "systemctl"] if args.ci else ["systemctl", "--user"]
-    argv = [*manager, f"--unit={unit}", "--wait", "--pipe", "--collect",
-            f"--property=MemoryMax={memory}", "--property=MemorySwapMax=0", "--property=OOMPolicy=kill",
-            f"--property=TasksMax={config['limits']['pids_max']}", f"--property=RuntimeMaxSec={seconds}s",
-            f"--property=TimeoutStopSec={config['limits']['stop_timeout_seconds']}s", "--property=KillMode=control-group",
-            f"--property=WorkingDirectory={ROOT}", sys.executable, TOOL / "run.py", "_worker",
-            "--mode", args.mode, "--run-dir", run_dir, "--run-id", run_id, "--unit", unit,
-            "--seconds", str(seconds)]
-    if "RUSTUP_TOOLCHAIN" in os.environ:
-        argv.insert(len(manager), f"--setenv=RUSTUP_TOOLCHAIN={os.environ['RUSTUP_TOOLCHAIN']}")
-    if args.ci:
-        argv.append("--ci")
-    if args.mode == "check":
-        command = args.command[1:] if args.command[:1] == ["--"] else args.command
-        argv.extend(["--", *command])
-    elif args.mode == "verify":
-        argv.extend(["--evidence-dir", str(Path(args.run_dir).resolve())])
-        if args.require_zero:
-            argv.append("--require-zero")
-    print(f"Run: {run_dir}\nUnit: {unit}; cap={memory} bytes, deadline={seconds}s", flush=True)
-    proc = subprocess.Popen([str(argument) for argument in argv])
-
-    def cancel(signum: int, _frame: object) -> None:
-        subprocess.run([*stop, "stop", unit], check=False, timeout=config["limits"]["stop_timeout_seconds"] + 15)
-        proc.wait(timeout=15)
-        raise SystemExit(128 + signum)
-
-    previous = {sig: signal.signal(sig, cancel) for sig in (signal.SIGINT, signal.SIGTERM)}
-    try:
-        returncode = proc.wait()
-    except BaseException:
-        subprocess.run([*stop, "stop", unit], check=False, timeout=config["limits"]["stop_timeout_seconds"] + 15)
-        proc.wait(timeout=15)
-        raise
-    finally:
-        for sig, handler in previous.items():
-            signal.signal(sig, handler)
-    write_json(run_dir / "supervisor.json", {"schema": 1, "unit": unit,
-               "result": "success" if returncode == 0 else "failed", "returncode": returncode})
-    if returncode:
-        raise EvidenceError(f"bounded workload failed ({returncode}); diagnostics: {run_dir}")
-    if args.mode in ("baseline", "gate"):
-        # Heavy hashing and validation have completed under the service's lease
-        # and resource bounds. Outside it, publish only bounded bookkeeping.
-        if (run_dir / "pending-manifest.json").stat().st_size > 2 * 1024 * 1024:
-            raise EvidenceError("pending completion metadata exceeds its bookkeeping limit")
-        manifest = read_json(run_dir / "pending-manifest.json")
-        if manifest.get("status") != "pending-supervision" or manifest.get("data_verification", {}).get("status") != "passed":
-            raise EvidenceError("bounded evidence validation did not finish")
-        manifest["artifact_hashes"]["supervisor.json"] = sha256_file(run_dir / "supervisor.json")
-        manifest.update({"status": "complete", "finished_ns": time.time_ns()})
-        temporary = run_dir / "manifest.json.tmp"
-        write_json(temporary, manifest)
-        temporary.replace(run_dir / "manifest.json")
-        report = manifest["data_verification"]["counts"]
-        print(f"Production {report['production_total']}; exempted {report['exempted_total']}; "
-              f"covered {report['covered_total']}; uncovered {report['uncovered_total']}", flush=True)
-    print(f"Completed: {run_dir}", flush=True)
-    return run_dir
+def show_counts(report: dict) -> None:
+    print(f"Production {report['production_total']}; exempted {report['exempted_total']}; "
+          f"covered {report['covered_total']}; uncovered {report['uncovered_total']}", flush=True)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="mode", required=True)
-    for mode in ("baseline", "gate", "self-test", "check"):
+    for mode in ("baseline", "gate", "self-test"):
         child = sub.add_parser(mode)
-        child.add_argument("--ci", action="store_true")
-        if mode in ("self-test", "check"):
-            child.add_argument("--seconds", type=int, default=300)
-        if mode == "check":
-            child.add_argument("command", nargs=argparse.REMAINDER)
-    verify = sub.add_parser("verify")
-    verify.add_argument("run_dir")
+        child.add_argument("--output-dir", type=Path, help="new directory under target/core-coverage or outside the checkout")
+    verify = sub.add_parser("verify", help="check a completed measurement against the current tree")
+    verify.add_argument("run_dir", type=Path)
     verify.add_argument("--require-zero", action="store_true")
-    verify.add_argument("--ci", action="store_true")
-    verify.add_argument("--seconds", type=int, default=300)
-    internal = sub.add_parser("_worker", help=argparse.SUPPRESS)
-    internal.add_argument("--mode", dest="worker_mode", required=True)
-    internal.add_argument("--run-dir", required=True)
-    internal.add_argument("--run-id", required=True)
-    internal.add_argument("--unit", required=True)
-    internal.add_argument("--seconds", type=int, required=True)
-    internal.add_argument("--ci", action="store_true")
-    internal.add_argument("--evidence-dir")
-    internal.add_argument("--require-zero", action="store_true")
-    internal.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    config = read_json(TOOL / "contract.json")
-    if args.mode == "_worker":
-        args.mode = args.worker_mode
-        worker(args, config)
-    else:
-        if args.mode in ("self-test", "check", "verify") and not 1 <= args.seconds <= config["limits"]["wall_time_seconds"]:
-            raise EvidenceError("check deadline must be within the approved wall-time limit")
-        supervise(args, config)
+
+    base = ROOT / "target/core-coverage"
+    base.mkdir(parents=True, exist_ok=True)
+    with (base / "workload.lock").open("a") as lease:
+        try:
+            fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise EvidenceError("another coverage workload is running") from error
+        if args.mode == "verify":
+            show_counts(verify_evidence(args.run_dir, ROOT, args.require_zero))
+            return
+
+        config = read_json(TOOL / "contract.json")
+        run_id = str(uuid.uuid4())
+        directory = args.output_dir.resolve() if args.output_dir else base / run_id
+        if directory.is_relative_to(ROOT) and not directory.is_relative_to(base):
+            raise EvidenceError("write coverage under target/core-coverage or outside the checkout")
+        directory.mkdir(parents=True, exist_ok=False)
+        print(f"Run: {directory}", flush=True)
+        commands = Commands(directory, environment(directory, config))
+        if args.mode == "self-test":
+            self_test(commands, config)
+        else:
+            show_counts(measure(commands, config, run_id, args.mode == "gate"))
 
 
 if __name__ == "__main__":

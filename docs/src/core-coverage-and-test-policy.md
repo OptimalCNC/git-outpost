@@ -248,16 +248,17 @@ python3 tools/core-coverage/run.py self-test
 python3 tools/core-coverage/run.py baseline
 ```
 
-The runner requires a Linux cgroup v2 systemd manager and holds an exclusive
-workload lease. Canonical runs have a 30-minute wall deadline, two Cargo jobs,
-one test thread, 256 tasks, no swap, and aggregate memory caps of 8 GiB locally
-or 4 GiB in CI. Timeout and cancellation terminate the entire workload cgroup. Fresh
-run directories retain source hashes and uncommitted changes, commands, tool
-versions, source and test inventories, compiler objects, raw maps, exact
-classified counts, test logs, resource enforcement, and successful supervision.
-Artifact hashing and evidence verification also run inside the resource bounds
-and workload lease. Only a complete successful service receives the final atomic
-manifest; the outer supervisor performs bounded completion bookkeeping.
+The measurement runs in the foreground with two Cargo jobs and one test thread.
+The calling environment owns the run's memory cap, deadline, and cleanup on
+cancellation. A bounded local run uses 8 GiB and a 30-minute deadline. CI runs
+the same command in a job container with 4 GiB of memory, no swap, and a limit
+of 256 tasks. The workflow checks these limits before running the tests.
+
+Each run holds a workspace lock and creates a fresh evidence directory. It
+records the tested tree, commands, tool versions, source and test inventories,
+compiler objects, raw maps, line counts, and test logs. After all commands
+succeed and the evidence checks pass, the runner publishes the final manifest
+by atomic rename.
 
 `run.py verify <run-directory>` rejects missing, malformed, stale, incomplete,
 or inconsistent evidence. Adding `--require-zero`, or running `run.py gate`,

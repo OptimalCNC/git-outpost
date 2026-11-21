@@ -26,7 +26,7 @@ class EvidenceFixture(unittest.TestCase):
         (self.root / "crates/core/src").mkdir(parents=True)
         (self.root / "tools/core-coverage").mkdir(parents=True)
         self.run.mkdir()
-        self.write_json("run-start.json", {"schema": 1, "run_id": RUN_ID, "unit": "fixture.service"})
+        self.write_json("run-start.json", {"schema": 1, "run_id": RUN_ID})
         (self.root / SOURCE).write_text(
             "fn production() {\n    operation();\n}\n"
             "#[cfg(test)]\nfn test_only() {\n    production();\n}\n",
@@ -98,11 +98,7 @@ class EvidenceFixture(unittest.TestCase):
             "production_features": [], "execution_features": ["test-helpers"],
             "metric": "production_executable_lines", "exemptions": [],
             "profile_properties": {"opt_level": "0", "debuginfo": 2, "debug_assertions": True, "overflow_checks": True},
-            "limits": {
-                "wall_time_seconds": 1800, "cargo_jobs": 2, "test_threads": 1,
-                "local_memory_bytes": 8589934592, "ci_memory_bytes": 4294967296,
-                "memory_swap_bytes": 0, "pids_max": 256, "stop_timeout_seconds": 5,
-            },
+            "limits": {"cargo_jobs": 2, "test_threads": 1},
         }
         (self.root / "tools/core-coverage/contract.json").write_text(json.dumps(contract), encoding="utf-8")
         source_hashes = {path.relative_to(self.root).as_posix(): evidence.sha256_file(path) for path in self.root.rglob("*") if path.is_file()}
@@ -117,7 +113,6 @@ class EvidenceFixture(unittest.TestCase):
             {"name": "outpost_core", "kind": ["lib"], "test": True},
             {"name": "operation", "kind": ["test"], "test": True},
         ]}]})
-        self.write_json("supervisor.json", {"schema": 1, "unit": "fixture.service", "result": "success", "returncode": 0})
         library = self.run / "production-build/x86_64-unknown-linux-gnu/debug/liboutpost_core.rlib"
         library.parent.mkdir(parents=True)
         library.write_bytes(b"controlled archive fixture")
@@ -160,13 +155,10 @@ class EvidenceFixture(unittest.TestCase):
         )
         (self.run / "production-build.log").write_text("controlled ordinary production compile\n", encoding="utf-8")
         self.document = {
-            "schema": 1, "status": "complete", "run_id": RUN_ID, "commit": COMMIT,
+            "schema": 2, "status": "complete", "run_id": RUN_ID, "commit": COMMIT,
             "started_ns": started_ns, "finished_ns": time.time_ns(),
             "config": contract, "config_sha256": evidence.canonical_hash(contract),
             "source_hashes": source_hashes,
-            "data_verification": {"status": "passed", "counts": {
-                key: value for key, value in report.items() if key.endswith("_total")
-            }},
             "host": {"system": "Linux", "machine": "x86_64", "kernel": "fixture-kernel",
                      "os_release": {"ID": "fixture", "NAME": "controlled tooling fixture"}},
             "versions": {
@@ -178,13 +170,6 @@ class EvidenceFixture(unittest.TestCase):
             "expected_test_targets": targets,
             "tests": [{"target": target, "status": "passed", "exit_code": 0,
                        "total": 1, "passed": 1, "failed": 0, "ignored": 0, "filtered_out": 0} for target in targets],
-            "limits_actual": {
-                "wall_time_seconds": 1800, "cargo_jobs": 2, "test_threads": 1,
-                "memory_bytes": 8589934592, "memory_swap_bytes": 0, "pids_max": 256,
-                "enforcement": "cgroup-v2", "memory_oom_group": 1,
-                "kill_mode": "control-group", "timeout_stop_seconds": 5,
-                "unit": "fixture.service", "cgroup": "/fixture",
-            },
         }
         for path in (library, object_path):
             self.document["artifact_hashes"][path.relative_to(self.run).as_posix()] = evidence.sha256_file(path)
@@ -414,31 +399,14 @@ class ManifestTests(EvidenceFixture):
         self.manifest()
         self.assertEqual(self.verify()["uncovered_total"], 0)
 
-    def test_pending_bounded_data_cannot_claim_successful_supervision(self):
+    def test_unpublished_measurement_cannot_pass_even_when_artifacts_are_complete(self):
         self.manifest()
-        self.document["status"] = "pending-supervision"
-        self.write_json("supervisor.json", {"schema": 1, "unit": "fixture.service",
-                                            "result": "pending", "returncode": None})
-        self.document["artifact_hashes"]["supervisor.json"] = evidence.sha256_file(self.run / "supervisor.json")
-        self.document["finished_ns"] = time.time_ns()
-        self.write_json("pending-manifest.json", self.document)
-        (self.run / "manifest.json").unlink()
+        (self.run / "manifest.json").rename(self.run / "manifest.json.tmp")
         with mock.patch.object(evidence, "current_commit", return_value=COMMIT), \
              mock.patch.object(evidence, "current_source_hashes", return_value=self.document["source_hashes"]):
-            self.assertEqual(evidence.verify_pending_evidence(self.run, self.root, True)["uncovered_total"], 0)
-            with self.assertRaises(evidence.EvidenceError):
+            self.assertEqual(evidence.validate_evidence(self.run, self.root, self.document, True)["uncovered_total"], 0)
+            with self.assertRaisesRegex(evidence.EvidenceError, "cannot read JSON evidence.*manifest.json"):
                 evidence.verify_evidence(self.run, self.root, True)
-        self.write_json("manifest.json", self.document)
-        with self.assertRaisesRegex(evidence.EvidenceError, "coverage run is incomplete"):
-            self.verify()
-
-    def test_failed_or_changed_bounded_verification_cannot_pass(self):
-        self.manifest()
-        for verification in ({"status": "failed"}, {"status": "passed", "counts": {}}):
-            self.document["data_verification"] = verification
-            self.update_manifest()
-            with self.assertRaises(evidence.EvidenceError):
-                self.verify()
 
     def test_missing_or_incompatible_host_metadata_cannot_pass(self):
         self.manifest()
@@ -498,21 +466,16 @@ class ManifestTests(EvidenceFixture):
         with self.assertRaisesRegex(evidence.EvidenceError, "differs from its filesystem marker"):
             self.verify()
         self.document["started_ns"] = (self.run / "run-start.json").stat().st_mtime_ns
-        self.write_json("run-start.json", {"schema": 1, "run_id": "f024ad42-59ef-45dc-b8f3-829e989d2d57", "unit": "fixture.service"})
+        self.write_json("run-start.json", {"schema": 1, "run_id": "f024ad42-59ef-45dc-b8f3-829e989d2d57"})
         self.rehash("run-start.json")
-        with self.assertRaisesRegex(evidence.EvidenceError, "does not identify this supervised run"):
+        with self.assertRaisesRegex(evidence.EvidenceError, "does not identify this run"):
             self.verify()
 
-    def test_partial_run_and_failed_supervisor_fail(self):
+    def test_partial_run_is_rejected(self):
         self.manifest()
         self.document["status"] = "running"
         self.update_manifest()
         with self.assertRaisesRegex(evidence.EvidenceError, "incomplete"):
-            self.verify()
-        self.document["status"] = "complete"
-        self.write_json("supervisor.json", {"schema": 1, "unit": "fixture.service", "result": "timeout", "returncode": 1})
-        self.rehash("supervisor.json")
-        with self.assertRaisesRegex(evidence.EvidenceError, "did not terminate successfully"):
             self.verify()
 
     def test_failed_ignored_filtered_and_unfinished_targets_fail(self):
@@ -559,18 +522,6 @@ class ManifestTests(EvidenceFixture):
         (self.run / "eligible.lcov").write_text("wrong selection\n", encoding="utf-8")
         self.rehash("eligible.lcov")
         with self.assertRaisesRegex(evidence.EvidenceError, "published LCOV differs"):
-            self.verify()
-
-    def test_unenforced_or_changed_resource_limits_fail(self):
-        self.manifest()
-        self.document["limits_actual"]["memory_bytes"] = 0
-        self.update_manifest()
-        with self.assertRaisesRegex(evidence.EvidenceError, "memory cap differs"):
-            self.verify()
-        self.document["limits_actual"]["memory_bytes"] = 8589934592
-        self.document["limits_actual"]["enforcement"] = "timeout-only"
-        self.update_manifest()
-        with self.assertRaisesRegex(evidence.EvidenceError, "aggregate cgroup memory enforcement"):
             self.verify()
 
     def test_failed_command_is_not_masked_by_successful_test_counters(self):
@@ -666,12 +617,9 @@ class ManifestTests(EvidenceFixture):
         with self.assertRaisesRegex(evidence.EvidenceError, "targets did not finish"):
             self.verify()
 
-    def test_missing_manifest_and_required_artifact_inventory_fail(self):
+    def test_missing_required_artifact_inventory_fails(self):
         self.manifest()
-        (self.run / "manifest.json").unlink()
-        with self.assertRaises(evidence.EvidenceError):
-            self.verify()
-        self.document["artifact_hashes"].pop("supervisor.json")
+        self.document["artifact_hashes"].pop("test.log")
         self.update_manifest()
         with self.assertRaisesRegex(evidence.EvidenceError, "required coverage artifacts"):
             self.verify()
@@ -686,22 +634,6 @@ class ArchiveInventoryTests(unittest.TestCase):
                       "subdir/a.o\n", "../a.o\n", "a.o\n\n"):
             with self.subTest(table=table), self.assertRaises(evidence.EvidenceError):
                 evidence.archive_object_names(table)
-
-
-class RunnerOutputTests(unittest.TestCase):
-    def test_ci_records_the_exact_fresh_directory_without_changing_local_output(self):
-        import run
-
-        with tempfile.TemporaryDirectory() as temporary:
-            output = Path(temporary) / "github-output"
-            output.write_text("existing=value\n", encoding="utf-8")
-            directory = Path(temporary) / "workspace with spaces" / RUN_ID
-            run.record_ci_run_directory(directory, True, {"GITHUB_OUTPUT": str(output)})
-            expected = f"existing=value\nrun_directory={directory}\n"
-            self.assertEqual(output.read_text(encoding="utf-8"), expected)
-            run.record_ci_run_directory(directory, False, {"GITHUB_OUTPUT": str(output)})
-            run.record_ci_run_directory(directory, True, {})
-            self.assertEqual(output.read_text(encoding="utf-8"), expected)
 
 
 if __name__ == "__main__":

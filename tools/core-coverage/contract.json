@@ -23,13 +23,7 @@
     "incremental": false
   },
   "limits": {
-    "wall_time_seconds": 1800,
     "cargo_jobs": 2,
-    "test_threads": 1,
-    "local_memory_bytes": 8589934592,
-    "ci_memory_bytes": 4294967296,
-    "memory_swap_bytes": 0,
-    "pids_max": 256,
-    "stop_timeout_seconds": 5
+    "test_threads": 1
   }
 }

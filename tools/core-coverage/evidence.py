@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import subprocess
 import uuid
@@ -426,7 +427,11 @@ def eligible_lcov(report: dict[str, Any], root: Path | str) -> str:
 
 def sha256_file(path: Path | str) -> str:
     try:
-        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        digest = hashlib.sha256()
+        with Path(path).open("rb") as source:
+            for block in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.hexdigest()
     except OSError as error:
         raise EvidenceError(f"cannot hash evidence {path}: {error}") from error
 
@@ -437,9 +442,11 @@ def canonical_hash(value: Any) -> str:
 
 def _git(root: Path, *arguments: str) -> bytes:
     try:
+        env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        env["PATH"] = "/usr/bin:/bin"
         result = subprocess.run(
             ["git", "-C", str(root), *arguments],
-            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, env=env,
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise EvidenceError(f"cannot establish current Git tree: {error}") from error
@@ -513,7 +520,7 @@ REQUIRED_ARTIFACTS = frozenset({
     "production.lcov", "production.json", "execution.lcov", "execution.json",
     "classification.json", "report.json", "eligible.lcov", "tree.json",
     "test.log", "production-build.log", "commands.json", "compiler-sources.json",
-    "test-targets.json", "supervisor.json", "cargo-metadata.json", "production-artifact.json", "run-start.json",
+    "test-targets.json", "cargo-metadata.json", "production-artifact.json", "run-start.json",
     "production-archive.log",
 })
 
@@ -635,33 +642,18 @@ def _verify_commands(
 def verify_evidence(
     run_dir: Path | str, root: Path | str, require_zero: bool
 ) -> dict[str, Any]:
-    """Verify complete current-tree evidence; optionally enforce zero uncovered lines.
-
-    Baseline runs use require_zero=False, which relaxes only the zero-gap rule.
-    Test completeness, classification, freshness and report integrity still apply.
-    """
-    return _verify_evidence(run_dir, root, require_zero, pending=False)
+    """Verify a published measurement against its artifacts and the current tree."""
+    manifest = read_json(Path(run_dir) / "manifest.json")
+    return validate_evidence(run_dir, root, manifest, require_zero)
 
 
-def verify_pending_evidence(
-    run_dir: Path | str, root: Path | str, require_zero: bool
+def validate_evidence(
+    run_dir: Path | str, root: Path | str, manifest: dict[str, Any], require_zero: bool
 ) -> dict[str, Any]:
-    """Validate data inside its cgroup without claiming successful supervision.
-
-    Only the outer supervisor can publish complete evidence after the service
-    terminates successfully. This internal stage cannot satisfy the public gate.
-    """
-    return _verify_evidence(run_dir, root, require_zero, pending=True)
-
-
-def _verify_evidence(
-    run_dir: Path | str, root: Path | str, require_zero: bool, *, pending: bool
-) -> dict[str, Any]:
+    """Check the actual commands, tests, source selection and counts before publication or reuse."""
     run_dir, root = Path(run_dir).resolve(), Path(root).resolve()
-    manifest = read_json(run_dir / ("pending-manifest.json" if pending else "manifest.json"))
-    _require(manifest.get("schema") == 1, "unsupported coverage-manifest schema")
-    expected_status = "pending-supervision" if pending else "complete"
-    _require(manifest.get("status") == expected_status, "coverage run is incomplete")
+    _require(type(manifest.get("schema")) is int and manifest["schema"] == 2, "unsupported coverage-manifest schema")
+    _require(manifest.get("status") == "complete", "coverage run is incomplete")
     try:
         run_id = str(uuid.UUID(manifest.get("run_id", "")))
     except (ValueError, TypeError, AttributeError) as error:
@@ -686,16 +678,6 @@ def _verify_evidence(
         expected_llvm = contract.get("llvm_version")
         approved_versions = {expected_llvm, f"{expected_llvm}-rust-{contract.get('rust_release')}-stable"}
         _require(llvm_version is not None and llvm_version.group(1) in approved_versions, f"{name} differs from the approved LLVM version")
-    limits = manifest.get("limits_actual")
-    approved_limits = contract.get("limits")
-    _require(isinstance(limits, dict) and isinstance(approved_limits, dict), "execution limits are missing")
-    for key in ("wall_time_seconds", "cargo_jobs", "test_threads", "memory_swap_bytes", "pids_max"):
-        _require(type(limits.get(key)) is int and limits[key] == approved_limits.get(key), f"execution limit differs: {key}")
-    _require(type(limits.get("memory_bytes")) is int and limits["memory_bytes"] in (approved_limits.get("local_memory_bytes"), approved_limits.get("ci_memory_bytes")), "aggregate memory cap differs")
-    _require(limits.get("enforcement") == "cgroup-v2" and type(limits.get("memory_oom_group")) is int and limits["memory_oom_group"] == 1, "aggregate cgroup memory enforcement is missing")
-    _require(limits.get("kill_mode") == "control-group", "process-tree cancellation enforcement is missing")
-    _require(type(limits.get("timeout_stop_seconds")) is int and limits["timeout_stop_seconds"] == approved_limits.get("stop_timeout_seconds"), "process-tree termination deadline differs")
-    _require(all(isinstance(limits.get(key), str) and bool(limits[key]) for key in ("cgroup", "unit")), "resource enforcement identifiers are missing")
     sources = manifest.get("source_hashes")
     _require(isinstance(sources, dict) and bool(sources), "source hashes are missing")
     _require(sources == current_source_hashes(root), "coverage evidence is stale or the source inventory changed")
@@ -707,7 +689,7 @@ def _verify_evidence(
     _require(started <= finished, "run completion precedes its start")
     start_path = run_dir / "run-start.json"
     marker = read_json(start_path)
-    _require(type(marker.get("schema")) is int and marker["schema"] == 1 and marker.get("run_id") == run_id and marker.get("unit") == limits["unit"], "run start marker does not identify this supervised run")
+    _require(type(marker.get("schema")) is int and marker["schema"] == 1 and marker.get("run_id") == run_id, "run start marker does not identify this run")
     _require(started == start_path.stat().st_mtime_ns, "run start timestamp differs from its filesystem marker")
     for name, digest in artifacts.items():
         name = _relative_path(name, "artifact path")
@@ -721,12 +703,6 @@ def _verify_evidence(
     tree = read_json(run_dir / "tree.json")
     _require(tree.get("schema") == 1 and tree.get("commit") == manifest["commit"] and tree.get("file_hashes") == sources, "tested-tree provenance differs from the manifest")
     _require(isinstance(tree.get("diff"), str) and isinstance(tree.get("untrackedfiles"), list), "tested uncommitted changes were not recorded")
-    supervisor = read_json(run_dir / "supervisor.json")
-    _require(supervisor.get("schema") == 1 and supervisor.get("unit") == limits["unit"], "supervisor identity differs")
-    if pending:
-        _require(supervisor.get("result") == "pending" and supervisor.get("returncode") is None, "pending data must not claim successful supervision")
-    else:
-        _require(supervisor.get("result") == "success" and type(supervisor.get("returncode")) is int and supervisor["returncode"] == 0, "bounded workload did not terminate successfully")
     command_document = read_json(run_dir / "commands.json")
     _require(command_document.get("schema") == 1, "unsupported command-evidence schema")
     commands = command_document.get("commands")
@@ -802,11 +778,6 @@ def _verify_evidence(
         run_dir / "classification.json", root,
     )
     _require(read_json(run_dir / "report.json") == report, "published report differs from raw measurement")
-    if not pending:
-        verification = manifest.get("data_verification")
-        _require(isinstance(verification, dict) and verification.get("status") == "passed", "bounded data verification did not finish")
-        counts = {key: value for key, value in report.items() if key.endswith("_total")}
-        _require(verification.get("counts") == counts, "bounded data verification counts differ")
     try:
         published_lcov = (run_dir / "eligible.lcov").read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:

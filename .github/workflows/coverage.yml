@@ -21,17 +21,29 @@ jobs:
   core:
     name: Core production lines (baseline)
     runs-on: ubuntu-latest
+    container:
+      image: rust:1.94.0-bookworm
+      options: --init --memory=4g --memory-swap=4g --pids-limit=256
     timeout-minutes: 45
     env:
       RUSTUP_TOOLCHAIN: 1.94.0
+      CARGO_BUILD_JOBS: 2
+      RUST_TEST_THREADS: 1
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.94.0
-        with:
-          components: llvm-tools-preview
+      - name: Prepare coverage job
+        run: |
+          # The runner mounts the workspace, and checkout creates .git as the container user.
+          chown --reference=.git .
+          set -x
+          test "$(cat /sys/fs/cgroup/memory.max)" = 4294967296
+          test "$(cat /sys/fs/cgroup/memory.swap.max)" = 0
+          test "$(cat /sys/fs/cgroup/pids.max)" = 256
+
+      - name: Install LLVM tools
+        run: rustup component add llvm-tools-preview
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
@@ -46,16 +58,15 @@ jobs:
 
       - name: Fetch locked dependencies
         run: |
-          python3 tools/core-coverage/run.py check --ci -- cargo fetch --locked
-          python3 tools/core-coverage/run.py check --ci -- cargo fetch --manifest-path tools/core-coverage/classifier/Cargo.toml --locked
+          cargo fetch --locked
+          cargo fetch --manifest-path tools/core-coverage/classifier/Cargo.toml --locked
 
       - name: Validate measurement tooling
-        run: python3 tools/core-coverage/run.py self-test --ci
+        run: timeout --kill-after=5s 5m python3 tools/core-coverage/run.py self-test
 
       # Adoption requires a reviewed complete run with zero uncovered lines.
       - name: Measure production executable lines
-        id: measurement
-        run: python3 tools/core-coverage/run.py baseline --ci
+        run: timeout --kill-after=5s 30m python3 tools/core-coverage/run.py baseline --output-dir target/core-coverage/ci
 
       - name: Retain measurement evidence
         if: always()
@@ -75,7 +86,7 @@ jobs:
         uses: codecov/codecov-action@v7
         with:
           use_oidc: true
-          files: ${{ steps.measurement.outputs.run_directory }}/eligible.lcov
+          files: target/core-coverage/ci/eligible.lcov
           flags: outpost-core-linux-dev-production-lines
           disable_search: true
           fail_ci_if_error: true
