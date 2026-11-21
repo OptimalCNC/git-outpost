@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::git::PREFER_EXACT_REF;
 use crate::metadata;
 use crate::path::git_path_arg;
 use crate::registry::RegistryEntry;
@@ -230,18 +231,37 @@ fn apply_checkout(
     target_branch: &BranchName,
     remote_name: &RemoteName,
 ) -> OutpostResult<()> {
+    let target_ref = format!("refs/heads/{}", target_branch.as_str());
+    let branch = match checkout {
+        AddCheckout::CheckoutExisting { .. } => target_branch,
+        AddCheckout::NewBranch { name, .. } => name,
+    };
+    let remote_tracking_ref = format!("refs/remotes/{}/{}", remote_name.as_str(), branch.as_str());
     match checkout {
-        AddCheckout::CheckoutExisting { .. } => git.run_check(["switch", target_branch.as_str()]),
-        AddCheckout::NewBranch { name, .. } => {
-            source
-                .git()
-                .run_check(["branch", name.as_str(), target_branch.as_str()])?;
-            let remote_tracking_ref =
-                format!("refs/remotes/{}/{}", remote_name.as_str(), name.as_str());
-            let fetch_refspec = format!("{}:{remote_tracking_ref}", name.as_str());
-            let remote_branch = format!("{}/{}", remote_name.as_str(), name.as_str());
+        AddCheckout::CheckoutExisting { .. } => {
+            if git.run_status(["show-ref", "--verify", "--quiet", &target_ref])? {
+                return git.run_check(["switch", branch.as_str()]);
+            }
+        }
+        AddCheckout::NewBranch { .. } => {
+            source.git().run_check([
+                "-c",
+                PREFER_EXACT_REF,
+                "branch",
+                branch.as_str(),
+                &target_ref,
+            ])?;
+            let fetch_refspec = format!("refs/heads/{}:{remote_tracking_ref}", branch.as_str());
             git.run_check(["fetch", remote_name.as_str(), &fetch_refspec])?;
-            git.run_check(["switch", "--track", &remote_branch])
         }
     }
+    git.run_check([
+        "-c",
+        PREFER_EXACT_REF,
+        "switch",
+        "-c",
+        branch.as_str(),
+        "--track",
+        &remote_tracking_ref,
+    ])
 }

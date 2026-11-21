@@ -5,10 +5,10 @@ use crate::ops::branch_analysis::{
     CleanupEvidenceProvider,
 };
 use crate::selector::{OutpostSelector, resolve_entry};
-use crate::source_repo::read_optional_config;
+use crate::source_repo::{current_branch_or_detached, read_optional_config};
 use crate::{
-    AheadBehind, BranchName, GitInvoker, Outpost, OutpostError, OutpostResult, RemoteName,
-    Reporter, SourceRepo, StepKind,
+    AheadBehind, BranchName, Outpost, OutpostError, OutpostResult, RemoteName, Reporter,
+    SourceRepo, StepKind,
 };
 
 pub struct AnalyzeOptions {
@@ -122,7 +122,7 @@ pub fn run_with_reporter(
     );
 
     reporter.step(StepKind::Analysis, "checking outpost state");
-    let branch = current_branch_optional(&outpost)?;
+    let branch = current_branch_or_detached(outpost.git())?;
     let outpost_dirty = outpost.is_dirty()?;
     reporter.step(
         StepKind::Analysis,
@@ -294,14 +294,6 @@ impl Reporter for SilentReporter {
     fn warn(&mut self, _message: &str) {}
 }
 
-fn current_branch_optional(outpost: &Outpost) -> OutpostResult<Option<BranchName>> {
-    match outpost.current_branch() {
-        Ok(branch) => Ok(Some(branch)),
-        Err(OutpostError::BranchNotFound { branch, .. }) if branch == "HEAD" => Ok(None),
-        Err(err) => Err(err),
-    }
-}
-
 fn probe_ahead_behind_outpost_source(outpost: &Outpost) -> Probe<AheadBehind> {
     match outpost.ahead_behind_source() {
         Ok(value) => Probe::Known(value),
@@ -465,7 +457,7 @@ fn probe_remote_branch(
         return Probe::Unavailable(err.to_string());
     }
 
-    match rev_parse(source.git(), &remote_tracking_ref) {
+    match source.git().ref_oid(&remote_tracking_ref) {
         Ok(oid) => Probe::Known(RemoteBranchIdentity {
             remote: remote.clone(),
             branch: branch.clone(),
@@ -568,10 +560,6 @@ fn branch_delete_safety(analysis: &branch_analysis::BranchCleanupAnalysis) -> Br
                 "branch cleanup analysis did not produce a proof or skip reason".to_owned(),
             )
         })
-}
-
-fn rev_parse(git: &GitInvoker, reference: &str) -> OutpostResult<String> {
-    git.run_capture(["rev-parse", reference])
 }
 
 fn source_branch_ref(branch: &BranchName) -> String {

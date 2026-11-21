@@ -35,8 +35,17 @@ impl BranchName {
         }
     }
 
-    pub(crate) fn from_validated_git_output(name: String) -> Self {
-        Self(name)
+    /// Git has already validated the full ref. Porcelain branch names also
+    /// reserve HEAD and cannot start with a dash.
+    pub(crate) fn from_git_ref(reference: &str) -> OutpostResult<Self> {
+        let Some(name) = reference.strip_prefix("refs/heads/") else {
+            return invalid_ref(reference.to_owned());
+        };
+        reject_empty_or_leading_dash(name)?;
+        if name == "HEAD" {
+            return invalid_ref(name.to_owned());
+        }
+        Ok(Self(name.to_owned()))
     }
 
     pub fn as_str(&self) -> &str {

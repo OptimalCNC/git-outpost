@@ -25,10 +25,8 @@ impl SourceRepo {
 
     pub fn discover_with(start: &Path, env: &BTreeMap<OsString, OsString>) -> OutpostResult<Self> {
         let git = invoker_at(start, env);
-        let work_tree = git
-            .run_capture(["rev-parse", "--show-toplevel"])
-            .map_err(|err| map_discovery_error(err, start))?;
-        Self::at_with(work_tree, env)
+        let root = repository_path(&git, "--show-toplevel")?;
+        Self::at_with(root, env)
     }
 
     pub fn at(path: impl Into<PathBuf>) -> OutpostResult<Self> {
@@ -42,19 +40,9 @@ impl SourceRepo {
         let start = path.into();
         let git = invoker_at(&start, env);
 
-        let work_tree_raw = git
-            .run_capture(["rev-parse", "--show-toplevel"])
-            .map_err(|err| map_discovery_error(err, &start))?;
-        let git_dir_raw = git
-            .run_capture(["rev-parse", "--git-dir"])
-            .map_err(|err| map_discovery_error(err, &start))?;
-        let git_common_dir_raw = git
-            .run_capture(["rev-parse", "--git-common-dir"])
-            .map_err(|err| map_discovery_error(err, &start))?;
-
-        let work_tree = canonicalize_path(Path::new(&work_tree_raw))?;
-        let git_dir = canonicalize_git_path(&start, &git_dir_raw)?;
-        let git_common_dir = canonicalize_git_path(&start, &git_common_dir_raw)?;
+        let work_tree = repository_path(&git, "--show-toplevel")?;
+        let git_dir = repository_path(&git, "--git-dir")?;
+        let git_common_dir = repository_path(&git, "--git-common-dir")?;
         let git = invoker_at(&work_tree, env);
 
         Ok(Self {
@@ -157,7 +145,7 @@ impl SourceRepo {
     }
 
     pub fn current_branch(&self) -> OutpostResult<BranchName> {
-        current_branch(&self.git, &self.work_tree)
+        current_branch(&self.git)
     }
 
     pub fn checked_out_branches(&self) -> OutpostResult<Vec<BranchName>> {
@@ -166,10 +154,12 @@ impl SourceRepo {
             branches.push(branch);
         }
 
-        let output = self.git.run_capture(["worktree", "list", "--porcelain"])?;
-        for line in output.lines() {
-            if let Some(branch) = line.strip_prefix("branch refs/heads/") {
-                let branch = BranchName::parse(branch.to_owned())?;
+        let output = self
+            .git
+            .run_capture_bytes(["worktree", "list", "--porcelain", "-z"])?;
+        for field in output.split(|&byte| byte == 0) {
+            if let Some(name) = field.strip_prefix(b"branch refs/heads/") {
+                let branch = BranchName::parse(self.git.output_text(name)?)?;
                 if !branches.iter().any(|existing| existing == &branch) {
                     branches.push(branch);
                 }
@@ -179,15 +169,18 @@ impl SourceRepo {
     }
 
     pub fn checked_out_worktree_for(&self, branch: &BranchName) -> OutpostResult<Option<PathBuf>> {
-        let output = self.git.run_capture(["worktree", "list", "--porcelain"])?;
+        let output = self
+            .git
+            .run_capture_bytes(["worktree", "list", "--porcelain", "-z"])?;
         let mut current_path = None;
-        for line in output.lines() {
-            if let Some(path) = line.strip_prefix("worktree ") {
-                current_path = Some(Path::new(path));
-            } else if let Some(value) = line.strip_prefix("branch refs/heads/") {
-                if value == branch.as_str() {
-                    return current_path.map(canonicalize_path).transpose();
-                }
+        for field in output.split(|&byte| byte == 0) {
+            if let Some(path) = field.strip_prefix(b"worktree ") {
+                current_path = Some(path);
+            } else if field.strip_prefix(b"branch refs/heads/") == Some(branch.as_str().as_bytes())
+            {
+                return current_path
+                    .map(|path| canonicalize_path(self.git.output_path(path)?))
+                    .transpose();
             }
         }
         Ok(None)
@@ -229,7 +222,7 @@ impl SourceRepo {
     pub fn branch_exists(&self, branch: &BranchName) -> OutpostResult<bool> {
         let branch_ref = format!("refs/heads/{}", branch.as_str());
         self.git
-            .run_status(["rev-parse", "--verify", "--quiet", &branch_ref])
+            .run_status(["show-ref", "--verify", "--quiet", &branch_ref])
     }
 
     pub fn branch_oid(&self, branch: &BranchName) -> OutpostResult<Option<String>> {
@@ -237,7 +230,7 @@ impl SourceRepo {
             return Ok(None);
         }
 
-        rev_parse(&self.git, &source_branch_ref(branch)).map(|oid| Some(oid.trim().to_owned()))
+        self.git.ref_oid(&source_branch_ref(branch)).map(Some)
     }
 
     pub fn has_commit_oid(&self, oid: &str) -> OutpostResult<bool> {
@@ -302,7 +295,7 @@ impl SourceRepo {
         let fetch_refspec = format!("+{}:{remote_tracking_ref}", source_branch_ref(&branch));
         self.git
             .run_check(["fetch", remote.as_str(), &fetch_refspec])?;
-        let oid = rev_parse(&self.git, &remote_tracking_ref)?;
+        let oid = self.git.ref_oid(&remote_tracking_ref)?;
 
         Ok(Some((branch, oid.trim().to_owned())))
     }
@@ -359,9 +352,14 @@ impl SourceRepo {
                 .run_check(["config", "--local", "--add", &fetch_key, &fetch_refspec])?;
         }
 
-        let remote_branch = format!("{}/{}", remote.as_str(), branch.as_str());
-        self.git
-            .run_check(["branch", "--track", branch.as_str(), &remote_branch])
+        self.git.run_check([
+            "-c",
+            crate::git::PREFER_EXACT_REF,
+            "branch",
+            "--track",
+            branch.as_str(),
+            &remote_tracking_ref,
+        ])
     }
 
     fn remote_head_branch(&self, remote: &RemoteName) -> OutpostResult<Option<BranchName>> {
@@ -479,11 +477,11 @@ impl SourceRepo {
 
         let local_ref = format!("refs/heads/{}", branch.as_str());
         let remote_ref = format!("refs/remotes/origin/{}", branch.as_str());
-        let fetch_refspec = format!("{}:{remote_ref}", branch.as_str());
+        let fetch_refspec = format!("{local_ref}:{remote_ref}");
         self.git.run_check(["fetch", "origin", &fetch_refspec])?;
 
-        let local_oid = rev_parse(&self.git, &local_ref)?;
-        let remote_oid = rev_parse(&self.git, &remote_ref)?;
+        let local_oid = self.git.ref_oid(&local_ref)?;
+        let remote_oid = self.git.ref_oid(&remote_ref)?;
         if local_oid == remote_oid || is_ancestor(&self.git, &remote_oid, &local_oid)? {
             return Ok(());
         }
@@ -567,17 +565,22 @@ pub(crate) fn remote_ref_oid(
     Ok(selected)
 }
 
-pub(crate) fn current_branch(git: &GitInvoker, repo: &Path) -> OutpostResult<BranchName> {
-    let name = git
-        .run_capture(["symbolic-ref", "--quiet", "--short", "HEAD"])
-        .map_err(|err| match err {
-            OutpostError::GitFailed { .. } => OutpostError::BranchNotFound {
-                branch: "HEAD".to_owned(),
-                repo: repo.to_path_buf(),
-            },
-            other => other,
-        })?;
-    BranchName::parse(name)
+pub(crate) fn current_branch_or_detached(git: &GitInvoker) -> OutpostResult<Option<BranchName>> {
+    match git.run_capture_bytes(["symbolic-ref", "--quiet", "HEAD"]) {
+        Ok(bytes) => {
+            let reference = git.output_text(bytes.strip_suffix(b"\n").unwrap_or(&bytes))?;
+            BranchName::from_git_ref(reference).map(Some)
+        }
+        Err(OutpostError::GitFailed { code: 1, .. }) => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+pub(crate) fn current_branch(git: &GitInvoker) -> OutpostResult<BranchName> {
+    current_branch_or_detached(git)?.ok_or_else(|| OutpostError::BranchNotFound {
+        branch: "HEAD".to_owned(),
+        repo: git.cwd().to_owned(),
+    })
 }
 
 pub(crate) fn is_dirty(git: &GitInvoker) -> OutpostResult<bool> {
@@ -595,10 +598,6 @@ pub(crate) fn read_optional_config(git: &GitInvoker, key: &str) -> OutpostResult
     }
 }
 
-pub(crate) fn rev_parse(git: &GitInvoker, reference: &str) -> OutpostResult<String> {
-    git.run_capture(["rev-parse", reference])
-}
-
 pub(crate) fn is_ancestor(
     git: &GitInvoker,
     ancestor: &str,
@@ -614,23 +613,17 @@ pub(crate) fn canonicalize_path(path: &Path) -> OutpostResult<PathBuf> {
     })
 }
 
-fn canonicalize_git_path(start: &Path, value: &str) -> OutpostResult<PathBuf> {
-    let path = PathBuf::from(value);
-    if path.is_absolute() {
-        canonicalize_path(&path)
-    } else {
-        canonicalize_path(&start.join(path))
-    }
+pub(crate) fn repository_path(git: &GitInvoker, option: &str) -> OutpostResult<PathBuf> {
+    let path = git
+        .run_capture_path(["rev-parse", option])
+        .map_err(|err| match err {
+            OutpostError::GitFailed { .. } => OutpostError::NotARepo(git.cwd().to_owned()),
+            other => other,
+        })?;
+    canonicalize_path(&git.cwd().join(path))
 }
 
-fn map_discovery_error(err: OutpostError, path: &Path) -> OutpostError {
-    match err {
-        OutpostError::GitFailed { .. } => OutpostError::NotARepo(path.to_path_buf()),
-        other => other,
-    }
-}
-
-fn source_branch_ref(branch: &BranchName) -> String {
+pub(crate) fn source_branch_ref(branch: &BranchName) -> String {
     format!("refs/heads/{}", branch.as_str())
 }
 

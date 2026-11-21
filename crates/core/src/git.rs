@@ -5,6 +5,10 @@ use std::process::{Command, ExitStatus, Output};
 
 use crate::{AheadBehind, OutpostError, OutpostResult};
 
+// When passing a full ref to branch or switch, select its exact match even if
+// another branch or tag is literally named after that ref.
+pub(crate) const PREFER_EXACT_REF: &str = "core.warnAmbiguousRefs=false";
+
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 #[cfg(unix)]
@@ -42,6 +46,10 @@ impl GitInvoker {
         &self.cwd
     }
 
+    pub(crate) fn ref_oid(&self, full_ref: &str) -> OutpostResult<String> {
+        self.run_capture(["show-ref", "--verify", "--hash", full_ref])
+    }
+
     pub(crate) fn ahead_behind(&self, local: &str, other: &str) -> OutpostResult<AheadBehind> {
         let range = format!("{local}...{other}");
         let output = self.run_capture(["rev-list", "--left-right", "--count", &range])?;
@@ -65,7 +73,39 @@ impl GitInvoker {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
-        Ok(trimmed_lossy(&self.successful_stdout(args)?))
+        Ok(trimmed_lossy(&self.run_capture_bytes(args)?))
+    }
+
+    /// Read one path printed by Git. Only the final LF frames the result.
+    pub(crate) fn run_capture_path<I, S>(&self, args: I) -> OutpostResult<PathBuf>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let bytes = self.run_capture_bytes(args)?;
+        self.output_path(bytes.strip_suffix(b"\n").unwrap_or(&bytes))
+            .map(Path::to_owned)
+    }
+
+    pub(crate) fn output_path<'a>(&self, bytes: &'a [u8]) -> OutpostResult<&'a Path> {
+        if bytes.is_empty() {
+            return Err(OutpostError::IoAt {
+                path: self.cwd.clone(),
+                source: std::io::Error::new(std::io::ErrorKind::InvalidData, "empty Git path"),
+            });
+        }
+        #[cfg(unix)]
+        let path = Path::new(OsStr::from_bytes(bytes));
+        #[cfg(not(unix))]
+        let path = Path::new(self.output_text(bytes)?);
+        Ok(path)
+    }
+
+    pub(crate) fn output_text<'a>(&self, bytes: &'a [u8]) -> OutpostResult<&'a str> {
+        std::str::from_utf8(bytes).map_err(|error| OutpostError::IoAt {
+            path: self.cwd.clone(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+        })
     }
 
     /// Preserve each line exactly, including surrounding spaces and empty records.
@@ -74,15 +114,12 @@ impl GitInvoker {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
-        let bytes = self.successful_stdout(args)?;
-        let output = std::str::from_utf8(&bytes).map_err(|error| OutpostError::IoAt {
-            path: self.cwd.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::InvalidData, error),
-        })?;
+        let bytes = self.run_capture_bytes(args)?;
+        let output = self.output_text(&bytes)?;
         Ok(output.split_terminator('\n').map(str::to_owned).collect())
     }
 
-    fn successful_stdout<I, S>(&self, args: I) -> OutpostResult<Vec<u8>>
+    pub(crate) fn run_capture_bytes<I, S>(&self, args: I) -> OutpostResult<Vec<u8>>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,

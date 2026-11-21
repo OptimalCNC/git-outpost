@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use crate::metadata::{self, Metadata, MetadataState};
 use crate::outpost::AheadBehind;
 use crate::source_repo::{
-    SourceRepo, canonicalize_path, invoker_at, is_dirty, read_optional_config,
+    SourceRepo, canonicalize_path, current_branch_or_detached, invoker_at, is_dirty,
+    read_optional_config, repository_path,
 };
 use crate::{BranchName, GitInvoker, OutpostError, OutpostResult, RefName, RemoteName};
 
@@ -206,20 +207,10 @@ fn discover_location(
     env: &BTreeMap<OsString, OsString>,
 ) -> OutpostResult<(PathBuf, PathBuf)> {
     let git = invoker_at(target_path, env);
-    let work_tree = git
-        .run_capture(["rev-parse", "--show-toplevel"])
-        .map_err(|err| map_discovery_error(err, target_path))?;
-    let git_dir = git
-        .run_capture(["rev-parse", "--git-dir"])
-        .map_err(|err| map_discovery_error(err, target_path))?;
-    let work_tree = canonicalize_path(Path::new(&work_tree))?;
-    let git_dir_path = PathBuf::from(git_dir);
-    let git_dir_path = if git_dir_path.is_absolute() {
-        git_dir_path
-    } else {
-        target_path.join(git_dir_path)
-    };
-    Ok((work_tree, canonicalize_path(&git_dir_path)?))
+    Ok((
+        repository_path(&git, "--show-toplevel")?,
+        repository_path(&git, "--git-dir")?,
+    ))
 }
 
 fn report_from_invalid_metadata(
@@ -330,13 +321,6 @@ fn path_is_present(path: &Path) -> OutpostResult<bool> {
     }
 }
 
-fn map_discovery_error(err: OutpostError, path: &Path) -> OutpostError {
-    match err {
-        OutpostError::GitFailed { .. } => OutpostError::NotARepo(path.to_path_buf()),
-        other => other,
-    }
-}
-
 fn canonicalize_existing_or_missing(path: &Path) -> OutpostResult<PathBuf> {
     match std::fs::metadata(path) {
         Ok(_) => canonicalize_path(path),
@@ -355,14 +339,6 @@ fn canonicalize_missing(path: &Path) -> PathBuf {
         .and_then(|parent| parent.canonicalize().ok())
         .map(|parent| parent.join(path.file_name().unwrap_or_default()))
         .unwrap_or_else(|| path.to_owned())
-}
-
-fn current_branch_or_detached(git: &GitInvoker) -> OutpostResult<Option<BranchName>> {
-    match git.run_capture(["symbolic-ref", "--quiet", "--short", "HEAD"]) {
-        Ok(branch) => BranchName::parse(branch).map(Some),
-        Err(OutpostError::GitFailed { code: 1, .. }) => Ok(None),
-        Err(err) => Err(err),
-    }
 }
 
 fn check_local_remote(
@@ -536,7 +512,7 @@ fn ahead_behind_existing_refs(
 }
 
 fn ref_exists(git: &GitInvoker, ref_name: &str) -> OutpostResult<bool> {
-    git.run_status(["rev-parse", "--verify", "--quiet", ref_name])
+    git.run_status(["show-ref", "--verify", "--quiet", ref_name])
 }
 
 fn canonicalize_remote_path(outpost_path: &Path, value: &str) -> OutpostResult<PathBuf> {

@@ -37,13 +37,9 @@ pub fn run(
         ),
     );
     let source_branch_ref = format!("refs/heads/{}", branch.as_str());
-    let source_before = source
-        .git()
-        .run_capture(["rev-parse", &source_branch_ref])?;
+    let source_before = source.git().ref_oid(&source_branch_ref)?;
     source.fast_forward_branch_from_origin(&branch)?;
-    let source_after = source
-        .git()
-        .run_capture(["rev-parse", &source_branch_ref])?;
+    let source_after = source.git().ref_oid(&source_branch_ref)?;
 
     let upstream = UpstreamRef {
         remote: outpost.metadata().remote_name.clone(),
@@ -66,7 +62,7 @@ pub fn run(
         "pull",
         "--ff-only",
         upstream.remote.as_str(),
-        branch.as_str(),
+        upstream.merge_ref.as_str(),
     ])?;
     let after = outpost.git().run_capture(["rev-parse", "HEAD"])?;
 

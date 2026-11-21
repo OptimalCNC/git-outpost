@@ -37,20 +37,33 @@ fn add_without_branch_clones_current_branch_with_real_git_dir() {
 #[test]
 fn add_existing_branch_checks_out_branch_and_tracks_local_remote() {
     let fixture = AbcFixture::new();
-    let branch = fixture
-        .create_source_branch("feature/add")
-        .expect("source branch");
+    let branch = BranchName::parse("feature/add").expect("feature branch");
+    let git = fixture.invoker(&fixture.source);
+    git.run_check(["tag", branch.as_str()])
+        .expect("tag earlier feature revision");
+    let tagged_tip = fixture
+        .rev_parse(&fixture.source, "refs/tags/feature/add")
+        .unwrap();
+    git.run_check(["switch", "-c", branch.as_str()])
+        .expect("create feature branch");
+    let branch_tip = fixture.commit_in_source("advance feature branch").unwrap();
+    git.run_check(["switch", "main"])
+        .expect("restore source checkout");
     let source = fixture.source_repo().expect("source repo");
     let destination = fixture.root.join("C");
 
-    let outpost = add_existing(&source, &destination, Some(branch)).expect("add outpost");
+    let outpost = add_existing(&source, &destination, Some(branch.clone())).expect("add outpost");
 
     assert_eq!(
-        outpost
-            .current_branch()
-            .expect("outpost current branch")
-            .as_str(),
-        "feature/add"
+        outpost.current_branch().expect("outpost current branch"),
+        branch
+    );
+    assert_eq!(fixture.rev_parse(&destination, "HEAD").unwrap(), branch_tip);
+    assert_eq!(
+        fixture
+            .rev_parse(&destination, "refs/tags/feature/add")
+            .unwrap(),
+        tagged_tip
     );
     let tracking = outpost
         .upstream_tracking()
@@ -447,7 +460,13 @@ fn add_new_branch_from_target_creates_source_branch_and_tracks_it() {
     let destination = fixture.root.join("C");
     let name = BranchName::parse("feature/new").expect("new branch");
     let target = BranchName::parse("main").expect("target branch");
-    let target_oid = branch_oid(&fixture, &target);
+    fixture
+        .invoker(&fixture.source)
+        .run_check(["tag", target.as_str()])
+        .expect("tag the earlier target commit");
+    let target_oid = fixture
+        .commit_in_source("advance target branch past its tag")
+        .expect("target commit");
 
     let outpost =
         add_new_branch(&source, &destination, name.clone(), Some(target)).expect("add outpost");

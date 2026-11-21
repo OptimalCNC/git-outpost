@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::thread;
 
 use crate::metadata::{self, MetadataState};
@@ -113,24 +113,38 @@ fn summarize_entry(
 
 fn inspect_present_entry(source: &SourceRepo, entry: &RegistryEntry) -> Option<OutpostState> {
     let git = invoker_at(&entry.path, source.env());
+    // At the worktree root --show-cdup prints an empty record. Both HEAD fields
+    // are newline-free, so the remaining bytes are the single Git directory.
+    // Resolve HEAD itself even when a user also has a tag literally named HEAD.
     let output = git
-        .run_capture([
+        .run_capture_bytes([
+            "-c",
+            crate::git::PREFER_EXACT_REF,
             "rev-parse",
-            "--path-format=absolute",
-            "--show-toplevel",
+            "--is-inside-work-tree",
+            "--show-cdup",
+            "HEAD",
+            "--symbolic-full-name",
+            "HEAD",
             "--absolute-git-dir",
-            "HEAD",
-            "--abbrev-ref",
-            "HEAD",
         ])
         .ok()?;
-    let snapshot = parse_snapshot(&output)?;
-    let registered_path = canonicalize_path(&entry.path).ok()?;
-    if registered_path != entry.path || snapshot.work_tree != registered_path {
+    let root_output = output.strip_prefix(b"true\n\n")?.strip_suffix(b"\n")?;
+    let mut fields = root_output.splitn(3, |&byte| byte == b'\n');
+    let head_oid = std::str::from_utf8(fields.next()?).ok()?;
+    if !valid_object_id(head_oid) {
+        return None;
+    }
+    let head = match std::str::from_utf8(fields.next()?).ok()? {
+        "HEAD" => OutpostHead::Detached,
+        reference => OutpostHead::Attached(BranchName::from_git_ref(reference).ok()?),
+    };
+    let git_dir = git.output_path(fields.next()?).ok()?;
+    if canonicalize_path(&entry.path).ok()? != entry.path {
         return None;
     }
 
-    let metadata = match metadata::read(&snapshot.git_dir).ok()? {
+    let metadata = match metadata::read(git_dir).ok()? {
         MetadataState::Valid(metadata) => metadata,
         MetadataState::Absent | MetadataState::Invalid(_) => return None,
     };
@@ -140,38 +154,7 @@ fn inspect_present_entry(source: &SourceRepo, entry: &RegistryEntry) -> Option<O
     }
 
     Some(OutpostState::Present {
-        head_oid: snapshot.head_oid,
-        head: snapshot.head,
-    })
-}
-
-struct RepositorySnapshot {
-    work_tree: PathBuf,
-    git_dir: PathBuf,
-    head_oid: String,
-    head: OutpostHead,
-}
-
-fn parse_snapshot(output: &str) -> Option<RepositorySnapshot> {
-    let mut lines = output.lines();
-    let work_tree = canonicalize_path(Path::new(lines.next()?)).ok()?;
-    let git_dir = canonicalize_path(Path::new(lines.next()?)).ok()?;
-    let head_oid = lines.next()?.to_owned();
-    if !valid_object_id(&head_oid) {
-        return None;
-    }
-    let head = match lines.next()? {
-        "HEAD" => OutpostHead::Detached,
-        branch => OutpostHead::Attached(BranchName::from_validated_git_output(branch.to_owned())),
-    };
-    if lines.next().is_some() {
-        return None;
-    }
-
-    Some(RepositorySnapshot {
-        work_tree,
-        git_dir,
-        head_oid,
+        head_oid: head_oid.to_owned(),
         head,
     })
 }

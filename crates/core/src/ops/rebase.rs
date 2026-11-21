@@ -58,7 +58,7 @@ fn fetch_source_ref(outpost: &Outpost, source_ref: &SourceRemoteRef) -> OutpostR
         source_ref.remote.as_str(),
         source_ref.branch.as_str()
     );
-    let fetch_refspec = format!("{}:{remote_tracking_ref}", source_ref.branch.as_str());
+    let fetch_refspec = format!("refs/heads/{}:{remote_tracking_ref}", source_ref.branch);
     outpost
         .git()
         .run_check(["fetch", source_ref.remote.as_str(), &fetch_refspec])?;

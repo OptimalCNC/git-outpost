@@ -267,7 +267,8 @@ fn zsh_dynamic_outpost_hint_escapes_newlines_in_the_path() {
     let fixture = common::CliFixture::new();
     let outpost = fixture.add_outpost("line\nbreak");
     let expected_id = expected_ids(&fixture, &[&outpost]).remove(0);
-    let expected_help = common::displayed_path(&outpost).replace('\n', "\\\\n");
+    let escaped_path = common::displayed_path(&outpost).replace('\n', "\\\\n");
+    let expected_help = format!("{escaped_path} [main]");
 
     let output = query(&fixture, "zsh", &fixture.source, &["gop", "remove", ""], 2);
 

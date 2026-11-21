@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::metadata::{self, Metadata, MetadataState};
 use crate::source_repo::{
-    SourceRepo, canonicalize_path, current_branch, invoker_at, is_dirty, read_optional_config,
+    SourceRepo, current_branch, invoker_at, is_dirty, read_optional_config, repository_path,
 };
 use crate::{BranchName, GitInvoker, OutpostError, OutpostResult, RefName, UpstreamRef};
 
@@ -29,10 +29,8 @@ impl Outpost {
 
     pub fn discover_with(start: &Path, env: &BTreeMap<OsString, OsString>) -> OutpostResult<Self> {
         let git = invoker_at(start, env);
-        let work_tree = git
-            .run_capture(["rev-parse", "--show-toplevel"])
-            .map_err(|err| map_discovery_error(err, start))?;
-        Self::at_with(work_tree, env)
+        let root = repository_path(&git, "--show-toplevel")?;
+        Self::at_with(root, env)
     }
 
     pub fn at(path: impl Into<PathBuf>) -> OutpostResult<Self> {
@@ -45,14 +43,8 @@ impl Outpost {
     ) -> OutpostResult<Self> {
         let start = path.into();
         let git = invoker_at(&start, env);
-        let work_tree_raw = git
-            .run_capture(["rev-parse", "--show-toplevel"])
-            .map_err(|err| map_discovery_error(err, &start))?;
-        let git_dir_raw = git
-            .run_capture(["rev-parse", "--git-dir"])
-            .map_err(|err| map_discovery_error(err, &start))?;
-        let work_tree = canonicalize_path(Path::new(&work_tree_raw))?;
-        let git_dir = canonicalize_git_path(&start, &git_dir_raw)?;
+        let work_tree = repository_path(&git, "--show-toplevel")?;
+        let git_dir = repository_path(&git, "--git-dir")?;
         let git = invoker_at(&work_tree, env);
         let metadata = match metadata::read(&git_dir)? {
             MetadataState::Absent => return Err(OutpostError::NotAnOutpost(work_tree)),
@@ -100,7 +92,7 @@ impl Outpost {
     }
 
     pub fn current_branch(&self) -> OutpostResult<BranchName> {
-        current_branch(&self.git, &self.work_tree)
+        current_branch(&self.git)
     }
 
     pub fn is_dirty(&self) -> OutpostResult<bool> {
@@ -235,22 +227,6 @@ fn parse_count(repo: &Path, output: &str) -> OutpostResult<u32> {
         return Err(invalid_count_output(repo, output));
     }
     Ok(count)
-}
-
-fn canonicalize_git_path(start: &Path, value: &str) -> OutpostResult<PathBuf> {
-    let path = PathBuf::from(value);
-    if path.is_absolute() {
-        canonicalize_path(&path)
-    } else {
-        canonicalize_path(&start.join(path))
-    }
-}
-
-fn map_discovery_error(err: OutpostError, path: &Path) -> OutpostError {
-    match err {
-        OutpostError::GitFailed { .. } => OutpostError::NotARepo(path.to_path_buf()),
-        other => other,
-    }
 }
 
 #[cfg(test)]

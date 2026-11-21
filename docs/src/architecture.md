@@ -1009,14 +1009,14 @@ pub fn run_with_missing_branch(
 5. Apply `checkout`. **No `--` separator** is passed to `git switch`
    because `--` introduces pathspecs, not refs; validated newtypes
    provide argv-injection defense:
-   - `CheckoutExisting { target_branch }`: `git switch <branch>` in C.
-     The branch tracks
-     `<remote_name>/<branch>`.
+   - `CheckoutExisting { target_branch }`: switch to the local branch in C
+     if it already exists. Otherwise create it with
+     `git switch -c <branch> --track refs/remotes/<remote_name>/<branch>`.
    - `NewBranch { name, target_branch }`: run
-     `git -C <source> branch <name> <target_branch>` to create the
+     `git -C <source> branch <name> refs/heads/<target_branch>` to create the
      branch in B **without switching B's checkout**. Then
-     `git fetch <remote_name> <name>` in C and `git switch <name>` so
-     C tracks `<remote_name>/<name>`.
+     fetch `refs/heads/<name>` into `refs/remotes/<remote_name>/<name>`
+     in C and create a local branch tracking that ref.
 6. Atomically initialize `<destination-git-dir>/outpost/metadata.json` with the
    canonical source path and parsed remote name, without replacing an existing
    document.
@@ -1071,8 +1071,10 @@ pub fn run(source: &SourceRepo) -> OutpostResult<Vec<OutpostSummary>>;
 
 The source registry determines inclusion and output order. Live entries are
 inspected concurrently, using at most eight workers, and each uses one local
-`git rev-parse` invocation to read the canonical worktree, exact Git directory,
-`HEAD` object ID, and attached branch or detached state. Reverse-link safety is
+`git rev-parse` invocation to confirm the registered directory is the worktree
+root and read the `HEAD` object ID, full branch ref or detached state, and
+exact Git directory. The directory is the final field so its name can contain
+newlines. Reverse-link safety is
 then checked from the outpost metadata's source path and remote name. Missing
 paths and failed integrity checks remain visible as annotations.
 
@@ -1264,7 +1266,7 @@ pub struct SourcePullReport {
 
 `fast_forward_branch_from_origin` updates B's local branch from the
 same branch on `origin` without switching checkouts:
-1. `git -C <source> fetch origin <branch>:refs/remotes/origin/<branch>`.
+1. `git -C <source> fetch origin refs/heads/<branch>:refs/remotes/origin/<branch>`.
 2. Compare `refs/heads/<branch>` and `refs/remotes/origin/<branch>`
    with `git merge-base --is-ancestor`.
    - equal or source ahead: no ref update.
@@ -1308,7 +1310,7 @@ pub struct PullReport {
    `Divergence`, not `GitFailed`.
 5. Emit
    `reporter.step(OutpostFetch, "fast-forwarding outpost <C> branch <branch> from <remote>/<branch>")`.
-6. Run `git pull --ff-only <remote_name> <branch>` in C.
+6. Run `git pull --ff-only <remote_name> refs/heads/<branch>` in C.
 
 #### 5.9.6 `ops/merge.rs`
 
@@ -1336,7 +1338,7 @@ pub struct MergeReport {
    named `local`; custom remote names use that custom prefix.
 3. Emit
    `reporter.step(OutpostFetch, "fetching source <B> branch <branch> into outpost <C>")`.
-4. Run `git fetch <remote_name> <branch>:refs/remotes/<remote_name>/<branch>` in C.
+4. Run `git fetch <remote_name> refs/heads/<branch>:refs/remotes/<remote_name>/<branch>` in C.
 5. Run `git merge refs/remotes/<remote_name>/<branch>` in C and let Git
    handle conflicts and merge commits. The full remote-tracking ref avoids
    ambiguity with a local branch named `<remote_name>/<branch>`.
@@ -1365,7 +1367,7 @@ pub struct RebaseReport {
 2. Require `opts.source_ref.remote == outpost.metadata().remote_name`.
 3. Emit
    `reporter.step(OutpostFetch, "fetching source <B> branch <branch> into outpost <C>")`.
-4. Run `git fetch <remote_name> <branch>:refs/remotes/<remote_name>/<branch>` in C.
+4. Run `git fetch <remote_name> refs/heads/<branch>:refs/remotes/<remote_name>/<branch>` in C.
 5. Run `git rebase refs/remotes/<remote_name>/<branch>` in C and let Git
    handle conflicts. The full remote-tracking ref avoids ambiguity with a
    local branch named `<remote_name>/<branch>`.
@@ -1432,7 +1434,10 @@ Step-by-step:
    resolve to B. Push the matching branch through that remote. Before the
    second step, read B's branch and require it to equal C's intended commit.
 7. `reporter.step(SourcePush, "pushing source <B> branch <X> -> origin/<X>")`.
-8. Run `git -C <source> push --set-upstream origin <branch>:<branch>`.
+8. Push the same branch from B with `--set-upstream origin`. Both hops use
+   Git pattern refspecs to select only the literal `refs/heads/<branch>`.
+   This also works when a tag has the same name or a second branch is
+   literally named `refs/heads/<branch>`.
 
 #### 5.9.9 `ops/lock.rs`
 

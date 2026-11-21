@@ -1,7 +1,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-use crate::source_repo::{canonicalize_path, read_optional_config};
+use crate::source_repo::{canonicalize_path, read_optional_config, source_branch_ref};
 use crate::{
     BranchName, GitInvoker, Outpost, OutpostError, OutpostResult, Reporter, SourceRepo, StepKind,
 };
@@ -46,9 +46,9 @@ pub fn run(
     let origin_before = source.origin_branch_oid(&branch)?;
     check_origin_fast_forwardable(outpost, &origin_fetch, &branch, origin_before.as_deref())?;
 
-    let branch_ref = source_branch_ref(branch.as_str());
-    let intended_tip = outpost.git().run_capture(["rev-parse", &branch_ref])?;
-    let source_before = source.git().run_capture(["rev-parse", &branch_ref])?;
+    let branch_ref = source_branch_ref(&branch);
+    let intended_tip = outpost.git().ref_oid(&branch_ref)?;
+    let source_before = source.git().ref_oid(&branch_ref)?;
     reporter.step(
         StepKind::OutpostPush,
         &format!(
@@ -59,11 +59,16 @@ pub fn run(
         ),
     );
     verify_source_route(outpost, &source)?;
-    let refspec = branch_refspec(branch.as_str());
+    // Git can match the explicit name refs/heads/X to two branches: X and
+    // a branch literally named refs/heads/X. Patterns use full ref names.
+    // Every ref starts with "refs/", so the exclusion leaves only refs/heads/X.
+    let pattern = format!("refs*/heads/{branch}");
+    let refspec = format!("{pattern}:{pattern}");
+    let exclude_nested = format!("^refs/*/heads/{branch}");
     outpost
         .git()
-        .run_check(["push", "--", remote.as_str(), &refspec])?;
-    let source_after = source.git().run_capture(["rev-parse", &branch_ref])?;
+        .run_check(["push", "--", remote.as_str(), &refspec, &exclude_nested])?;
+    let source_after = source.git().ref_oid(&branch_ref)?;
     if source_after != intended_tip {
         return Err(OutpostError::Divergence {
             branch: branch.as_str().to_owned(),
@@ -82,9 +87,13 @@ pub fn run(
         ),
     );
     verify_origin_destinations(&source)?;
-    source
-        .git()
-        .run_check(["push", "--set-upstream", "origin", &refspec])?;
+    source.git().run_check([
+        "push",
+        "--set-upstream",
+        "origin",
+        &refspec,
+        &exclude_nested,
+    ])?;
     let origin_after =
         source
             .origin_branch_oid(&branch)?
@@ -206,7 +215,7 @@ fn local_transport_path(git: &GitInvoker, url: &str) -> OutpostResult<Option<Pat
     if url.starts_with('~') {
         // Ask Git to expand ~ and ~user with the same home directory as the transport.
         let setting = format!("outpost.localpath={url}");
-        let expanded = git.run_capture_lines([
+        let expanded = git.run_capture_path([
             "-c",
             &setting,
             "config",
@@ -214,13 +223,7 @@ fn local_transport_path(git: &GitInvoker, url: &str) -> OutpostResult<Option<Pat
             "--get",
             "outpost.localpath",
         ])?;
-        let [path] = expanded.as_slice() else {
-            return Err(invalid_local_route(
-                git.cwd(),
-                "cannot expand local origin path",
-            ));
-        };
-        return Ok(Some(git.cwd().join(path)));
+        return Ok(Some(git.cwd().join(expanded)));
     }
     Ok(Some(git.cwd().join(path)))
 }
@@ -244,23 +247,19 @@ fn local_repository(git: &GitInvoker, path: &Path) -> OutpostResult<PathBuf> {
             continue;
         }
         let candidate = crate::path::git_path_arg(&candidate);
-        let common = match git.run_capture_lines([
+        match git.run_capture_path([
             OsStr::new("--git-dir"),
             candidate.as_os_str(),
             OsStr::new("rev-parse"),
             OsStr::new("--path-format=absolute"),
             OsStr::new("--git-common-dir"),
         ]) {
-            Ok(lines) => lines,
+            Ok(directory) => return canonicalize_path(&directory),
             // A directory can have an unrelated name like "foo" next to foo.git.
             // Git still selects an existing file as a gitfile, including an invalid one.
             Err(OutpostError::GitFailed { code: 128, .. }) if !file => continue,
             Err(error) => return Err(error),
-        };
-        if let [directory] = common.as_slice() {
-            return canonicalize_path(Path::new(directory));
         }
-        break;
     }
     Err(invalid_local_route(
         path,
@@ -302,10 +301,10 @@ fn check_source_fast_forwardable(
     remote_tracking_ref: &str,
 ) -> OutpostResult<()> {
     let remote = outpost.metadata().remote_name.as_str();
-    let fetch_refspec = format!("{}:{remote_tracking_ref}", branch.as_str());
+    let local_ref = source_branch_ref(branch);
+    let fetch_refspec = format!("{local_ref}:{remote_tracking_ref}");
     outpost.git().run_check(["fetch", remote, &fetch_refspec])?;
 
-    let local_ref = source_branch_ref(branch.as_str());
     if outpost
         .git()
         .ahead_behind(&local_ref, remote_tracking_ref)?
@@ -335,7 +334,7 @@ fn check_origin_fast_forwardable(
         OsStr::new("--no-write-fetch-head"),
         OsStr::new("--"),
         origin_fetch,
-        OsStr::new(&source_branch_ref(branch.as_str())),
+        OsStr::new(&source_branch_ref(branch)),
     ])?;
 
     if outpost
@@ -399,14 +398,6 @@ fn invalid_count_output(git: &GitInvoker, output: &str) -> OutpostError {
             format!("unexpected rev-list output: {output}"),
         ),
     }
-}
-
-fn branch_refspec(branch: &str) -> String {
-    format!("{branch}:{branch}")
-}
-
-fn source_branch_ref(branch: &str) -> String {
-    format!("refs/heads/{branch}")
 }
 
 #[cfg(test)]

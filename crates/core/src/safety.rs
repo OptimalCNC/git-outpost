@@ -68,9 +68,7 @@ pub(crate) fn check_removable_work(outpost: &Outpost, source: &SourceRepo) -> Ou
         "refs/heads/",
     ])?;
     for branch in branches.into_iter().filter(|name| name != current.as_str()) {
-        let tip = outpost
-            .git()
-            .run_capture(["rev-parse", &format!("refs/heads/{branch}")])?;
+        let tip = outpost.git().ref_oid(&format!("refs/heads/{branch}"))?;
         if !source.has_commit_oid(&tip)?
             || source
                 .git()
@@ -162,8 +160,8 @@ pub fn check_destination_clean(parent: &Path, dest: &Path) -> OutpostResult<()> 
 
 fn containing_repo(parent: &Path) -> OutpostResult<Option<PathBuf>> {
     let git = GitInvoker::at(parent);
-    match git.run_capture(["rev-parse", "--show-toplevel"]) {
-        Ok(repo) => canonicalize_path(Path::new(&repo)).map(Some),
+    match git.run_capture_path(["rev-parse", "--show-toplevel"]) {
+        Ok(repo) => canonicalize_path(&repo).map(Some),
         Err(OutpostError::GitFailed { .. }) => Ok(None),
         Err(err) => Err(err),
     }

@@ -6,9 +6,12 @@ use std::fs;
 use std::path::Path;
 
 use common::fixture::{AbcFixture, CapturingReporter};
+use outpost_core::ops::list;
 use outpost_core::ops::push::{PushOptions, StepResult, run};
-use outpost_core::ops::status::{ConfigProblem, StatusReport, run_with as status_run_with};
-use outpost_core::{AheadBehind, Outpost, OutpostError, OutpostResult, StepKind};
+use outpost_core::ops::status::{
+    ConfigProblem, OutpostHeadStatus, StatusReport, run_with as status_run_with,
+};
+use outpost_core::{AheadBehind, BranchName, Outpost, OutpostError, OutpostResult, StepKind};
 
 #[test]
 fn pu01_push_sends_outpost_branch_to_source_then_origin() {
@@ -51,15 +54,20 @@ fn push_uses_the_exact_origin_branch_when_a_longer_name_has_diverged() {
     let outpost_path = fixture
         .add_outpost_on_branch("C", Some(topic))
         .expect("topic outpost");
-    let longer_oid = fixture
+    let longer = BranchName::parse("refs/heads/topic").expect("longer branch");
+    fixture
+        .invoker(&fixture.source)
+        .run_check(["switch", "-c", longer.as_str()])
+        .expect("create the longer branch in the source");
+    let published_longer_oid = fixture
         .commit_in_source("independent longer-named branch")
         .expect("longer branch commit");
-    let longer = fixture
-        .create_source_branch("refs/heads/topic")
-        .expect("longer branch");
     fixture
         .push_source_branch(&longer)
         .expect("publish longer branch with a complete refspec");
+    let local_longer_oid = fixture
+        .commit_in_source("unpublished work on the longer branch")
+        .expect("local-only branch commit");
     let outpost_oid = fixture
         .commit_file_in_outpost(&outpost_path, "topic work", "topic.txt", "topic work\n")
         .expect("outpost commit");
@@ -71,7 +79,10 @@ fn push_uses_the_exact_origin_branch_when_a_longer_name_has_diverged() {
 
     assert_pushed_commits(&report.outpost_to_source, 1);
     assert_pushed_commits(&report.source_to_origin, 1);
-    for repo in [&fixture.source, &fixture.upstream] {
+    for (repo, longer_oid) in [
+        (&fixture.source, local_longer_oid),
+        (&fixture.upstream, published_longer_oid),
+    ] {
         assert_eq!(
             fixture.rev_parse(repo, "refs/heads/topic").unwrap(),
             outpost_oid
@@ -81,6 +92,70 @@ fn push_uses_the_exact_origin_branch_when_a_longer_name_has_diverged() {
                 .rev_parse(repo, "refs/heads/refs/heads/topic")
                 .unwrap(),
             longer_oid
+        );
+    }
+}
+
+#[test]
+fn push_publishes_the_current_branch_when_a_tag_has_the_same_name() {
+    let fixture = AbcFixture::new();
+    let release = fixture
+        .create_source_branch("release")
+        .expect("release branch");
+    let path = fixture
+        .add_outpost_on_branch("C", Some(release.clone()))
+        .expect("release outpost");
+    let source_git = fixture.invoker(&fixture.source);
+    source_git
+        .run_check(["tag", "release", "refs/heads/release"])
+        .expect("tag the current release");
+    source_git
+        .run_check(["push", "origin", "refs/heads/release", "refs/tags/release"])
+        .expect("publish the branch and tag");
+    fixture
+        .invoker(&path)
+        .run_check(["fetch", "local", "tag", "release"])
+        .expect("fetch the release tag into the outpost");
+    let tagged_tip = fixture
+        .rev_parse(&fixture.source, "refs/tags/release")
+        .expect("tagged tip");
+    let new_tip = fixture
+        .commit_in_outpost(&path, "prepare next release")
+        .expect("new release commit");
+
+    let StatusReport::Outpost(status) = status_run_with(&path, &fixture.git_env).expect("status")
+    else {
+        panic!("expected managed outpost status");
+    };
+    assert!(
+        matches!(&status.head, OutpostHeadStatus::Attached { branch, .. } if branch == &release),
+        "unexpected release branch in status: {:?}",
+        status.head
+    );
+    let summaries = list::run(&fixture.source_repo().expect("source repo")).expect("list");
+    assert_eq!(
+        summaries[0].state,
+        list::OutpostState::Present {
+            head_oid: new_tip.clone(),
+            head: list::OutpostHead::Attached(release),
+        }
+    );
+
+    run(
+        &outpost(&fixture, &path),
+        PushOptions,
+        &mut CapturingReporter::default(),
+    )
+    .expect("push release despite the tag of the same name");
+
+    for repo in [&path, &fixture.source, &fixture.upstream] {
+        assert_eq!(
+            fixture.rev_parse(repo, "refs/heads/release").unwrap(),
+            new_tip
+        );
+        assert_eq!(
+            fixture.rev_parse(repo, "refs/tags/release").unwrap(),
+            tagged_tip
         );
     }
 }

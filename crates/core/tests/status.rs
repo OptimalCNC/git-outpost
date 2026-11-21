@@ -30,6 +30,23 @@ fn s01_run_with_from_inside_outpost_reports_canonical_source_path() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn status_reads_the_checkout_whose_name_ends_in_a_space() {
+    let fixture = AbcFixture::new();
+    let checkout = fixture.add_outpost("B ").expect("add outpost beside B");
+    fs::write(checkout.join("draft.txt"), "work in the outpost\n").expect("write draft");
+    let expected_path = canonical(&checkout);
+
+    let outpost =
+        outpost_core::Outpost::at_with(&checkout, &fixture.git_env).expect("open outpost");
+    assert_eq!(outpost.work_tree(), expected_path);
+
+    let report = expect_outpost(run_with(&checkout, &fixture.git_env).expect("outpost status"));
+    assert_eq!(report.outpost_path, expected_path);
+    assert!(report.outpost_dirty);
+}
+
 #[test]
 fn s02_run_with_reports_local_remote_name() {
     let fixture = AbcFixture::new();

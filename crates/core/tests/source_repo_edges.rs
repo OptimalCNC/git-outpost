@@ -265,7 +265,11 @@ fn checked_out_branch_queries_handle_detached_primary_and_linked_worktrees() {
     let feature = fixture
         .create_source_branch("feature/linked")
         .expect("create feature");
-    let linked = fixture.root.join("linked-feature");
+    let linked = fixture.root.join(if cfg!(unix) {
+        "linked\nfeature"
+    } else {
+        "linked-feature"
+    });
     let git = fixture.invoker(&fixture.source);
     git.run_check([
         OsStr::new("worktree"),

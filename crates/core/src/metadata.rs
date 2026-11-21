@@ -75,7 +75,7 @@ pub(crate) fn initialize(
     source: &SourceRepo,
     remote_name: &RemoteName,
 ) -> OutpostResult<()> {
-    let git_dir = git.run_capture(["rev-parse", "--git-dir"])?;
+    let git_dir = git.run_capture_path(["rev-parse", "--git-dir"])?;
     let state_dir = canonicalize_path(&git.cwd().join(git_dir))?.join("outpost");
     let path = state_dir.join("metadata.json");
     let source_path = source.work_tree();
