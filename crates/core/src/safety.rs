@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+use crate::source_repo::remote_ref_oid;
 use crate::{
     BranchName, GitInvoker, Outpost, OutpostError, OutpostResult, RegistryEntry, SourceRepo,
     UpstreamRef,
@@ -213,14 +214,8 @@ fn check_no_divergence_with_fetch(
 }
 
 fn upstream_branch_exists(outpost: &Outpost, upstream: &UpstreamRef) -> OutpostResult<bool> {
-    Ok(!outpost
-        .git()
-        .run_capture([
-            "ls-remote",
-            upstream.remote.as_str(),
-            upstream.merge_ref.as_str(),
-        ])?
-        .is_empty())
+    remote_ref_oid(outpost.git(), &upstream.remote, upstream.merge_ref.as_str())
+        .map(|oid| oid.is_some())
 }
 
 fn invalid_rev_list_output(repo: &Path, output: &str) -> OutpostError {
@@ -633,6 +628,9 @@ mod tests {
             },
         )
         .expect("metadata write");
+        source_git
+            .run_check(["branch", "refs/heads/feature"])
+            .expect("create a longer branch matching Git's lookup pattern");
         source_git
             .run_check(["branch", "-D", "feature"])
             .expect("delete source feature");

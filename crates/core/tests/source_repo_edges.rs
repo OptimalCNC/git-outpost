@@ -51,24 +51,45 @@ fn source_constructor_rejects_a_missing_explicit_git_work_tree_without_mutation(
 }
 
 #[test]
-fn remote_branch_oid_distinguishes_present_and_absent_refs() {
+fn remote_branch_oid_selects_exact_names_among_git_tail_matches() {
     let fixture = AbcFixture::new();
-    let source = fixture.source_repo().expect("source repo");
+    let topic = fixture.create_source_branch("topic").expect("topic branch");
+    fixture.push_source_branch(&topic).expect("publish topic");
     let expected = fixture
-        .rev_parse(&fixture.upstream, "refs/heads/main")
-        .expect("upstream main oid");
+        .rev_parse(&fixture.upstream, "refs/heads/topic")
+        .expect("upstream topic oid");
+    let longer_oid = fixture
+        .commit_in_source("independent longer-named branch")
+        .expect("longer branch commit");
+    let longer = fixture
+        .create_source_branch("refs/heads/topic")
+        .expect("Git permits the longer branch name");
+    fixture
+        .push_source_branch(&longer)
+        .expect("publish longer branch with a complete refspec");
+    assert_ne!(expected, longer_oid);
+    let source = fixture.source_repo().expect("source repo");
 
     assert_eq!(
         source
-            .origin_branch_oid(&branch("main"))
-            .expect("origin main oid"),
+            .origin_branch_oid(&topic)
+            .expect("exact topic lookup"),
         Some(expected)
+    );
+
+    fixture
+        .invoker(&fixture.upstream)
+        .run_check(["branch", "-d", "topic"])
+        .expect("delete topic in the upstream repository");
+    assert_eq!(
+        source.origin_branch_oid(&topic).expect("deleted topic"),
+        None
     );
     assert_eq!(
         source
-            .remote_branch_oid(&remote("origin"), &branch("missing"))
-            .expect("absent remote branch"),
-        None
+            .remote_branch_oid(&remote("origin"), &longer)
+            .expect("longer branch lookup"),
+        Some(longer_oid)
     );
 }
 

@@ -43,6 +43,48 @@ fn pu01_push_sends_outpost_branch_to_source_then_origin() {
 }
 
 #[test]
+fn push_uses_the_exact_origin_branch_when_a_longer_name_has_diverged() {
+    let fixture = AbcFixture::new();
+    let topic = fixture.create_source_branch("topic").expect("topic branch");
+    fixture.push_source_branch(&topic).expect("publish topic");
+    let outpost_path = fixture
+        .add_outpost_on_branch("C", Some(topic))
+        .expect("topic outpost");
+    let longer_oid = fixture
+        .commit_in_source("independent longer-named branch")
+        .expect("longer branch commit");
+    let longer = fixture
+        .create_source_branch("refs/heads/topic")
+        .expect("longer branch");
+    fixture
+        .push_source_branch(&longer)
+        .expect("publish longer branch with a complete refspec");
+    let outpost_oid = fixture
+        .commit_file_in_outpost(&outpost_path, "topic work", "topic.txt", "topic work\n")
+        .expect("outpost commit");
+    let outpost = outpost(&fixture, &outpost_path);
+    let mut reporter = CapturingReporter::default();
+
+    let report = run(&outpost, PushOptions, &mut reporter)
+        .expect("an unrelated branch must not prevent a fast-forward push");
+
+    assert_pushed_commits(&report.outpost_to_source, 1);
+    assert_pushed_commits(&report.source_to_origin, 1);
+    for repo in [&fixture.source, &fixture.upstream] {
+        assert_eq!(
+            fixture.rev_parse(repo, "refs/heads/topic").unwrap(),
+            outpost_oid
+        );
+        assert_eq!(
+            fixture
+                .rev_parse(repo, "refs/heads/refs/heads/topic")
+                .unwrap(),
+            longer_oid
+        );
+    }
+}
+
+#[test]
 fn pu02_push_records_outpost_push_and_source_push_events() {
     let fixture = AbcFixture::new();
     let outpost_path = fixture.add_outpost("C").expect("add C");

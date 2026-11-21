@@ -246,26 +246,7 @@ impl SourceRepo {
         remote: &RemoteName,
         branch: &BranchName,
     ) -> OutpostResult<Option<String>> {
-        let remote_ref = source_branch_ref(branch);
-        let output = self
-            .git
-            .run_capture(["ls-remote", remote.as_str(), &remote_ref])?;
-        if output.is_empty() {
-            return Ok(None);
-        }
-
-        let mut fields = output.split_ascii_whitespace();
-        let oid = fields
-            .next()
-            .ok_or_else(|| invalid_git_output(&self.git, &output))?;
-        let name = fields
-            .next()
-            .ok_or_else(|| invalid_git_output(&self.git, &output))?;
-        if fields.next().is_some() || name != remote_ref {
-            return Err(invalid_git_output(&self.git, &output));
-        }
-
-        Ok(Some(oid.to_owned()))
+        remote_ref_oid(&self.git, remote, &source_branch_ref(branch))
     }
 
     pub fn origin_default_branch(&self) -> OutpostResult<Option<BranchName>> {
@@ -517,6 +498,29 @@ pub(crate) fn invoker_at(cwd: &Path, env: &BTreeMap<OsString, OsString>) -> GitI
     env.iter().fold(GitInvoker::at(cwd), |git, (key, val)| {
         git.with_env(key.clone(), val.clone())
     })
+}
+
+pub(crate) fn remote_ref_oid(
+    git: &GitInvoker,
+    remote: &RemoteName,
+    reference: &str,
+) -> OutpostResult<Option<String>> {
+    // ls-remote patterns also match slash-delimited tails of longer ref names.
+    let output = git.run_capture(["ls-remote", "--", remote.as_str(), reference])?;
+    let mut selected = None;
+    for line in output.lines() {
+        let mut fields = line.split_ascii_whitespace();
+        let (Some(oid), Some(name), None) = (fields.next(), fields.next(), fields.next()) else {
+            return Err(invalid_git_output(git, &output));
+        };
+        if name == reference {
+            if selected.is_some() {
+                return Err(invalid_git_output(git, &output));
+            }
+            selected = Some(oid.to_owned());
+        }
+    }
+    Ok(selected)
 }
 
 pub(crate) fn current_branch(git: &GitInvoker, repo: &Path) -> OutpostResult<BranchName> {

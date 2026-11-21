@@ -36,7 +36,7 @@ pub fn run(
     }
 
     check_source_fast_forwardable(outpost, &branch)?;
-    let origin_before = remote_origin_oid(&source, &branch)?;
+    let origin_before = source.origin_branch_oid(&branch)?;
     check_origin_fast_forwardable(outpost, &source, &branch, origin_before.as_deref())?;
 
     let outpost_before = source
@@ -77,10 +77,12 @@ pub fn run(
         .git()
         .run_check(["push", "--set-upstream", "origin", &source_refspec])?;
     let origin_after =
-        remote_origin_oid(&source, &branch)?.ok_or_else(|| OutpostError::BranchNotFound {
-            branch: branch.as_str().to_owned(),
-            repo: source.work_tree().to_path_buf(),
-        })?;
+        source
+            .origin_branch_oid(&branch)?
+            .ok_or_else(|| OutpostError::BranchNotFound {
+                branch: branch.as_str().to_owned(),
+                repo: source.work_tree().to_path_buf(),
+            })?;
     if origin_after != outpost_after {
         return Err(OutpostError::Divergence {
             branch: branch.as_str().to_owned(),
@@ -251,22 +253,6 @@ fn invalid_count_output(git: &GitInvoker, output: &str) -> OutpostError {
             format!("unexpected rev-list output: {output}"),
         ),
     }
-}
-
-fn remote_origin_oid(source: &SourceRepo, branch: &BranchName) -> OutpostResult<Option<String>> {
-    let remote_ref = source_branch_ref(branch.as_str());
-    let output = source
-        .git()
-        .run_capture(["ls-remote", "origin", &remote_ref])?;
-    if output.is_empty() {
-        return Ok(None);
-    }
-
-    let mut fields = output.split_whitespace();
-    let oid = fields
-        .next()
-        .ok_or_else(|| invalid_count_output(source.git(), &output))?;
-    Ok(Some(oid.to_owned()))
 }
 
 fn branch_refspec(branch: &str) -> String {

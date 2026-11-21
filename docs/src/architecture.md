@@ -807,9 +807,9 @@ signature reflects this: `local_branch` is the C-side name, while
 The check **must run against fresh remote-tracking refs**, otherwise
 a stale `<remote>/<branch>` ref makes the answer wrong. Implementation:
 
-1. Run `git fetch <upstream.remote>` in the outpost first
-   (network-free for local remotes; cheap). Skip the fetch only when
-   the caller has just performed it.
+1. Check that the remote advertises the exact `upstream.merge_ref`. If it is
+   absent, return `BranchNotFound` even if the outpost has a stale tracking ref.
+   Fetch `upstream.remote` in the outpost unless the caller just fetched it.
 2. Compute `git rev-list --left-right --count
    <local_branch>...<upstream.remote>/<upstream.short_branch()>`.
 3. If both counts > 0, return `Divergence { branch: local_branch }`.
