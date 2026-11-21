@@ -940,6 +940,76 @@ fn cleanup_preserves_a_branch_checked_out_during_confirmation() {
 }
 
 #[test]
+fn cleanup_keeps_both_branches_when_worktrees_cannot_be_inspected_after_confirmation() {
+    let fixture = AbcFixture::new();
+    let branch = fixture
+        .create_source_branch("feat")
+        .expect("create feature");
+    fixture
+        .push_source_branch(&branch)
+        .expect("publish feature");
+    let tip = fixture
+        .rev_parse(&fixture.source, "refs/heads/feat")
+        .expect("published feature tip");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add feature outpost");
+    let source = fixture.source_repo().expect("source repo");
+    let mut source_confirmed = false;
+    let mut prompt = PromptActions {
+        source: || {
+            // Worktree commands parse this value as a boolean. Ref reads and deletion still work.
+            fixture
+                .invoker(&fixture.source)
+                .run_check(["config", "--local", "worktree.guessRemote", "auto"])
+                .expect("save the changed worktree setting");
+            source_confirmed = true;
+            true
+        },
+        upstream: || panic!("upstream deletion was offered after worktree inspection failed"),
+    };
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            selector: OutpostSelector::from_path(outpost.clone()),
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("finish outpost removal");
+
+    assert!(
+        source_confirmed,
+        "source branch deletion was never confirmed"
+    );
+    assert!(!outpost.exists());
+    assert_registry_empty(&source);
+    for repo in [&fixture.source, &fixture.upstream] {
+        assert_eq!(
+            fixture
+                .rev_parse(repo, "refs/heads/feat")
+                .expect("preserved feature"),
+            tip,
+            "feature branch in {}",
+            repo.display()
+        );
+    }
+    assert!(
+        report.branch_cleanup.iter().any(|outcome| matches!(
+            outcome,
+            remove::BranchCleanupOutcome::Warning { branch: Some(warned), message }
+                if warned == &branch && message.contains("cannot inspect checked-out source branches")
+        )),
+        "{:?}",
+        report.branch_cleanup
+    );
+}
+
+#[test]
 fn cleanup_requires_the_same_single_upstream_destination_through_confirmation() {
     enum Configuration {
         MultiplePushUrls,
