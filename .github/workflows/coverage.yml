@@ -19,7 +19,7 @@ env:
 
 jobs:
   core:
-    name: Core production lines (baseline)
+    name: Core production lines (gate)
     runs-on: ubuntu-latest
     container:
       image: rust:1.94.0-bookworm
@@ -61,12 +61,17 @@ jobs:
           cargo fetch --locked
           cargo fetch --manifest-path tools/core-coverage/classifier/Cargo.toml --locked
 
-      - name: Validate measurement tooling
-        run: timeout --kill-after=5s 5m python3 tools/core-coverage/run.py self-test
+      # Permission tests need a user whom directory permissions restrict.
+      - name: Prepare unprivileged measurement user
+        run: |
+          useradd --create-home coverage
+          chown -R coverage: . "$CARGO_HOME" "$RUSTUP_HOME"
 
-      # Adoption requires a reviewed complete run with zero uncovered lines.
-      - name: Measure production executable lines
-        run: timeout --kill-after=5s 30m python3 tools/core-coverage/run.py baseline --output-dir target/core-coverage/ci
+      - name: Validate measurement tooling
+        run: runuser -u coverage -- timeout --kill-after=5s 5m python3 tools/core-coverage/run.py self-test
+
+      - name: Require every production executable line to be covered
+        run: runuser -u coverage -- timeout --kill-after=5s 30m python3 tools/core-coverage/run.py gate --output-dir target/core-coverage/ci
 
       - name: Retain measurement evidence
         if: always()

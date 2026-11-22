@@ -193,6 +193,12 @@ Do not use the following to force coverage:
 - corruption of Git internals or fabricated private Git protocol output;
 - impossible provider evidence or mutation during an observational callback.
 
+Approved exception: when a permission state is itself the user scenario under
+test, a test may make a directory inside its own temporary fixture
+non-writable. It must skip when the user bypasses directory permissions and
+restore the permission before cleanup. The `remove` test for files a container
+left behind is the approved instance.
+
 An unsafe fixture says nothing about whether the underlying failure matters.
 Reading `/dev/full` does not reach EOF and can exhaust memory before an intended
 write-failure assertion. It also does not model the crate's atomic temporary-file
@@ -271,10 +277,11 @@ changes the archive location or file timestamps.
 
 `run.py verify <run-directory>` rejects missing, malformed, stale, incomplete,
 or inconsistent evidence. Adding `--require-zero`, or running `run.py gate`,
-requires zero uncovered eligible production lines. CI runs this same measurement
-in baseline mode, uploads only eligible production coverage, and retains evidence.
-Its hard gate remains disabled until an independently reviewed complete run
-establishes zero.
+requires zero uncovered eligible production lines. A complete canonical run
+established zero, so CI runs this same measurement with `run.py gate` and fails
+on any uncovered eligible line. It runs the measurement as an unprivileged user,
+so permission tests are not skipped, then uploads only eligible production
+coverage and retains evidence.
 
 Proceed in this order:
 
