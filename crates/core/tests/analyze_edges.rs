@@ -778,6 +778,67 @@ fn analysis_keeps_the_default_comparison_when_the_observed_feature_is_deleted() 
 }
 
 #[test]
+fn analysis_keeps_known_branch_tips_when_a_reference_cache_goes_offline() {
+    let fixture = AbcFixture::new();
+    let cache = fixture.root.join("object-cache");
+    fs::rename(&fixture.source, &cache).expect("use the seeded clone as the object cache");
+    fixture
+        .invoker(&fixture.root)
+        .run_check([
+            OsStr::new("clone"),
+            OsStr::new("--no-local"),
+            OsStr::new("--reference"),
+            cache.as_os_str(),
+            fixture.upstream.as_os_str(),
+            fixture.source.as_os_str(),
+        ])
+        .expect("clone the source borrowing its existing history");
+
+    let git = fixture.invoker(&fixture.source);
+    git.run_check(["switch", "-c", "feature"])
+        .expect("create feature");
+    let feature_tip = fixture
+        .commit_file_in_source("feature work", "feature.txt", "feature\n")
+        .expect("feature commit");
+    switch_source(&fixture, "main");
+    let main_tip = fixture
+        .commit_file_in_source("main work", "main.txt", "main\n")
+        .expect("default branch commit");
+    git.run_check(["push", "-u", "origin", "feature", "main"])
+        .expect("publish the two branches");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(BranchName::parse("feature").unwrap()))
+        .expect("add the feature outpost");
+    fs::rename(&cache, fixture.root.join("relocated-cache")).expect("move the object cache");
+
+    let report = run_analysis(&fixture, outpost);
+
+    assert_eq!(
+        report.upstream_branch.map(|branch| branch.oid),
+        Probe::Known(feature_tip)
+    );
+    assert_eq!(
+        report.upstream_default_branch.map(|branch| branch.oid),
+        Probe::Known(main_tip)
+    );
+    assert_eq!(
+        report.source_vs_upstream,
+        Probe::Known(AheadBehind {
+            ahead: 0,
+            behind: 0
+        })
+    );
+    assert!(matches!(
+        report.source_vs_upstream_default,
+        Probe::Unavailable(_)
+    ));
+    assert!(
+        !matches!(report.safe_delete, BranchDeleteSafety::Yes(_)),
+        "incomplete history cannot establish that the feature was merged"
+    );
+}
+
+#[test]
 fn malformed_selector_returns_public_error() {
     let fixture = AbcFixture::new();
     let source = fixture.source_repo().expect("source repo");
