@@ -11,10 +11,9 @@ Documentation: [GitHub Pages](https://optimalcnc.github.io/git-outpost/)
 [![crates.io: git-outpost](https://img.shields.io/crates/v/git-outpost.svg?label=git-outpost)](https://crates.io/crates/git-outpost)
 [![crates.io: outpost-core](https://img.shields.io/crates/v/outpost-core.svg?label=outpost-core)](https://crates.io/crates/outpost-core)
 
-Git Outpost is a Rust command-line tool for creating self-contained Git
-checkouts from an existing local repository. It gives you a `git worktree`-like
-workflow, but each outpost is a normal clone with its own `.git` directory, so
-editors and devcontainers can open it without extra repository metadata mounts.
+Git Outpost is a Rust command-line tool for managing parallel checkouts of a
+local repository. It gives you a `git worktree`-like workflow using local
+clones. Each outpost has its own `.git` directory for editors and devcontainers.
 
 Detailed user documentation is published on [GitHub Pages](https://optimalcnc.github.io/git-outpost/)
 and maintained in [docs/src/product.md](docs/src/product.md).

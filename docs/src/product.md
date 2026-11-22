@@ -3,12 +3,11 @@
 ## Overview
 
 Git Outpost is a Rust command-line tool installed with
-`cargo install git-outpost`. It creates self-contained Git checkouts from an
-existing local repository: a `git worktree`-like workflow backed by normal local
-clones. Each outpost has its own `.git` directory, so devcontainers and editors
-that expect a complete repository work without extra mounts. The canonical
-binary is `git-outpost`; Git dispatches it as `git outpost`, and the package
-also installs the short alias `gop`.
+`cargo install git-outpost`. It provides a `git worktree`-like workflow using
+local clones. Editors and devcontainers can find each outpost's Git metadata
+in its own `.git` directory. The canonical binary is `git-outpost`. Git
+dispatches it as `git outpost`, and the package also installs the short alias
+`gop`.
 
 ## Motivation
 
@@ -20,16 +19,15 @@ project directory, editors inspect `.git` inside it, and machine-specific extra
 mounts are brittle.
 
 Git Outpost keeps the worktree-style workflow by creating normal local clones
-from the source repository. Each outpost is self-contained, while the source
-repository serves as its local remote so new checkouts do not need a fresh
-GitHub clone.
+from the source repository. The source serves as each outpost's local remote
+so new checkouts do not need a fresh GitHub clone.
 
 ## Goals
 
 - Make adding another working checkout as simple as adding a Git worktree.
 - Support the essential outpost lifecycle: add, pull, source pull, merge,
   rebase, push, list, path, lock, unlock, move, remove, prune, status, and analyze.
-- Keep each outpost self-contained enough for devcontainers and editors.
+- Give each outpost its own Git directory for devcontainers and editors.
 - Avoid `git clone --shared`, because its object alternates still point outside
   the clone and can recreate the same portability issue as worktrees.
 - Use regular Git commands and repository layouts wherever possible.
@@ -317,9 +315,14 @@ Forms:
 - `gop add [--fetch-missing] [--remote-name <name>] <path-or-name> [<target-branch>]`
 - `gop add -b <new-branch> [--fetch-missing] [--remote-name <name>] [<path-or-name> [<target-branch>]]`
 
-Create a self-contained outpost from the current repository. The outpost is a
-normal local clone with its own `.git` directory; the current repository is
-configured as the outpost's local source remote.
+Create a local Git clone with its own `.git` directory and configure the
+current repository as its local source remote.
+
+If the source borrows objects from another repository (for example, through
+`git clone --reference`), Git can carry that dependency into the outpost.
+Keep that object directory accessible wherever Git needs to read the borrowed
+history. When Git exits with a nonzero status during cloning or checkout,
+`gop add` reports the command, Git's exit code, and any diagnostic Git wrote.
 
 `<path-or-name>` may be an explicit path or a bare outpost name. Explicit paths
 include absolute paths, `./name`, `../name`, and nested paths such as

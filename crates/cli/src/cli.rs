@@ -10,7 +10,7 @@ const ROOT_AFTER_HELP: &str = "Command-specific long flags: --remote-name, --fet
 #[derive(Debug, Parser)]
 #[command(
     version,
-    about = "Manage self-contained Git outposts.",
+    about = "Manage local Git clones as outposts.",
     disable_help_subcommand = true,
     subcommand_required = true,
     after_help = ROOT_AFTER_HELP
@@ -48,7 +48,7 @@ impl Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Create a self-contained outpost.
+    /// Create an outpost by cloning the source repository.
     Add(AddArgs),
 
     /// Keep the current outpost branch current.

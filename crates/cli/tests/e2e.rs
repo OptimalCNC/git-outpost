@@ -2317,21 +2317,19 @@ gop status | sed -n '1p'
 #[test]
 fn shell_gop_passes_through_when_first_arg_is_not_cd() {
     let fixture = common::CliFixture::new();
+    let direct = common::run(fixture.gop().arg("--help"));
+    common::assert_success(&direct, "direct gop --help");
 
     let script = r#"
 set -eu
 eval "$("$GOP_BIN" shell init bash)"
-gop --help | sed -n '1p'
+gop --help
 "#;
 
     let output = bash_script(script, &fixture);
 
     common::assert_success(&output, "bash gop --help passthrough");
-    let stdout = common::stdout(&output);
-    assert!(
-        stdout.contains("Manage self-contained Git outposts"),
-        "non-cd calls should pass through to the binary:\n{stdout}"
-    );
+    assert_eq!(common::stdout(&output), common::stdout(&direct));
 }
 
 #[cfg(unix)]

@@ -19,8 +19,8 @@ Git Outpost links three repository roles:
 
 - **Source:** the existing local repository from which `gop` creates and
   registers outposts.
-- **Outpost:** a self-contained local clone of the source. Its configurable
-  source remote points back to the source repository.
+- **Outpost:** a local clone of the source. Its configurable source remote
+  points back to the source repository.
 - **Upstream:** the repository behind the source branch's tracked upstream.
 
 ```text

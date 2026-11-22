@@ -585,7 +585,7 @@ fn normal_commands_remain_unchanged_without_completion_environment() {
     let fixture = common::CliFixture::new();
     let help = common::run(fixture.gop().arg("--help"));
     common::assert_success(&help, "normal gop help");
-    assert!(common::stdout(&help).contains("Manage self-contained Git outposts"));
+    assert!(common::stdout(&help).contains("Usage: gop"));
     assert_eq!(common::stderr(&help), "");
 
     let status = common::run(fixture.gop().current_dir(&fixture.source).arg("status"));

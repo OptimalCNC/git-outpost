@@ -38,7 +38,7 @@ For work in a selected outpost, including synchronization or publication, follow
 
 ## Create an Outpost
 
-A request for a worktree or parallel checkout maps to `gop add`. Use `git worktree add` only when the user explicitly requires linked-worktree semantics. The commands are not flag-compatible: an outpost is a self-contained clone.
+A request for a worktree or parallel checkout maps to `gop add`. Use `git worktree add` only when the user explicitly requires linked-worktree semantics. The commands accept different flags because `gop add` creates a local clone.
 
 ### Choose `outpost-container` When Needed
 

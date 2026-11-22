@@ -16,12 +16,10 @@ of a separate execution plan written after this architecture is approved.
 
 ## 1. Goals & Non-Goals (recap from spec)
 
-The tool creates and manages self-contained Git checkouts ("outposts")
-from an existing local repository. An outpost is a normal `git clone` — it
-has its own `.git` directory, no shared object store, and no `.git` pointer
-files. The source repository acts as the outpost's local remote (`local`
-by default). Every outpost can be reasoned about as a normal Git
-repository by editors, devcontainers, and CLIs.
+The tool creates and manages local Git clones ("outposts"). Each outpost has
+its own `.git` directory and uses the source repository as its local remote
+(`local` by default). Git handles object storage as it does for any local
+clone. See the [`add` contract](product.md#add).
 
 **Non-goals** (per spec): not replacing Git, not implementing a custom
 object store, not hiding Git behavior, not requiring a particular hosting
@@ -67,8 +65,7 @@ flowchart RL
   perspective B is "the source repository" — the repository that the user
   invokes `gop` from.
 - **C** is an outpost added by `gop add` from inside B. It has its
-  own `.git` directory and `local -> B`. Editors and devcontainers see C
-  as a self-contained Git repo.
+  own `.git` directory and `local -> B`.
 
 This topology is the canonical fixture for integration tests (see §10).
 
@@ -2237,7 +2234,7 @@ test.
 | C-10 | C contains strict `<git-dir>/outpost/metadata.json` with version, canonical source path, and remote name. |
 | C-11a | C's `<remote_name>` remote URL equals B's canonicalized path. |
 | C-11b | C's `.git` is a real directory, not a `.git` file pointer. |
-| C-11c | C has no `objects/info/alternates` file (no `--shared`). |
+| C-11c | In the standard fixture B has no object alternates. C has no `.git/objects/info/alternates` file after `add`. |
 | C-11d | Recorded clone argv includes `--no-shared`. |
 | C-12 | After `add`, `<B-git-dir>/outpost/registry.json` contains exactly one entry with the canonicalized C path. |
 | C-13 | `--remote-name custom` configures the source remote as `custom` and stores `remote_name=custom` in metadata. After add, `git -C C remote get-url origin` fails (no `origin` remote remains). |
