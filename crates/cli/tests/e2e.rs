@@ -816,6 +816,52 @@ fn add_new_branch_with_two_positionals_keeps_second_as_target_branch() {
 }
 
 #[test]
+fn add_reports_the_native_git_error_when_local_cloning_is_disallowed() {
+    let fixture = common::CliFixture::new();
+    let native = common::run(
+        fixture
+            .git(&fixture.source)
+            .env("LC_ALL", "C")
+            .env("GIT_ALLOW_PROTOCOL", "https")
+            .args(["clone", "--quiet", "--"])
+            .arg(&fixture.source)
+            .arg(fixture.outpost("native")),
+    );
+    assert!(
+        !native.status.success(),
+        "Git unexpectedly allowed a local clone"
+    );
+    let git_code = native.status.code().expect("git clone exit code");
+    let native_stderr = common::stderr(&native);
+    let git_error = native_stderr
+        .lines()
+        .find(|line| line.starts_with("fatal: "))
+        .expect("Git reports why the local clone was refused");
+
+    let add = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .env("LC_ALL", "C")
+            .env("GIT_ALLOW_PROTOCOL", "https")
+            .args(["add", "../C", "main"]),
+    );
+    common::assert_failure_code(&add, git_code.clamp(1, 125), "gop add");
+    assert!(add.stdout.is_empty(), "{}", common::stdout(&add));
+    let message = common::stderr(&add);
+    assert!(message.contains("clone"), "{message}");
+    assert!(message.contains(&format!("(exit {git_code})")), "{message}");
+    assert!(
+        message.contains(git_error),
+        "missing Git diagnostic {git_error:?} in {message:?}"
+    );
+
+    let list = common::run(fixture.gop().current_dir(&fixture.source).arg("list"));
+    common::assert_success(&list, "gop list after failed clone");
+    assert!(list.stdout.is_empty(), "{}", common::stdout(&list));
+}
+
+#[test]
 fn add_fetch_missing_materializes_the_positional_remote_only_branch() {
     let fixture = common::CliFixture::new();
     let branch = "feature/remote-only";
