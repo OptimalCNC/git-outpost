@@ -1431,6 +1431,67 @@ fn remove_with_cleanup_source_branch_oid_race_leaves_branch_intact() {
 }
 
 #[test]
+fn force_remove_keeps_branches_when_the_outpost_tracks_another_remote() {
+    let fixture = AbcFixture::new();
+    let branch = fixture
+        .create_source_branch("feature")
+        .expect("create source feature");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch))
+        .expect("add feature outpost");
+    let git = fixture.invoker(&outpost);
+    git.run_check([
+        OsStr::new("remote"),
+        OsStr::new("add"),
+        OsStr::new("review"),
+        fixture.upstream.as_os_str(),
+    ])
+    .expect("add the review repository");
+    git.run_check(["push", "--set-upstream", "review", "feature"])
+        .expect("publish and track the review branch");
+    let published_tip = fixture.rev_parse(&outpost, "HEAD").expect("published tip");
+    let source = fixture.source_repo().expect("source repo");
+    let options = |force| remove::RemoveOptions {
+        selector: OutpostSelector::from_path(outpost.clone()),
+        force,
+    };
+
+    let error = remove::run(&source, options(false)).expect_err("source tracking is unknown");
+    assert!(matches!(error, OutpostError::NoUpstreamTracking { branch } if branch == "feature"));
+    assert_eq!(single_entry(&source).path, canonical(&outpost));
+
+    let mut prompt = TestPrompt::new([true], [true]);
+    let report = remove::run_with_cleanup(
+        &source,
+        options(true),
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("force remove only the checkout");
+
+    assert!(!outpost.exists());
+    assert_registry_empty(&source);
+    assert!(prompt.source_prompts.is_empty() && prompt.upstream_prompts.is_empty());
+    assert!(report.branch_cleanup.iter().any(|outcome| matches!(
+        outcome,
+        remove::BranchCleanupOutcome::Skipped {
+            reason: remove::BranchCleanupSkipReason::UpstreamRemoteMismatch,
+            ..
+        }
+    )));
+    for repo in [&fixture.source, &fixture.upstream] {
+        assert_eq!(
+            fixture
+                .rev_parse(repo, "refs/heads/feature")
+                .expect("preserved feature"),
+            published_tip
+        );
+    }
+}
+
+#[test]
 fn remove_force_does_not_bypass_branch_cleanup_proof() {
     let fixture = AbcFixture::new();
     ensure_origin_head(&fixture);

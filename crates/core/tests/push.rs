@@ -577,6 +577,7 @@ fn push_preserves_unpublished_work_when_the_local_origin_write_repository_is_mis
 #[test]
 fn push_accepts_a_relative_origin_and_a_file_url_to_its_linked_worktree() {
     let fixture = AbcFixture::new();
+    fs::create_dir(fixture.root.join("A")).expect("create ordinary directory next to A.git");
     fs::create_dir(fixture.root.join("outposts")).expect("separate outpost directory");
     let checkout = fixture
         .add_outpost("outposts/C")
