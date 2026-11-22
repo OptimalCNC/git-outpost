@@ -232,6 +232,9 @@ pub enum OutpostError {
     #[error("branch not found: {branch} in {repo}")]
     BranchNotFound { branch: String, repo: PathBuf },
 
+    #[error("push to origin completed, but branch {branch} was not visible during verification")]
+    PushedBranchNotVisible { branch: String },
+
     #[error("no upstream tracking configured for branch {branch}")]
     NoUpstreamTracking { branch: String },
 
@@ -1437,7 +1440,9 @@ Step-by-step:
 8. Push the same branch from B with `--set-upstream origin`. Both hops use
    Git pattern refspecs to select only the literal `refs/heads/<branch>`.
    This also works when a tag has the same name or a second branch is
-   literally named `refs/heads/<branch>`.
+   literally named `refs/heads/<branch>`. After the push succeeds, verify
+   the branch tip on `origin`. If the remote omits the branch from its
+   response, return `PushedBranchNotVisible` with exit code 5.
 
 #### 5.9.9 `ops/lock.rs`
 
@@ -2034,7 +2039,7 @@ impl OutpostError {
                 | OutpostLocked { .. } => 3,
             Divergence { .. } | PushIntoCheckedOutBranch { .. }
                 | AmbiguousBranchCreation { .. } => 4,
-            BranchNotFound { .. } | NoUpstreamTracking { .. }
+            BranchNotFound { .. } | PushedBranchNotVisible { .. } | NoUpstreamTracking { .. }
                 | InvalidRefName { .. } | UpstreamNotABranch { .. } => 5,
             BadRegistry { .. } | BadMetadata { .. }
                 | OutpostIdPrefixNotFound(_)

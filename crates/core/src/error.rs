@@ -92,6 +92,9 @@ pub enum OutpostError {
     #[error("branch not found: {branch} in {}", .repo.display())]
     BranchNotFound { branch: String, repo: PathBuf },
 
+    #[error("push to origin completed, but branch {branch} was not visible during verification")]
+    PushedBranchNotVisible { branch: String },
+
     #[error("no upstream tracking configured for branch {branch}")]
     NoUpstreamTracking { branch: String },
 
@@ -187,6 +190,7 @@ impl OutpostError {
             | PushIntoCheckedOutBranch { .. }
             | AmbiguousBranchCreation { .. } => 4,
             BranchNotFound { .. }
+            | PushedBranchNotVisible { .. }
             | NoUpstreamTracking { .. }
             | InvalidRefName { .. }
             | UpstreamNotABranch { .. } => 5,
@@ -374,6 +378,12 @@ mod tests {
                     repo: path("/repo"),
                 },
                 "branch not found: feature in /repo",
+            ),
+            (
+                OutpostError::PushedBranchNotVisible {
+                    branch: "feature".to_owned(),
+                },
+                "push to origin completed, but branch feature was not visible during verification",
             ),
             (
                 OutpostError::NoUpstreamTracking {

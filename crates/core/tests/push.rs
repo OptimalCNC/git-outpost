@@ -668,6 +668,49 @@ fn pu05_push_dirty_outpost_succeeds() {
 }
 
 #[test]
+fn push_reports_when_origin_accepts_the_branch_but_hides_it_from_verification() {
+    let fixture = AbcFixture::new();
+    let topic = fixture.create_source_branch("topic").expect("topic branch");
+    let path = fixture
+        .add_outpost_on_branch("C", Some(topic))
+        .expect("topic outpost");
+    let expected = fixture
+        .commit_in_outpost(&path, "publish topic")
+        .expect("new topic commit");
+    fixture
+        .invoker(&fixture.upstream)
+        .run_check([
+            "config",
+            "--local",
+            "uploadpack.hideRefs",
+            "refs/heads/topic",
+        ])
+        .expect("hide topic from reads on origin");
+
+    let error = expect_error(
+        run(
+            &outpost(&fixture, &path),
+            PushOptions,
+            &mut CapturingReporter::default(),
+        ),
+        "publication cannot be verified",
+    );
+
+    assert_eq!(error.exit_code(), 5);
+    assert!(matches!(error, OutpostError::PushedBranchNotVisible { branch } if branch == "topic"));
+    for repo in [&fixture.source, &fixture.upstream] {
+        assert_eq!(
+            fixture
+                .rev_parse(repo, "refs/heads/topic")
+                .expect("published topic"),
+            expected,
+            "topic in {}",
+            repo.display()
+        );
+    }
+}
+
+#[test]
 fn push_first_publication_to_absent_origin_branch_counts_only_new_commits() {
     let fixture = AbcFixture::new();
     let feature = fixture

@@ -97,9 +97,8 @@ pub fn run(
     let origin_after =
         source
             .origin_branch_oid(&branch)?
-            .ok_or_else(|| OutpostError::BranchNotFound {
+            .ok_or_else(|| OutpostError::PushedBranchNotVisible {
                 branch: branch.as_str().to_owned(),
-                repo: source.work_tree().to_path_buf(),
             })?;
     if origin_after != source_after {
         return Err(OutpostError::Divergence {
