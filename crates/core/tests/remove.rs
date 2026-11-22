@@ -57,6 +57,62 @@ fn remove_clean_fully_pushed_outpost_deletes_dir_and_registry_entry() {
 }
 
 #[test]
+#[cfg(windows)]
+fn remove_reports_the_residual_outpost_and_keeps_branches_when_a_reader_blocks_deletion() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let fixture = AbcFixture::new();
+    let contents = "published notes";
+    let tip = fixture
+        .commit_file_in_source("publish notes", "notes.txt", contents)
+        .expect("commit notes");
+    let main = BranchName::parse("main").unwrap();
+    fixture.push_source_branch(&main).expect("publish main");
+    let branch = fixture.create_source_branch("topic").expect("topic branch");
+    fixture.push_source_branch(&branch).expect("publish topic");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch))
+        .expect("topic outpost");
+    let notes = outpost.join("notes.txt");
+    let expected_path = fs::canonicalize(&outpost).expect("outpost path");
+    const FILE_SHARE_READ: u32 = 1;
+    let reader = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ)
+        .open(&notes)
+        .expect("open notes for shared reading");
+    let source = fixture.source_repo().expect("source repo");
+    let mut prompt = TestPrompt::new([true], [true]);
+
+    let err = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            selector: OutpostSelector::from_path(outpost.clone()),
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect_err("the open document blocks directory removal");
+    drop(reader);
+
+    assert!(matches!(err, OutpostError::IoAt { path, .. } if path == expected_path));
+    assert_eq!(fs::read_to_string(notes).expect("residual notes"), contents);
+    assert_registry_empty(&source);
+    assert!(prompt.source_prompts.is_empty() && prompt.upstream_prompts.is_empty());
+    for repo in [&fixture.source, &fixture.upstream] {
+        assert_eq!(
+            fixture
+                .rev_parse(repo, "refs/heads/topic")
+                .expect("preserved topic"),
+            tip
+        );
+    }
+}
+
+#[test]
 fn remove_accepts_unique_id_prefix() {
     let fixture = AbcFixture::new();
     let outpost = fixture.add_outpost("C").expect("add C");
@@ -647,6 +703,67 @@ fn remove_with_cleanup_skips_checked_out_source_branch() {
             reason: remove::BranchCleanupSkipReason::BranchCheckedOut,
         } if skipped == &branch
     )));
+}
+
+#[test]
+fn cleanup_does_not_offer_branch_deletion_when_source_worktrees_cannot_be_inspected() {
+    let fixture = AbcFixture::new();
+    let branch = fixture
+        .create_source_branch("feat")
+        .expect("create feature");
+    fixture
+        .push_source_branch(&branch)
+        .expect("publish feature");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add feature outpost");
+    let source = fixture.source_repo().expect("source repo");
+    let linked = fixture.root.join("active-checkout");
+    let source_git = fixture.invoker(&fixture.source);
+    source_git
+        .run_check([
+            OsStr::new("worktree"),
+            OsStr::new("add"),
+            linked.as_os_str(),
+            OsStr::new(branch.as_str()),
+        ])
+        .expect("check out the published feature in another source worktree");
+    let tip = fixture.rev_parse(&linked, "HEAD").expect("checked-out tip");
+    // Git stores this value, but worktree commands require a boolean.
+    source_git
+        .run_check(["config", "--local", "worktree.guessRemote", "auto"])
+        .expect("save the worktree setting");
+    let mut prompt = TestPrompt::new([true], [true]);
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            selector: OutpostSelector::from_path(outpost.clone()),
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("remove the outpost while keeping the active branch");
+
+    assert!(prompt.source_prompts.is_empty());
+    assert!(prompt.upstream_prompts.is_empty());
+    assert!(!outpost.exists());
+    assert_registry_empty(&source);
+    for repo in [&fixture.source, &fixture.upstream] {
+        assert_eq!(fixture.rev_parse(repo, "refs/heads/feat").unwrap(), tip);
+    }
+    assert!(
+        report.branch_cleanup.iter().any(|outcome| matches!(
+            outcome,
+            remove::BranchCleanupOutcome::Warning { branch: Some(warned), message }
+                if warned == &branch && message.contains("cannot inspect checked-out source branches")
+        )),
+        "{:?}",
+        report.branch_cleanup
+    );
 }
 
 #[test]
