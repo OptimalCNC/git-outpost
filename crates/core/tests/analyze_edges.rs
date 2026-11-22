@@ -401,6 +401,62 @@ fn missing_remote_branch_is_unknown_when_cleanup_evidence_is_skipped() {
 }
 
 #[test]
+fn stale_tracking_ref_cannot_substitute_for_the_replacement_branch() {
+    let fixture = AbcFixture::new();
+    let source = fixture.invoker(&fixture.source);
+    let upstream = fixture.invoker(&fixture.upstream);
+    source
+        .run_check(["push", "origin", "main:refs/heads/topic"])
+        .expect("publish topic");
+    upstream
+        .run_check(["branch", "-D", "topic"])
+        .expect("retire topic upstream");
+    upstream
+        .run_check(["branch", "topic/review", "main"])
+        .expect("publish replacement branch upstream");
+    let remote_tip = fixture
+        .commit_in_upstream("topic/review", "remote review change")
+        .expect("advance the replacement branch upstream");
+    source
+        .run_check(["switch", "-c", "topic/review"])
+        .expect("start local review branch");
+    let local_tip = fixture
+        .commit_in_source("local review change")
+        .expect("advance the local review branch");
+    let outpost = fixture.add_outpost("C").expect("add review outpost");
+
+    let report = run_analysis(&fixture, outpost);
+
+    match report.upstream_branch.map(|identity| identity.oid) {
+        Probe::Unavailable(reason) => assert!(!reason.trim().is_empty()),
+        observed => assert_eq!(observed, Probe::Known(remote_tip)),
+    }
+    match report.source_vs_upstream {
+        Probe::Unavailable(reason) => assert!(!reason.trim().is_empty()),
+        comparison => assert_eq!(
+            comparison,
+            Probe::Known(AheadBehind {
+                ahead: 1,
+                behind: 1,
+            })
+        ),
+    }
+    assert_eq!(
+        report.source_vs_upstream_default,
+        Probe::Known(AheadBehind {
+            ahead: 1,
+            behind: 0,
+        })
+    );
+    assert_eq!(
+        fixture
+            .rev_parse(&fixture.source, "refs/heads/topic/review")
+            .expect("local review branch survives analysis"),
+        local_tip
+    );
+}
+
+#[test]
 fn missing_remote_head_is_an_unknown_default_branch() {
     let fixture = AbcFixture::new();
     let branch = feature_branch(&fixture, "feat", true);
@@ -432,6 +488,58 @@ fn missing_remote_head_is_an_unknown_default_branch() {
         outpost_core::ops::branch_analysis::BranchCleanupFinding::Warning { message, .. }
             if message.contains("cannot inspect upstream branches")
     )));
+}
+
+#[test]
+fn an_upstreams_remote_tracking_head_cannot_prove_a_feature_is_merged() {
+    let fixture = AbcFixture::new();
+    let feature = feature_branch(&fixture, "feature", true);
+    fixture
+        .push_source_branch(&feature)
+        .expect("publish feature");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(feature))
+        .expect("add feature outpost");
+    let upstream = fixture.invoker(&fixture.upstream);
+    upstream
+        .run_check([
+            OsStr::new("remote"),
+            OsStr::new("add"),
+            OsStr::new("team"),
+            fixture.source.as_os_str(),
+        ])
+        .expect("configure upstream's team remote");
+    upstream.run_check(["fetch", "team"]).expect("fetch team");
+    upstream
+        .run_check(["remote", "set-head", "team", "feature"])
+        .expect("point team/HEAD at the unmerged feature");
+    let main_tip = fixture
+        .rev_parse(&fixture.upstream, "refs/heads/main")
+        .expect("upstream main");
+    let feature_tip = fixture
+        .rev_parse(&fixture.upstream, "refs/heads/feature")
+        .expect("upstream feature");
+
+    let report = run_analysis(&fixture, outpost);
+
+    assert_eq!(
+        report
+            .upstream_default_branch
+            .as_ref()
+            .map(|identity| (identity.branch.as_str(), identity.oid.as_str())),
+        Probe::Known(("main", main_tip.as_str()))
+    );
+    assert_eq!(
+        report.upstream_branch.map(|identity| identity.oid),
+        Probe::Known(feature_tip)
+    );
+    assert!(matches!(
+        report.safe_delete,
+        BranchDeleteSafety::No {
+            reason: BranchCleanupSkipReason::NoProof,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -564,6 +672,50 @@ fn source_push_hazard_distinguishes_refuse_and_update_instead() {
         Probe::Known(SourcePushHazard {
             checked_out: true,
             push_would_fail: false,
+        })
+    );
+}
+
+#[test]
+fn invalid_worktree_config_preserves_gits_reason_and_independent_comparisons() {
+    let mut fixture = AbcFixture::new();
+    fixture.git_env.insert("LC_ALL".into(), "C".into());
+    fixture.commit_in_source("unpublished work").unwrap();
+    let outpost = fixture.add_outpost("C").expect("add outpost");
+    set_source_config(&fixture, "receive.denyCurrentBranch", "refuse");
+    set_source_config(&fixture, "worktree.guessRemote", "auto");
+    let mut git = std::process::Command::new("git");
+    outpost_core::isolate_git_test_command(&mut git);
+    let native = git
+        .args(["worktree", "list"])
+        .current_dir(&fixture.source)
+        .envs(&fixture.git_env)
+        .output()
+        .expect("inspect the worktrees with Git");
+    assert!(!native.status.success());
+    let stderr = String::from_utf8_lossy(&native.stderr);
+    let diagnostic = stderr
+        .lines()
+        .find(|line| line.starts_with("fatal: "))
+        .expect("Git reports the invalid worktree setting");
+
+    let report = run_analysis(&fixture, outpost);
+
+    match report.source_push_hazard {
+        Probe::Unavailable(reason) => assert!(reason.contains(diagnostic), "{reason}"),
+        result => assert_eq!(
+            result,
+            Probe::Known(SourcePushHazard {
+                checked_out: true,
+                push_would_fail: true,
+            })
+        ),
+    }
+    assert_eq!(
+        report.source_vs_upstream_default,
+        Probe::Known(AheadBehind {
+            ahead: 1,
+            behind: 0,
         })
     );
 }
