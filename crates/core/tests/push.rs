@@ -575,6 +575,55 @@ fn push_preserves_unpublished_work_when_the_local_origin_write_repository_is_mis
 }
 
 #[test]
+fn push_reports_an_invalid_local_gitfile_before_publishing_to_the_source() {
+    let mut fixture = AbcFixture::new();
+    fixture.git_env.insert("LC_ALL".into(), "C".into());
+    let checkout = fixture.add_outpost("C").expect("add outpost");
+    let published = fixture
+        .rev_parse(&fixture.upstream, "refs/heads/main")
+        .expect("published branch");
+    let intended = fixture
+        .commit_in_outpost(&checkout, "unpublished review")
+        .expect("outpost commit");
+    fs::write(fixture.root.join("A"), "The repository is in A.git.\n")
+        .expect("create ordinary file next to the upstream");
+    fixture
+        .invoker(&fixture.source)
+        .run_check(["remote", "set-url", "--push", "origin", "../A"])
+        .expect("configure the file as the upstream write address");
+
+    let error = expect_error(
+        run(
+            &outpost(&fixture, &checkout),
+            PushOptions,
+            &mut CapturingReporter::default(),
+        ),
+        "refuse the invalid write address before either push",
+    );
+
+    let OutpostError::GitFailed { stderr, .. } = error else {
+        panic!("expected Git's diagnostic for the ordinary file, got {error:?}");
+    };
+    let reported_file = stderr
+        .lines()
+        .find_map(|line| line.strip_prefix("fatal: invalid gitfile format: "));
+    assert!(
+        reported_file.is_some_and(|path| Path::new(path).ends_with("A")),
+        "{stderr}"
+    );
+    for (repo, expected) in [
+        (&checkout, intended.as_str()),
+        (&fixture.source, published.as_str()),
+        (&fixture.upstream, published.as_str()),
+    ] {
+        assert_eq!(
+            fixture.rev_parse(repo, "refs/heads/main").expect("branch"),
+            expected
+        );
+    }
+}
+
+#[test]
 fn push_accepts_a_relative_origin_and_a_file_url_to_its_linked_worktree() {
     let fixture = AbcFixture::new();
     fs::create_dir(fixture.root.join("A")).expect("create ordinary directory next to A.git");
