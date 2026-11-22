@@ -179,6 +179,47 @@ fn source_status_renders_exact_empty_inventory() {
 }
 
 #[test]
+fn status_reports_gits_discovery_error_for_an_invalid_repository_setting() {
+    let fixture = common::CliFixture::new();
+    git_ok(
+        &fixture,
+        &fixture.source,
+        &["config", "core.commitGraph", "auto"],
+    );
+    let native = common::run(
+        fixture
+            .git(&fixture.source)
+            .env("LC_ALL", "fr_FR.UTF-8")
+            .args(["rev-parse", "--show-toplevel"]),
+    );
+    assert!(!native.status.success(), "Git accepted an invalid boolean");
+    let git_code = native.status.code().expect("Git discovery exit code");
+    let native_stderr = common::stderr(&native);
+
+    let status = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.source)
+            .env("LC_ALL", "fr_FR.UTF-8")
+            .arg("status"),
+    );
+
+    common::assert_failure_code(&status, git_code.clamp(1, 125), "gop status");
+    let message = common::stderr(&status);
+    assert!(
+        native_stderr
+            .lines()
+            .any(|line| line.contains("core.commitgraph") && message.contains(line)),
+        "missing Git diagnostic from {native_stderr:?} in {message:?}"
+    );
+    assert!(
+        message.contains("rev-parse") && message.contains("--show-toplevel"),
+        "{message}"
+    );
+    assert!(message.contains(&format!("(exit {git_code})")), "{message}");
+}
+
+#[test]
 fn source_status_renders_tabular_live_and_stale_rows() {
     let fixture = common::CliFixture::new();
     let dirty = fixture.add_outpost("C");

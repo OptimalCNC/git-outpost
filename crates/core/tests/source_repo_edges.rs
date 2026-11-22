@@ -7,6 +7,22 @@ use common::fixture::AbcFixture;
 use outpost_core::{BranchName, OutpostError, RemoteName, SourceRepo};
 
 #[test]
+fn discovery_reports_a_missing_explicit_git_directory() {
+    let outside = tempfile::tempdir().expect("temporary directory");
+    let env = std::collections::BTreeMap::from([("GIT_DIR".into(), "retired.git".into())]);
+
+    let error = SourceRepo::at_with(outside.path(), &env)
+        .err()
+        .expect("the explicitly selected repository is gone");
+
+    assert!(
+        matches!(&error, OutpostError::GitFailed { code: 128, stderr, .. }
+            if stderr.contains("retired.git")),
+        "{error}"
+    );
+}
+
+#[test]
 #[cfg(unix)]
 fn source_constructor_rejects_a_missing_explicit_git_work_tree_without_mutation() {
     let fixture = AbcFixture::new();

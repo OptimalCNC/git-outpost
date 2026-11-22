@@ -17,7 +17,14 @@ fn e_01_build_produces_both_binaries() {
 #[test]
 fn e_08_cli_errors_return_documented_exit_codes() {
     let fixture = common::CliFixture::new();
-    let not_a_repo = common::run(fixture.gop().current_dir(&fixture.root).arg("status"));
+    let not_a_repo = common::run(
+        fixture
+            .gop()
+            .current_dir(&fixture.root)
+            .env("GIT_TRACE", "1")
+            .env("LC_ALL", "fr_FR.UTF-8")
+            .arg("status"),
+    );
     assert_failure_code_contains(&not_a_repo, 2, "NotARepo", "not inside a Git repository");
 
     let fixture = common::CliFixture::new();

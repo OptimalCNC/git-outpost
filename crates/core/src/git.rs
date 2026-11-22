@@ -33,7 +33,10 @@ impl GitInvoker {
     }
 
     pub fn with_env(mut self, key: impl Into<OsString>, val: impl Into<OsString>) -> Self {
-        self.env.insert(key.into(), Some(val.into()));
+        let key = key.into();
+        #[cfg(windows)]
+        self.env.retain(|name, _| !name.eq_ignore_ascii_case(&key));
+        self.env.insert(key, Some(val.into()));
         self
     }
 

@@ -614,13 +614,37 @@ pub(crate) fn canonicalize_path(path: &Path) -> OutpostResult<PathBuf> {
 }
 
 pub(crate) fn repository_path(git: &GitInvoker, option: &str) -> OutpostResult<PathBuf> {
-    let path = git
-        .run_capture_path(["rev-parse", option])
-        .map_err(|err| match err {
-            OutpostError::GitFailed { .. } => OutpostError::NotARepo(git.cwd().to_owned()),
-            other => other,
-        })?;
+    let path = match git.run_capture_path(["rev-parse", option]) {
+        Err(OutpostError::GitFailed { code: 128, .. })
+            if option == "--show-toplevel" && git_found_no_repository(git) =>
+        {
+            return Err(OutpostError::NotARepo(git.cwd().to_owned()));
+        }
+        result => result?,
+    };
     canonicalize_path(&git.cwd().join(path))
+}
+
+fn git_found_no_repository(git: &GitInvoker) -> bool {
+    // Discovery, invalid configuration and bare repositories all exit 128.
+    // Classify the failure in a fixed locale and keep the user's original diagnostic.
+    let Err(OutpostError::GitFailed {
+        code: 128, stderr, ..
+    }) = git
+        .clone()
+        .with_env("LC_ALL", "C")
+        .run_check(["rev-parse", "--show-toplevel"])
+    else {
+        return false;
+    };
+    // Trace output may precede the fatal message, and the message itself can span lines.
+    stderr
+        .lines()
+        .find(|line| line.starts_with("fatal: "))
+        .is_some_and(|line| {
+            line == "fatal: not a git repository (or any of the parent directories): .git"
+                || line.starts_with("fatal: not a git repository (or any parent up to mount point ")
+        })
 }
 
 pub(crate) fn source_branch_ref(branch: &BranchName) -> String {

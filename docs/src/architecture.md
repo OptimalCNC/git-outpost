@@ -517,7 +517,9 @@ Discovery uses Git itself (`git rev-parse --show-toplevel` and
 `--git-dir`), which transparently handles every layout Git supports:
 normal `.git` directory, `.git` file (worktrees), `--git-dir`
 overrides via env vars, etc. We do **not** roll our own `.git`
-walker.
+walker. When Git reports that its directory search found no repository,
+discovery returns `NotARepo` (exit 2). Other Git failures retain the original
+command, exit status, and diagnostic, including errors in repository configuration.
 
 `work_tree` and `git_dir` are canonicalized at construction
 (`std::fs::canonicalize`) so registry paths and registry lookups are
