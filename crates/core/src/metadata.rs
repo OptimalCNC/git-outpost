@@ -1,10 +1,10 @@
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::source_repo::canonicalize_path;
+use crate::state_file::{Publish, publish_json};
 use crate::{GitInvoker, OutpostError, OutpostResult, RemoteName, SourceRepo};
 
 const METADATA_VERSION: u32 = 1;
@@ -78,48 +78,13 @@ pub(crate) fn initialize(
     let git_dir = git.run_capture_path(["rev-parse", "--git-dir"])?;
     let state_dir = canonicalize_path(&git.cwd().join(git_dir))?.join("outpost");
     let path = state_dir.join("metadata.json");
-    let source_path = source.work_tree();
-    let source_repo = match source_path.canonicalize() {
-        Ok(path) => path,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => source_path.to_owned(),
-        Err(error) => {
-            return Err(OutpostError::IoAt {
-                path: source_path.to_owned(),
-                source: error,
-            });
-        }
-    };
+    // SourceRepo resolved its canonical work tree when it was opened.
     let file = MetadataFile {
         version: METADATA_VERSION,
-        source_repo,
+        source_repo: source.work_tree().to_owned(),
         remote_name: remote_name.as_str().to_owned(),
     };
-    fs::create_dir_all(&state_dir).map_err(|source| OutpostError::IoAt {
-        path: state_dir.to_path_buf(),
-        source,
-    })?;
-
-    let mut temp =
-        tempfile::NamedTempFile::new_in(&state_dir).map_err(|source| OutpostError::IoAt {
-            path: state_dir.to_path_buf(),
-            source,
-        })?;
-    serde_json::to_writer_pretty(temp.as_file_mut(), &file).map_err(|source| {
-        OutpostError::IoAt {
-            path: path.to_path_buf(),
-            source: std::io::Error::other(source),
-        }
-    })?;
-    writeln!(temp.as_file_mut()).map_err(|source| OutpostError::IoAt {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    temp.persist_noclobber(&path)
-        .map_err(|source| OutpostError::IoAt {
-            path: path.to_path_buf(),
-            source: source.error,
-        })?;
-    Ok(())
+    publish_json(&state_dir, &path, &file, Publish::NoClobber)
 }
 
 #[derive(Debug, Serialize, Deserialize)]

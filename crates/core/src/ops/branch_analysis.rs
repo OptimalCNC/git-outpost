@@ -1,5 +1,5 @@
 use crate::ops::cleanup_evidence::GitCleanupEvidenceProvider;
-use crate::{BranchName, Outpost, OutpostError, RemoteName, SourceRepo};
+use crate::{BranchName, Outpost, OutpostError, OutpostResult, RemoteName, SourceRepo};
 
 pub use crate::ops::cleanup_evidence::{
     CleanupEvidenceProvider, CleanupEvidenceRequest, CleanupEvidenceSnapshot, MergedPullRequest,
@@ -260,14 +260,16 @@ fn analyze_candidate(
         });
     }
 
-    if !ensure_commit_available(
+    if ensure_commit_available(
         source,
         &upstream_remote,
         &default_branch,
         &default_oid,
         &branch,
         findings,
-    ) {
+    )
+    .is_none()
+    {
         findings.push(BranchCleanupFinding::Skipped {
             branch: Some(branch),
             reason: BranchCleanupSkipReason::NoProof,
@@ -275,36 +277,30 @@ fn analyze_candidate(
         return None;
     }
 
-    match source.is_ancestor_oid(&source_oid, &default_oid) {
-        Ok(true) => Some(BranchCleanupCandidate {
-            branch,
-            source_oid,
-            upstream_remote: upstream_remote.clone(),
-            upstream_oid,
-            proof: BranchCleanupProof::AncestorOfDefaultBranch {
-                remote: upstream_remote,
-                default_branch,
-                default_oid,
-            },
-        }),
-        Ok(false) => {
-            findings.push(BranchCleanupFinding::Skipped {
-                branch: Some(branch),
-                reason: BranchCleanupSkipReason::NoProof,
-            });
-            None
-        }
-        Err(err) => {
-            findings.push(warning(
-                Some(branch.clone()),
-                "cannot prove source branch is merged",
-                err,
-            ));
-            None
-        }
+    let merged = source.is_ancestor_oid(&source_oid, &default_oid);
+    let context = "cannot prove source branch is merged";
+    let merged = checked(merged, &branch, context, findings)?;
+    if !merged {
+        findings.push(BranchCleanupFinding::Skipped {
+            branch: Some(branch),
+            reason: BranchCleanupSkipReason::NoProof,
+        });
+        return None;
     }
+    Some(BranchCleanupCandidate {
+        branch,
+        source_oid,
+        upstream_remote: upstream_remote.clone(),
+        upstream_oid,
+        proof: BranchCleanupProof::AncestorOfDefaultBranch {
+            remote: upstream_remote,
+            default_branch,
+            default_oid,
+        },
+    })
 }
 
+/// Make the observed default commit local; `None` records why it is unavailable.
 fn ensure_commit_available(
     source: &SourceRepo,
     remote: &RemoteName,
@@ -312,47 +308,42 @@ fn ensure_commit_available(
     default_oid: &str,
     candidate_branch: &BranchName,
     findings: &mut Vec<BranchCleanupFinding>,
-) -> bool {
-    match source.has_commit_oid(default_oid) {
-        Ok(true) => return true,
-        Ok(false) => {}
-        Err(err) => {
-            findings.push(warning(
-                Some(candidate_branch.clone()),
-                "cannot inspect upstream default commit",
-                err,
-            ));
-            return false;
-        }
+) -> Option<()> {
+    let local = source.has_commit_oid(default_oid);
+    let context = "cannot inspect upstream default commit";
+    if checked(local, candidate_branch, context, findings)? {
+        return Some(());
     }
 
-    if let Err(err) = source.fetch_remote_branches(remote, std::slice::from_ref(default_branch)) {
-        findings.push(warning(
-            Some(candidate_branch.clone()),
-            "cannot fetch upstream default branch",
-            err,
-        ));
-        return false;
-    }
+    checked(
+        source.fetch_remote_branches(remote, std::slice::from_ref(default_branch)),
+        candidate_branch,
+        "cannot fetch upstream default branch",
+        findings,
+    )?;
 
-    match source.has_commit_oid(default_oid) {
-        Ok(true) => true,
-        Ok(false) => {
-            findings.push(BranchCleanupFinding::Warning {
-                branch: Some(candidate_branch.clone()),
-                message: "observed upstream default commit is unavailable after fetch".to_owned(),
-            });
-            false
-        }
-        Err(err) => {
-            findings.push(warning(
-                Some(candidate_branch.clone()),
-                "cannot inspect fetched upstream default commit",
-                err,
-            ));
-            false
-        }
+    let fetched = source.has_commit_oid(default_oid);
+    let context = "cannot inspect fetched upstream default commit";
+    if checked(fetched, candidate_branch, context, findings)? {
+        return Some(());
     }
+    findings.push(BranchCleanupFinding::Warning {
+        branch: Some(candidate_branch.clone()),
+        message: "observed upstream default commit is unavailable after fetch".to_owned(),
+    });
+    None
+}
+
+/// Record a failed Git query as a warning; no proof can be derived from it.
+fn checked<T>(
+    result: OutpostResult<T>,
+    branch: &BranchName,
+    context: &str,
+    findings: &mut Vec<BranchCleanupFinding>,
+) -> Option<T> {
+    result
+        .map_err(|err| findings.push(warning(Some(branch.clone()), context, err)))
+        .ok()
 }
 
 fn collect_cleanup_evidence(

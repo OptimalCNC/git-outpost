@@ -104,7 +104,9 @@ enum ClassifiedSelector {
 
 fn classify(selector: &OutpostSelector) -> ClassifiedSelector {
     match selector {
-        OutpostSelector::Path(path) => ClassifiedSelector::PathOnly(path.clone()),
+        OutpostSelector::Path(path) => {
+            ClassifiedSelector::PathOnly(absolutize(Path::new(""), path))
+        }
         OutpostSelector::CliArg { cwd, value } => {
             let path = absolutize(cwd, value);
             let Some(value) = value.to_str() else {
@@ -133,12 +135,10 @@ fn explicit_path_syntax(value: &str) -> bool {
     )
 }
 
+/// Anchor a selector path; a relative result resolves against the process directory.
 fn absolutize(cwd: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        cwd.join(path)
-    }
+    let path = cwd.join(path);
+    std::path::absolute(&path).unwrap_or(path)
 }
 
 fn resolve_path(entries: &[RegistryEntry], path: &Path) -> OutpostResult<ResolvedOutpostEntry> {

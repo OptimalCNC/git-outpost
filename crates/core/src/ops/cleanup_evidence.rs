@@ -1,6 +1,7 @@
 use std::io;
 use std::path::PathBuf;
 
+use crate::git::{at_most_one, parse_ls_remote};
 use crate::{BranchName, OutpostError, OutpostResult, RemoteName, SourceRepo};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,65 +106,42 @@ fn parse_ls_remote_snapshot(
     branch: &BranchName,
 ) -> OutpostResult<CleanupEvidenceSnapshot> {
     let candidate_ref = format!("refs/heads/{}", branch.as_str());
-    let mut default_ref = None;
-    let mut head_oid = None;
-    let mut upstream_oid = None;
-
-    for line in output.lines() {
-        if let Some(symref) = line.strip_prefix("ref: ") {
-            let mut fields = symref.split_ascii_whitespace();
-            let reference = fields
-                .next()
-                .ok_or_else(|| invalid_ls_remote_output(output, "malformed symbolic ref"))?;
-            let target = fields
-                .next()
-                .ok_or_else(|| invalid_ls_remote_output(output, "malformed symbolic ref"))?;
-            if fields.next().is_some() {
-                return Err(invalid_ls_remote_output(output, "malformed symbolic ref"));
-            }
-            if target == "HEAD" {
-                let name = reference.strip_prefix("refs/heads/").ok_or_else(|| {
-                    invalid_ls_remote_output(output, "default branch is not under refs/heads")
-                })?;
-                set_once(
-                    &mut default_ref,
-                    BranchName::parse(name.to_owned())?,
-                    output,
-                    "duplicate default branch",
-                )?;
-            }
-            continue;
-        }
-
-        let mut fields = line.split_ascii_whitespace();
-        let oid = fields
-            .next()
-            .ok_or_else(|| invalid_ls_remote_output(output, "malformed object line"))?;
-        let reference = fields
-            .next()
-            .ok_or_else(|| invalid_ls_remote_output(output, "malformed object line"))?;
-        if fields.next().is_some() || !valid_oid(oid) {
-            return Err(invalid_ls_remote_output(output, "malformed object line"));
-        }
-        if reference == "HEAD" {
-            set_once(
-                &mut head_oid,
-                oid.to_owned(),
-                output,
-                "duplicate default branch OID",
-            )?;
-        } else if reference == candidate_ref {
-            set_once(
-                &mut upstream_oid,
-                oid.to_owned(),
-                output,
-                "duplicate candidate branch OID",
-            )?;
-        }
-    }
+    let records = parse_ls_remote(output)
+        .filter(|records| {
+            records
+                .iter()
+                .all(|record| record.symref || valid_oid(record.value))
+        })
+        .ok_or_else(|| invalid_ls_remote_output(output, "malformed record"))?;
+    let named = |symref: bool, name: &str| {
+        at_most_one(
+            records
+                .iter()
+                .filter(move |record| record.symref == symref && record.name == name)
+                .map(|record| record.value),
+        )
+    };
+    // A repeated record is unreliable deletion evidence, even if identical.
+    let default_ref = named(true, "HEAD")
+        .ok_or_else(|| invalid_ls_remote_output(output, "duplicate default branch"))?;
+    let head_oid = named(false, "HEAD")
+        .ok_or_else(|| invalid_ls_remote_output(output, "duplicate default branch OID"))?;
+    let upstream_oid = named(false, &candidate_ref)
+        .ok_or_else(|| invalid_ls_remote_output(output, "duplicate candidate branch OID"))?;
+    let default_ref = default_ref
+        .map(|reference| {
+            let name = reference.strip_prefix("refs/heads/").ok_or_else(|| {
+                invalid_ls_remote_output(output, "default branch is not under refs/heads")
+            })?;
+            BranchName::parse(name.to_owned())
+        })
+        .transpose()?;
 
     let default_branch = match (default_ref, head_oid) {
-        (Some(branch), Some(oid)) => Some(ObservedRemoteBranch { branch, oid }),
+        (Some(branch), Some(oid)) => Some(ObservedRemoteBranch {
+            branch,
+            oid: oid.to_owned(),
+        }),
         (None, None) => None,
         _ => {
             return Err(invalid_ls_remote_output(
@@ -175,17 +153,9 @@ fn parse_ls_remote_snapshot(
 
     Ok(CleanupEvidenceSnapshot {
         default_branch,
-        upstream_oid,
+        upstream_oid: upstream_oid.map(str::to_owned),
         merged_pull_request: None,
     })
-}
-
-fn set_once<T>(slot: &mut Option<T>, value: T, output: &str, message: &str) -> OutpostResult<()> {
-    if slot.is_some() {
-        return Err(invalid_ls_remote_output(output, message));
-    }
-    *slot = Some(value);
-    Ok(())
 }
 
 fn valid_oid(value: &str) -> bool {

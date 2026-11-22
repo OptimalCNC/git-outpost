@@ -36,15 +36,9 @@ pub fn run(source: &SourceRepo, opts: MoveOptions) -> OutpostResult<MoveReport> 
     })?;
     let old_path = entry.path;
     let mut registry = source.registry_mut()?;
-    registry.update_path(&old_path, opts.new_path.clone())?;
+    let new_path = registry.update_path(&old_path, opts.new_path)?;
     registry.save()?;
-    Ok(MoveReport {
-        old_path,
-        new_path: std::fs::canonicalize(&opts.new_path).map_err(|source| OutpostError::IoAt {
-            path: opts.new_path,
-            source,
-        })?,
-    })
+    Ok(MoveReport { old_path, new_path })
 }
 
 fn check_destination_clean(destination: &Path) -> OutpostResult<()> {

@@ -4,6 +4,8 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::config::{ConfigKey, ConfigStore, ConfigValue};
+use crate::error::io_at;
+use crate::git::{at_most_one, parse_ls_remote};
 use crate::outpost::Outpost;
 use crate::registry::{Registry, RegistryMut};
 use crate::{
@@ -117,22 +119,13 @@ impl SourceRepo {
 
     pub fn suggest_outpost_container(&self) -> OutpostResult<Option<PathBuf>> {
         let registry = self.registry()?;
-        let mut parents = registry
+        let common = registry
             .entries()
             .iter()
-            .filter_map(|entry| entry.path.parent().map(Path::to_path_buf));
-        let Some(mut common) = parents.next() else {
-            return Ok(None);
-        };
-
-        for parent in parents {
-            common = common_path_prefix(&common, &parent);
-            if common.as_os_str().is_empty() {
-                return Ok(None);
-            }
-        }
-
-        Ok(Some(common))
+            .filter_map(|entry| entry.path.parent().map(Path::to_path_buf))
+            .reduce(|common, parent| common_path_prefix(&common, &parent));
+        // Paths on different Windows drives share no prefix.
+        Ok(common.filter(|common| !common.as_os_str().is_empty()))
     }
 
     pub fn env(&self) -> &BTreeMap<OsString, OsString> {
@@ -212,10 +205,7 @@ impl SourceRepo {
             .run_capture_lines(["remote", "get-url", remote.as_str()])?;
         match urls.as_slice() {
             [url] if !url.is_empty() => Ok(url.clone()),
-            _ => Err(invalid_git_output(
-                &self.git,
-                "expected one nonempty remote URL",
-            )),
+            _ => Err(self.git.invalid_output("expected one nonempty remote URL")),
         }
     }
 
@@ -269,7 +259,7 @@ impl SourceRepo {
             .run_capture(["symbolic-ref", "--quiet", &head_ref])?;
         let remote_prefix = format!("refs/remotes/{}/", remote.as_str());
         let Some(branch) = reference.strip_prefix(&remote_prefix) else {
-            return Err(invalid_git_output(&self.git, &reference));
+            return Err(self.git.invalid_output(&reference));
         };
 
         BranchName::parse(branch.to_owned()).map(Some)
@@ -366,29 +356,19 @@ impl SourceRepo {
         let output = self
             .git
             .run_capture(["ls-remote", "--symref", remote.as_str(), "HEAD"])?;
-        for line in output.lines() {
-            let Some(rest) = line.strip_prefix("ref: ") else {
-                continue;
-            };
-            let mut fields = rest.split_ascii_whitespace();
-            let Some(reference) = fields.next() else {
-                return Err(invalid_git_output(&self.git, &output));
-            };
-            let Some(name) = fields.next() else {
-                return Err(invalid_git_output(&self.git, &output));
-            };
-            if fields.next().is_some() {
-                return Err(invalid_git_output(&self.git, &output));
-            }
-            if name != "HEAD" {
-                continue;
-            }
-            let Some(branch) = reference.strip_prefix("refs/heads/") else {
-                return Err(invalid_git_output(&self.git, &output));
-            };
-            return BranchName::parse(branch.to_owned()).map(Some);
-        }
-        Ok(None)
+        let records = parse_ls_remote(&output).ok_or_else(|| self.git.invalid_output(&output))?;
+        // The pattern also matches the tails of names like refs/remotes/x/HEAD.
+        let Some(head) = records
+            .iter()
+            .find(|record| record.symref && record.name == "HEAD")
+        else {
+            return Ok(None);
+        };
+        let branch = head
+            .value
+            .strip_prefix("refs/heads/")
+            .ok_or_else(|| self.git.invalid_output(&output))?;
+        BranchName::parse(branch.to_owned()).map(Some)
     }
 
     pub fn is_ancestor_oid(&self, ancestor: &str, descendant: &str) -> OutpostResult<bool> {
@@ -549,20 +529,12 @@ pub(crate) fn remote_ref_oid(
 ) -> OutpostResult<Option<String>> {
     // ls-remote patterns also match slash-delimited tails of longer ref names.
     let output = git.run_capture(["ls-remote", "--", remote.as_str(), reference])?;
-    let mut selected = None;
-    for line in output.lines() {
-        let mut fields = line.split_ascii_whitespace();
-        let (Some(oid), Some(name), None) = (fields.next(), fields.next(), fields.next()) else {
-            return Err(invalid_git_output(git, &output));
-        };
-        if name == reference {
-            if selected.is_some() {
-                return Err(invalid_git_output(git, &output));
-            }
-            selected = Some(oid.to_owned());
-        }
-    }
-    Ok(selected)
+    let records = parse_ls_remote(&output).ok_or_else(|| git.invalid_output(&output))?;
+    let exact = records
+        .iter()
+        .filter(|record| !record.symref && record.name == reference)
+        .map(|record| record.value.to_owned());
+    at_most_one(exact).ok_or_else(|| git.invalid_output(&output))
 }
 
 pub(crate) fn current_branch_or_detached(git: &GitInvoker) -> OutpostResult<Option<BranchName>> {
@@ -607,10 +579,7 @@ pub(crate) fn is_ancestor(
 }
 
 pub(crate) fn canonicalize_path(path: &Path) -> OutpostResult<PathBuf> {
-    fs::canonicalize(path).map_err(|source| OutpostError::IoAt {
-        path: path.to_path_buf(),
-        source,
-    })
+    fs::canonicalize(path).map_err(io_at(path))
 }
 
 pub(crate) fn repository_path(git: &GitInvoker, option: &str) -> OutpostResult<PathBuf> {
@@ -628,15 +597,18 @@ pub(crate) fn repository_path(git: &GitInvoker, option: &str) -> OutpostResult<P
 fn git_found_no_repository(git: &GitInvoker) -> bool {
     // Discovery, invalid configuration and bare repositories all exit 128.
     // Classify the failure in a fixed locale and keep the user's original diagnostic.
-    let Err(OutpostError::GitFailed {
-        code: 128, stderr, ..
-    }) = git
+    // If this second run disagrees, the failure stays unclassified.
+    let classification = git
         .clone()
         .with_env("LC_ALL", "C")
-        .run_check(["rev-parse", "--show-toplevel"])
-    else {
-        return false;
-    };
+        .run_check(["rev-parse", "--show-toplevel"]);
+    matches!(
+        classification,
+        Err(OutpostError::GitFailed { code: 128, ref stderr, .. }) if reports_no_repository(stderr)
+    )
+}
+
+fn reports_no_repository(stderr: &str) -> bool {
     // Trace output may precede the fatal message, and the message itself can span lines.
     stderr
         .lines()
@@ -679,16 +651,6 @@ fn bare_outpost_name(path: &Path) -> bool {
 
 fn origin_remote() -> RemoteName {
     RemoteName::parse("origin").expect("origin is a valid remote name")
-}
-
-fn invalid_git_output(git: &GitInvoker, output: &str) -> OutpostError {
-    OutpostError::IoAt {
-        path: git.cwd().to_path_buf(),
-        source: std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("unexpected git output: {output}"),
-        ),
-    }
 }
 
 #[cfg(test)]

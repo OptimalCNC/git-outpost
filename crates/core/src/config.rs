@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 
+use crate::state_file::{Publish, publish_json};
 use crate::{OutpostError, OutpostResult, SourceRepo};
 
 const CONFIG_VERSION: u32 = 1;
@@ -199,32 +200,7 @@ pub(crate) fn read_file(path: &Path) -> OutpostResult<Option<SourceConfig>> {
 fn write_file(state_dir: &Path, config: &SourceConfig) -> OutpostResult<()> {
     let path = state_dir.join("config.json");
     let file = ConfigFile::from_config(&path, config)?;
-    fs::create_dir_all(state_dir).map_err(|source| OutpostError::IoAt {
-        path: state_dir.to_path_buf(),
-        source,
-    })?;
-    let mut temp =
-        tempfile::NamedTempFile::new_in(state_dir).map_err(|source| OutpostError::IoAt {
-            path: state_dir.to_path_buf(),
-            source,
-        })?;
-    serde_json::to_writer_pretty(temp.as_file_mut(), &file).map_err(|source| {
-        OutpostError::IoAt {
-            path: path.to_path_buf(),
-            source: std::io::Error::other(source),
-        }
-    })?;
-    use std::io::Write;
-    writeln!(temp.as_file_mut()).map_err(|source| OutpostError::IoAt {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    temp.persist(&path).map_err(|source| OutpostError::IoAt {
-        path: path.to_path_buf(),
-        source: source.error,
-    })?;
-
-    Ok(())
+    publish_json(state_dir, &path, &file, Publish::Replace)
 }
 
 impl SourceConfig {

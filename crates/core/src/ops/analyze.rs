@@ -220,8 +220,8 @@ pub fn run_with_reporter(
         &format_probe_identity(&upstream_default_branch),
     );
     if let Some(evidence) = cleanup_evidence {
-        if let Err(message) = hydrate_cleanup_evidence_objects(source, evidence) {
-            reporter.warn(&message);
+        if let Err(err) = hydrate_cleanup_evidence_objects(source, evidence) {
+            reporter.warn(&err.to_string());
         }
     }
     reporter.step(StepKind::Analysis, "comparing source and upstream");
@@ -436,35 +436,25 @@ fn probe_remote_branch(
     remote: &RemoteName,
     branch: &BranchName,
 ) -> Probe<RemoteBranchIdentity> {
-    match source.remote_branch_oid(remote, branch) {
-        Ok(Some(_)) => {}
-        Ok(None) => {
-            return Probe::Unknown(format!(
+    probe(|| {
+        if source.remote_branch_oid(remote, branch)?.is_none() {
+            return Ok(Probe::Unknown(format!(
                 "{}/{} is missing",
                 remote.as_str(),
                 branch.as_str()
-            ));
+            )));
         }
-        Err(err) => return Probe::Unavailable(err.to_string()),
-    }
-
-    let remote_tracking_ref = remote_branch_ref(remote, branch);
-    let fetch_refspec = format!("+{}:{remote_tracking_ref}", source_branch_ref(branch));
-    if let Err(err) = source
-        .git()
-        .run_check(["fetch", remote.as_str(), &fetch_refspec])
-    {
-        return Probe::Unavailable(err.to_string());
-    }
-
-    match source.git().ref_oid(&remote_tracking_ref) {
-        Ok(oid) => Probe::Known(RemoteBranchIdentity {
+        let remote_tracking_ref = remote_branch_ref(remote, branch);
+        let fetch_refspec = format!("+{}:{remote_tracking_ref}", source_branch_ref(branch));
+        source
+            .git()
+            .run_check(["fetch", remote.as_str(), &fetch_refspec])?;
+        Ok(Probe::Known(RemoteBranchIdentity {
             remote: remote.clone(),
             branch: branch.clone(),
-            oid,
-        }),
-        Err(err) => Probe::Unavailable(err.to_string()),
-    }
+            oid: source.git().ref_oid(&remote_tracking_ref)?,
+        }))
+    })
 }
 
 fn probe_source_vs_remote_oid(
@@ -472,71 +462,60 @@ fn probe_source_vs_remote_oid(
     branch: &BranchName,
     remote_oid: &str,
 ) -> Probe<AheadBehind> {
-    match source.branch_exists(branch) {
-        Ok(true) => {}
-        Ok(false) => return Probe::Unknown("source branch is missing".to_owned()),
-        Err(err) => return Probe::Unavailable(err.to_string()),
-    }
-    match source.has_commit_oid(remote_oid) {
-        Ok(true) => {}
-        Ok(false) => {
-            return Probe::Unavailable(format!("observed remote commit {remote_oid} is missing"));
+    probe(|| {
+        if !source.branch_exists(branch)? {
+            return Ok(Probe::Unknown("source branch is missing".to_owned()));
         }
-        Err(err) => return Probe::Unavailable(err.to_string()),
-    }
-
-    let local_ref = source_branch_ref(branch);
-    match source.git().ahead_behind(&local_ref, remote_oid) {
-        Ok(value) => Probe::Known(value),
-        Err(err) => Probe::Unavailable(err.to_string()),
-    }
+        if !source.has_commit_oid(remote_oid)? {
+            return Ok(Probe::Unavailable(format!(
+                "observed remote commit {remote_oid} is missing"
+            )));
+        }
+        let local_ref = source_branch_ref(branch);
+        Ok(Probe::Known(
+            source.git().ahead_behind(&local_ref, remote_oid)?,
+        ))
+    })
 }
 
 fn hydrate_cleanup_evidence_objects(
     source: &SourceRepo,
     evidence: &branch_analysis::CleanupEvidenceObservation,
-) -> Result<(), String> {
+) -> OutpostResult<()> {
     let mut missing_branches = Vec::new();
     if let Some(upstream_oid) = evidence.snapshot.upstream_oid.as_deref() {
-        match source.has_commit_oid(upstream_oid) {
-            Ok(true) => {}
-            Ok(false) => missing_branches.push(evidence.request.branch.clone()),
-            Err(err) => return Err(err.to_string()),
+        if !source.has_commit_oid(upstream_oid)? {
+            missing_branches.push(evidence.request.branch.clone());
         }
     }
     if let Some(default) = evidence.snapshot.default_branch.as_ref() {
-        match source.has_commit_oid(&default.oid) {
-            Ok(true) => {}
-            Ok(false) => missing_branches.push(default.branch.clone()),
-            Err(err) => return Err(err.to_string()),
+        if !source.has_commit_oid(&default.oid)? {
+            missing_branches.push(default.branch.clone());
         }
     }
 
-    source
-        .fetch_remote_branches(&evidence.request.upstream_remote, &missing_branches)
-        .map_err(|err| err.to_string())
+    source.fetch_remote_branches(&evidence.request.upstream_remote, &missing_branches)
 }
 
 fn probe_source_push_hazard(source: &SourceRepo, branch: &BranchName) -> Probe<SourcePushHazard> {
-    match source.branch_exists(branch) {
-        Ok(true) => {}
-        Ok(false) => return Probe::Unknown("source branch is missing".to_owned()),
-        Err(err) => return Probe::Unavailable(err.to_string()),
-    }
-
-    let checked_out = match source.is_branch_checked_out(branch) {
-        Ok(value) => value,
-        Err(err) => return Probe::Unavailable(err.to_string()),
-    };
-    let update_instead = match read_optional_config(source.git(), "receive.denyCurrentBranch") {
-        Ok(value) => value.as_deref() == Some("updateInstead"),
-        Err(err) => return Probe::Unavailable(err.to_string()),
-    };
-
-    Probe::Known(SourcePushHazard {
-        checked_out,
-        push_would_fail: checked_out && !update_instead,
+    probe(|| {
+        if !source.branch_exists(branch)? {
+            return Ok(Probe::Unknown("source branch is missing".to_owned()));
+        }
+        let checked_out = source.is_branch_checked_out(branch)?;
+        let update_instead = read_optional_config(source.git(), "receive.denyCurrentBranch")?
+            .as_deref()
+            == Some("updateInstead");
+        Ok(Probe::Known(SourcePushHazard {
+            checked_out,
+            push_would_fail: checked_out && !update_instead,
+        }))
     })
+}
+
+/// A Git failure leaves only this conclusion unavailable.
+fn probe<T>(collect: impl FnOnce() -> OutpostResult<Probe<T>>) -> Probe<T> {
+    collect().unwrap_or_else(|err| Probe::Unavailable(err.to_string()))
 }
 
 fn branch_delete_safety(analysis: &branch_analysis::BranchCleanupAnalysis) -> BranchDeleteSafety {

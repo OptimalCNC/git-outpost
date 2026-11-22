@@ -7,6 +7,7 @@ use outpost_core::ops;
 use outpost_core::ops::analyze::{
     BranchDeleteSafety, Probe, RemoteBranchIdentity, SourcePushHazard, UpstreamRemote,
 };
+use outpost_core::ops::branch_analysis::BranchCleanupSkipReason as AnalysisSkipReason;
 use outpost_core::ops::branch_analysis::{BranchCleanupFinding, BranchCleanupProof};
 use outpost_core::ops::remove::BranchCleanupSkipReason;
 use outpost_core::ops::status::{
@@ -635,20 +636,22 @@ fn branch_cleanup_reason_text(reason: BranchCleanupSkipReason) -> &'static str {
             "non-interactive terminal; branch cleanup requires prompts"
         }
         BranchCleanupSkipReason::MissingOutpost => "outpost path was already missing",
-        BranchCleanupSkipReason::DetachedHead => "outpost HEAD is detached",
-        BranchCleanupSkipReason::NoUpstreamTracking => "outpost has no upstream tracking branch",
-        BranchCleanupSkipReason::UpstreamRemoteMismatch => {
-            "outpost upstream remote does not match the configured source remote"
-        }
-        BranchCleanupSkipReason::UpstreamNotBranch => "outpost upstream is not a branch",
-        BranchCleanupSkipReason::SourceBranchMissing => "source branch is missing",
-        BranchCleanupSkipReason::OutpostHeadMismatch => {
-            "outpost HEAD does not match source branch tip"
-        }
-        BranchCleanupSkipReason::BranchCheckedOut => "branch is checked out",
-        BranchCleanupSkipReason::DefaultBranch => "branch is the upstream default branch",
-        BranchCleanupSkipReason::DefaultBranchUnknown => "upstream default branch is unknown",
-        BranchCleanupSkipReason::NoProof => "no safe deletion proof found",
+        BranchCleanupSkipReason::Analysis(reason) => match reason {
+            AnalysisSkipReason::DetachedHead => "outpost HEAD is detached",
+            AnalysisSkipReason::NoUpstreamTracking => "outpost has no upstream tracking branch",
+            AnalysisSkipReason::UpstreamRemoteMismatch => {
+                "outpost upstream remote does not match the configured source remote"
+            }
+            AnalysisSkipReason::UpstreamNotBranch => "outpost upstream is not a branch",
+            AnalysisSkipReason::SourceBranchMissing => "source branch is missing",
+            AnalysisSkipReason::OutpostHeadMismatch => {
+                "outpost HEAD does not match source branch tip"
+            }
+            AnalysisSkipReason::BranchCheckedOut => "branch is checked out",
+            AnalysisSkipReason::DefaultBranch => "branch is the upstream default branch",
+            AnalysisSkipReason::DefaultBranchUnknown => "upstream default branch is unknown",
+            AnalysisSkipReason::NoProof => "no safe deletion proof found",
+        },
     }
 }
 
@@ -677,52 +680,52 @@ mod tests {
                 "outpost path was already missing",
             ),
             (
-                BranchCleanupSkipReason::DetachedHead,
+                BranchCleanupSkipReason::Analysis(AnalysisSkipReason::DetachedHead),
                 false,
                 "outpost HEAD is detached",
             ),
             (
-                BranchCleanupSkipReason::NoUpstreamTracking,
+                BranchCleanupSkipReason::Analysis(AnalysisSkipReason::NoUpstreamTracking),
                 false,
                 "no upstream tracking branch",
             ),
             (
-                BranchCleanupSkipReason::UpstreamRemoteMismatch,
+                BranchCleanupSkipReason::Analysis(AnalysisSkipReason::UpstreamRemoteMismatch),
                 false,
                 "upstream remote does not match",
             ),
             (
-                BranchCleanupSkipReason::UpstreamNotBranch,
+                BranchCleanupSkipReason::Analysis(AnalysisSkipReason::UpstreamNotBranch),
                 false,
                 "upstream is not a branch",
             ),
             (
-                BranchCleanupSkipReason::SourceBranchMissing,
+                BranchCleanupSkipReason::Analysis(AnalysisSkipReason::SourceBranchMissing),
                 true,
                 "source branch is missing",
             ),
             (
-                BranchCleanupSkipReason::OutpostHeadMismatch,
+                BranchCleanupSkipReason::Analysis(AnalysisSkipReason::OutpostHeadMismatch),
                 true,
                 "does not match source branch tip",
             ),
             (
-                BranchCleanupSkipReason::BranchCheckedOut,
+                BranchCleanupSkipReason::Analysis(AnalysisSkipReason::BranchCheckedOut),
                 true,
                 "branch is checked out",
             ),
             (
-                BranchCleanupSkipReason::DefaultBranch,
+                BranchCleanupSkipReason::Analysis(AnalysisSkipReason::DefaultBranch),
                 true,
                 "upstream default branch",
             ),
             (
-                BranchCleanupSkipReason::DefaultBranchUnknown,
+                BranchCleanupSkipReason::Analysis(AnalysisSkipReason::DefaultBranchUnknown),
                 true,
                 "upstream default branch is unknown",
             ),
             (
-                BranchCleanupSkipReason::NoProof,
+                BranchCleanupSkipReason::Analysis(AnalysisSkipReason::NoProof),
                 true,
                 "no safe deletion proof found",
             ),

@@ -1070,3 +1070,193 @@ impl CleanupEvidenceProvider for SnapshotProvider {
         Ok(Some(self.snapshot.clone()))
     }
 }
+
+#[test]
+fn an_unrelated_tracking_head_cannot_name_a_detached_upstream_default() {
+    let fixture = AbcFixture::new();
+    let feature = feature_branch(&fixture, "feature", true);
+    fixture
+        .push_source_branch(&feature)
+        .expect("publish feature");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(feature))
+        .expect("add feature outpost");
+    let upstream = fixture.invoker(&fixture.upstream);
+    upstream
+        .run_check([
+            OsStr::new("remote"),
+            OsStr::new("add"),
+            OsStr::new("team"),
+            fixture.source.as_os_str(),
+        ])
+        .expect("configure upstream's team remote");
+    upstream.run_check(["fetch", "team"]).expect("fetch team");
+    upstream
+        .run_check(["remote", "set-head", "team", "feature"])
+        .expect("point team/HEAD at the feature");
+    // `ls-remote --symref origin HEAD` also matches refs/remotes/team/HEAD.
+    fs::write(fixture.upstream.join("HEAD"), main_oid(&fixture)).expect("detach upstream HEAD");
+
+    let report = run_analysis(&fixture, outpost);
+
+    assert_eq!(
+        report.upstream_default_branch,
+        Probe::Unknown("origin default branch is unknown".to_owned())
+    );
+    assert!(matches!(
+        report.safe_delete,
+        BranchDeleteSafety::No {
+            reason: BranchCleanupSkipReason::DefaultBranchUnknown,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn an_upstream_head_naming_a_tag_is_not_a_default_branch() {
+    let fixture = AbcFixture::new();
+    let feature = feature_branch(&fixture, "feature", false);
+    fixture
+        .push_source_branch(&feature)
+        .expect("publish feature");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(feature))
+        .expect("add feature outpost");
+    let upstream = fixture.invoker(&fixture.upstream);
+    upstream.run_check(["tag", "v1", "main"]).expect("tag");
+    upstream
+        .run_check(["symbolic-ref", "HEAD", "refs/tags/v1"])
+        .expect("point upstream HEAD at the tag");
+
+    let report = run_analysis(&fixture, outpost);
+
+    assert!(matches!(
+        &report.upstream_default_branch,
+        Probe::Unavailable(reason) if reason.contains("ref: refs/tags/v1")
+    ));
+    assert!(matches!(
+        report.safe_delete,
+        BranchDeleteSafety::No {
+            reason: BranchCleanupSkipReason::DefaultBranchUnknown,
+            ..
+        }
+    ));
+    assert!(report.safe_delete_findings.iter().any(|finding| matches!(
+        finding,
+        BranchCleanupFinding::Warning { message, .. }
+            if message.contains("default branch is not under refs/heads")
+    )));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_namespaced_upstream_that_repeats_head_gives_no_deletion_proof() {
+    let fixture = AbcFixture::new();
+    // The feature is already merged: without the repeated HEAD it would be deletable.
+    let feature = feature_branch(&fixture, "feature", false);
+    fixture
+        .push_source_branch(&feature)
+        .expect("publish feature");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(feature))
+        .expect("add feature outpost");
+    let upstream = fixture.invoker(&fixture.upstream);
+    let main_tip = main_oid(&fixture);
+    for name in ["main", "feature"] {
+        let reference = format!("refs/namespaces/team/refs/heads/{name}");
+        upstream
+            .run_check(["update-ref", &reference, &main_tip])
+            .expect("namespace branch");
+    }
+    upstream
+        .run_check([
+            "symbolic-ref",
+            "refs/namespaces/team/HEAD",
+            "refs/namespaces/team/refs/heads/main",
+        ])
+        .expect("namespace HEAD");
+    fixture
+        .invoker(&fixture.source)
+        .run_check([
+            "config",
+            "remote.origin.uploadpack",
+            "GIT_NAMESPACE=team git-upload-pack",
+        ])
+        .expect("serve origin from the team namespace");
+
+    let symbolic = run_analysis(&fixture, outpost.clone());
+    upstream
+        .run_check([
+            "update-ref",
+            "--no-deref",
+            "refs/namespaces/team/HEAD",
+            &main_tip,
+        ])
+        .expect("detach namespace HEAD");
+    let detached = run_analysis(&fixture, outpost);
+
+    for (report, duplicate) in [
+        (symbolic, "duplicate default branch:"),
+        (detached, "duplicate default branch OID:"),
+    ] {
+        assert!(matches!(
+            report.safe_delete,
+            BranchDeleteSafety::No {
+                reason: BranchCleanupSkipReason::DefaultBranchUnknown,
+                ..
+            }
+        ));
+        assert!(
+            report.safe_delete_findings.iter().any(|finding| matches!(
+                finding,
+                BranchCleanupFinding::Warning { message, .. } if message.contains(duplicate)
+            )),
+            "{:?}",
+            report.safe_delete_findings
+        );
+    }
+}
+
+#[test]
+fn silent_analysis_returns_the_report_whose_warnings_it_discards() {
+    let fixture = AbcFixture::new();
+    let branch = feature_branch(&fixture, "feat", true);
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("add outpost");
+    fixture
+        .push_source_branch(&branch)
+        .expect("publish feature");
+    let observed = fixture
+        .commit_in_upstream("feat", "remote-only change")
+        .expect("remote commit");
+    fixture
+        .invoker(&fixture.upstream)
+        .run_check(["update-ref", "-d", "refs/heads/feat", &observed])
+        .expect("collaborator deletes observed branch");
+    let provider = SnapshotProvider {
+        snapshot: CleanupEvidenceSnapshot {
+            default_branch: Some(ObservedRemoteBranch {
+                branch: BranchName::parse("main".to_owned()).expect("main"),
+                oid: main_oid(&fixture),
+            }),
+            upstream_oid: Some(observed),
+            merged_pull_request: None,
+        },
+    };
+    let source = fixture.source_repo().expect("source repo");
+
+    let silent = analyze::run(
+        &source,
+        AnalyzeOptions {
+            selector: OutpostSelector::from_path(outpost.clone()),
+        },
+        Some(&provider),
+    )
+    .expect("silent analysis");
+    let mut reporter = CapturingReporter::default();
+    let reported = run_analysis_with_reporter(&fixture, outpost, Some(&provider), &mut reporter);
+
+    assert!(!reporter.warnings.is_empty());
+    assert_eq!(silent, reported);
+}

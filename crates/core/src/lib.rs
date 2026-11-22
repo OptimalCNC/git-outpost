@@ -12,6 +12,7 @@ pub mod reporter;
 pub mod safety;
 pub mod selector;
 pub mod source_repo;
+mod state_file;
 
 pub use config::{ConfigEntry, ConfigKey, ConfigShow, ConfigShowEntry, ConfigStore, ConfigValue};
 pub use error::{OutpostError, OutpostResult};

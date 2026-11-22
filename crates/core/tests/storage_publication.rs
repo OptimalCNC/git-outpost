@@ -82,6 +82,7 @@ fn add_metadata_failure_preserves_template_state_and_source_registration() {
         .join("C")
         .join(".git")
         .join("outpost");
+    let expected_metadata = expected_state.join("metadata.json");
     let mut reporter = common::fixture::CapturingReporter::default();
 
     let error = match add_run(
@@ -102,7 +103,7 @@ fn add_metadata_failure_preserves_template_state_and_source_registration() {
     assert!(matches!(
         error,
         OutpostError::IoAt { path, source }
-            if path == expected_state && source.kind() == std::io::ErrorKind::AlreadyExists
+            if path == expected_metadata && source.kind() == std::io::ErrorKind::AlreadyExists
     ));
     assert_eq!(
         fs::read_to_string(&template_state).expect("original template state"),

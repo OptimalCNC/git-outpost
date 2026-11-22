@@ -56,18 +56,37 @@ impl GitInvoker {
     pub(crate) fn ahead_behind(&self, local: &str, other: &str) -> OutpostResult<AheadBehind> {
         let range = format!("{local}...{other}");
         let output = self.run_capture(["rev-list", "--left-right", "--count", &range])?;
-        let mut counts = output.split_whitespace();
-        let ahead = counts.next().and_then(|value| value.parse().ok());
-        let behind = counts.next().and_then(|value| value.parse().ok());
-        match (ahead, behind, counts.next()) {
-            (Some(ahead), Some(behind), None) => Ok(AheadBehind { ahead, behind }),
-            _ => Err(OutpostError::IoAt {
-                path: self.cwd.clone(),
-                source: std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("unexpected rev-list output: {output}"),
-                ),
-            }),
+        // Git prints exactly "<ahead>\t<behind>"; anything else violates its contract.
+        let counts = output.split_once('\t').and_then(|(ahead, behind)| {
+            Some(AheadBehind {
+                ahead: ahead.parse().ok()?,
+                behind: behind.parse().ok()?,
+            })
+        });
+        counts.ok_or_else(|| self.invalid_output(&output))
+    }
+
+    /// Count the commits selected by `git rev-list --count <args>`.
+    pub(crate) fn rev_list_count<I, S>(&self, args: I) -> OutpostResult<u32>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let mut argv = vec![OsString::from("rev-list"), OsString::from("--count")];
+        argv.extend(collect_argv(args));
+        let output = self.run_capture(&argv)?;
+        // Git prints exactly one decimal count; anything else violates its contract.
+        output.parse().map_err(|_| self.invalid_output(&output))
+    }
+
+    /// Report successful Git output that does not follow Git's documented format.
+    pub(crate) fn invalid_output(&self, output: &str) -> OutpostError {
+        OutpostError::IoAt {
+            path: self.cwd.clone(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unexpected git output: {output}"),
+            ),
         }
     }
 
@@ -191,6 +210,10 @@ impl GitInvoker {
                 command.env_remove(key);
             }
         }
+        // GIT_CONFIG only redirects `git config` and conflicts with --local. Every
+        // configuration read here means the repository's own settings, as it does
+        // for Git's other commands.
+        command.env_remove("GIT_CONFIG");
         command
             .current_dir(crate::path::git_path(&self.cwd))
             // Keep argv as separate OS strings; no shell parses user input here.
@@ -236,6 +259,37 @@ pub fn isolate_git_test_command(command: &mut Command) {
     ] {
         command.env_remove(name);
     }
+}
+
+/// One record printed by `git ls-remote [--symref]`.
+///
+/// Symbolic records are `ref: <target>\t<name>`; object records are
+/// `<oid>\t<name>`. Git reference names cannot contain tabs.
+pub(crate) struct LsRemoteRecord<'a> {
+    pub(crate) symref: bool,
+    pub(crate) value: &'a str,
+    pub(crate) name: &'a str,
+}
+
+/// Parse `git ls-remote` output, or `None` when a record breaks Git's format.
+pub(crate) fn parse_ls_remote(output: &str) -> Option<Vec<LsRemoteRecord<'_>>> {
+    output.lines().map(parse_ls_remote_record).collect()
+}
+
+fn parse_ls_remote_record(line: &str) -> Option<LsRemoteRecord<'_>> {
+    let symref = line.strip_prefix("ref: ");
+    let (value, name) = symref.unwrap_or(line).split_once('\t')?;
+    Some(LsRemoteRecord {
+        symref: symref.is_some(),
+        value,
+        name,
+    })
+}
+
+/// The only item, `Some(None)` for no items, or `None` for duplicates.
+pub(crate) fn at_most_one<T>(mut items: impl Iterator<Item = T>) -> Option<Option<T>> {
+    let first = items.next();
+    items.next().is_none().then_some(first)
 }
 
 fn collect_argv<I, S>(args: I) -> Vec<OsString>

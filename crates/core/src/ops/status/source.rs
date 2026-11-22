@@ -45,11 +45,9 @@ pub(super) fn build(
         .iter()
         .map(|entry| OutpostId::derive(&source_path, &entry.path))
         .collect::<Vec<_>>();
+    // Distinct registered paths derive distinct SHA-256 IDs.
     let prefixes =
-        shortest_unique_prefixes(ids.iter()).map_err(|error| OutpostError::BadRegistry {
-            path: source.registry_path(),
-            reason: error.to_string(),
-        })?;
+        shortest_unique_prefixes(ids.iter()).expect("distinct paths derive distinct outpost IDs");
     let mut outposts = Vec::new();
     let mut stale_registrations = Vec::new();
 

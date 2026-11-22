@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::ops::branch_analysis::{self, BranchCleanupFinding};
 use crate::selector::{OutpostSelector, resolve_entry};
@@ -50,34 +50,13 @@ pub enum BranchCleanupSkipReason {
     CleanupDisabled,
     NonInteractive,
     MissingOutpost,
-    DetachedHead,
-    NoUpstreamTracking,
-    UpstreamRemoteMismatch,
-    UpstreamNotBranch,
-    SourceBranchMissing,
-    OutpostHeadMismatch,
-    BranchCheckedOut,
-    DefaultBranch,
-    DefaultBranchUnknown,
-    NoProof,
+    /// Branch analysis found no safe cleanup candidate.
+    Analysis(branch_analysis::BranchCleanupSkipReason),
 }
 
 impl From<branch_analysis::BranchCleanupSkipReason> for BranchCleanupSkipReason {
     fn from(reason: branch_analysis::BranchCleanupSkipReason) -> Self {
-        use branch_analysis::BranchCleanupSkipReason as Analysis;
-
-        match reason {
-            Analysis::DetachedHead => Self::DetachedHead,
-            Analysis::NoUpstreamTracking => Self::NoUpstreamTracking,
-            Analysis::UpstreamRemoteMismatch => Self::UpstreamRemoteMismatch,
-            Analysis::UpstreamNotBranch => Self::UpstreamNotBranch,
-            Analysis::SourceBranchMissing => Self::SourceBranchMissing,
-            Analysis::OutpostHeadMismatch => Self::OutpostHeadMismatch,
-            Analysis::BranchCheckedOut => Self::BranchCheckedOut,
-            Analysis::DefaultBranch => Self::DefaultBranch,
-            Analysis::DefaultBranchUnknown => Self::DefaultBranchUnknown,
-            Analysis::NoProof => Self::NoProof,
-        }
+        Self::Analysis(reason)
     }
 }
 
@@ -168,10 +147,7 @@ fn run_internal(
     let mut registry = source.registry_mut()?;
     registry.remove_by_path(&entry.path)?;
     registry.save()?;
-    std::fs::remove_dir_all(&entry.path).map_err(|source| OutpostError::IoAt {
-        path: entry.path,
-        source,
-    })?;
+    std::fs::remove_dir_all(&entry.path).map_err(directory_not_removed(&entry.path))?;
 
     if let (Some((candidate, observed_url)), BranchCleanupMode::Prompt(options)) = (candidate, mode)
     {
@@ -188,6 +164,14 @@ fn run_internal(
         path: report_path,
         branch_cleanup,
     })
+}
+
+/// The registry entry is already gone when directory deletion fails.
+fn directory_not_removed(path: &Path) -> impl FnOnce(std::io::Error) -> OutpostError + '_ {
+    |source| OutpostError::OutpostDirectoryNotRemoved {
+        path: path.to_owned(),
+        source,
+    }
 }
 
 fn lock_reason(reason: &Option<String>) -> String {
@@ -265,7 +249,7 @@ fn perform_branch_cleanup(
         Ok(true) => {
             outcomes.push(BranchCleanupOutcome::Skipped {
                 branch: Some(candidate.branch),
-                reason: BranchCleanupSkipReason::BranchCheckedOut,
+                reason: branch_analysis::BranchCleanupSkipReason::BranchCheckedOut.into(),
             });
             return;
         }

@@ -287,6 +287,9 @@ pub enum OutpostError {
 
     #[error("io error at {path}: {source}")]
     IoAt { path: PathBuf, source: std::io::Error },
+
+    #[error("outpost was unregistered, but its directory could not be removed at {path}: {source}")]
+    OutpostDirectoryNotRemoved { path: PathBuf, source: std::io::Error },
 }
 ```
 
@@ -1577,7 +1580,10 @@ diagnostics from `RemoveReport` are rendered to stderr.
    fetches the exact default branch only when the observed OID is absent
    locally. Missing proof skips cleanup without blocking outpost removal.
 9. Remove the registry entry by path, save.
-10. `std::fs::remove_dir_all(path)`. Errors here surface as `IoAt`.
+10. `std::fs::remove_dir_all(path)`. Errors here surface as
+    `OutpostDirectoryNotRemoved`: the registry entry is already gone, and part
+    of the directory may remain for the user to delete. Branch cleanup does
+    not run.
 11. After the outpost directory is removed, prompt to delete the source branch.
     Recheck worktree occupancy after consent and use
     `git update-ref -d refs/heads/BRANCH EXPECTED_OID` for deletion.
@@ -2060,7 +2066,8 @@ impl OutpostError {
             // through u8 to 0 and then satisfy `.min(125)` as 0.
             GitFailed { code, .. } => (*code).clamp(1, 125) as u8,
             GitTerminatedBySignal { .. } => 137,    // "killed" by convention (128 + SIGKILL)
-            IoAt { .. } => 70,                      // EX_SOFTWARE
+            IoAt { .. }
+                | OutpostDirectoryNotRemoved { .. } => 70, // EX_SOFTWARE
         }
     }
 }

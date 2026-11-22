@@ -706,6 +706,11 @@ branch-cleanup diagnostics to stderr after the stable stdout result
 `gh` is not installed or unavailable, merged-PR proof is reported as unavailable
 and cleanup falls back to local Git proof.
 
+If the operating system refuses to delete the outpost directory, for example
+because a container left files owned by another user, `remove` reports that the
+outpost is already unregistered and names the directory that remains. Branch
+cleanup does not run, and the user deletes the remaining files.
+
 `-f`/`--force` allows removal despite dirty state, stashes, unpublished
 commits, a lock, or linked worktrees. Forcing removal destroys the Git metadata
 and staged index that each linked checkout uses. Branch cleanup still requires

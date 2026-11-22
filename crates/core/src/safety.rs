@@ -136,14 +136,11 @@ pub fn check_entry_is_managed_outpost_of(
 
 pub fn check_destination_clean(parent: &Path, dest: &Path) -> OutpostResult<()> {
     let dest_path = resolve_destination(parent, dest)?;
-    if dest_path.exists() {
-        let metadata = fs::metadata(&dest_path).map_err(|source| OutpostError::IoAt {
-            path: dest_path.clone(),
-            source,
-        })?;
-        if !metadata.is_dir() || has_entries(&dest_path)? {
-            return Err(OutpostError::DestinationExists(dest.to_path_buf()));
-        }
+    if destination_occupied(&dest_path).map_err(|source| OutpostError::IoAt {
+        path: dest_path.clone(),
+        source,
+    })? {
+        return Err(OutpostError::DestinationExists(dest.to_path_buf()));
     }
 
     if let Some(repo) = containing_repo(parent)? {
@@ -161,9 +158,9 @@ pub fn check_destination_clean(parent: &Path, dest: &Path) -> OutpostResult<()> 
 fn containing_repo(parent: &Path) -> OutpostResult<Option<PathBuf>> {
     let git = GitInvoker::at(parent);
     match git.run_capture_path(["rev-parse", "--show-toplevel"]) {
-        Ok(repo) => canonicalize_path(&repo).map(Some),
         Err(OutpostError::GitFailed { .. }) => Ok(None),
-        Err(err) => Err(err),
+        // Other failures, such as an unusable working directory, propagate.
+        repo => canonicalize_path(&repo?).map(Some),
     }
 }
 
@@ -180,19 +177,14 @@ fn destination_is_ignored(repo: &Path, dest_path: &Path) -> OutpostResult<bool> 
     ])
 }
 
-fn has_entries(path: &Path) -> OutpostResult<bool> {
-    let mut entries = fs::read_dir(path).map_err(|source| OutpostError::IoAt {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    entries
-        .next()
-        .transpose()
-        .map(|entry| entry.is_some())
-        .map_err(|source| OutpostError::IoAt {
-            path: path.to_path_buf(),
-            source,
-        })
+/// Only a missing path or an empty directory can receive an outpost.
+fn destination_occupied(path: &Path) -> std::io::Result<bool> {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    Ok(!metadata.is_dir() || fs::read_dir(path)?.next().transpose()?.is_some())
 }
 
 fn canonicalize_path(path: &Path) -> OutpostResult<PathBuf> {

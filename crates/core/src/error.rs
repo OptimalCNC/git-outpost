@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
@@ -174,6 +174,23 @@ pub enum OutpostError {
         path: PathBuf,
         source: std::io::Error,
     },
+
+    #[error(
+        "outpost was unregistered, but its directory could not be removed at {}: {source}",
+        .path.display()
+    )]
+    OutpostDirectoryNotRemoved {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+}
+
+/// Map an I/O error to `IoAt` for the path the failed operation concerned.
+pub(crate) fn io_at(path: &Path) -> impl FnOnce(std::io::Error) -> OutpostError + '_ {
+    |source| OutpostError::IoAt {
+        path: path.to_owned(),
+        source,
+    }
 }
 
 impl OutpostError {
@@ -219,7 +236,7 @@ impl OutpostError {
             | RegistryEntryNotFound(_) => 6,
             GitFailed { code, .. } => (*code).clamp(1, 125) as u8,
             GitTerminatedBySignal { .. } => 137,
-            IoAt { .. } => 70,
+            IoAt { .. } | OutpostDirectoryNotRemoved { .. } => 70,
         }
     }
 }
@@ -519,6 +536,13 @@ mod tests {
                 },
                 "io error at /repo/.git/outpost/registry.json: missing",
             ),
+            (
+                OutpostError::OutpostDirectoryNotRemoved {
+                    path: path("/outposts/C"),
+                    source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+                },
+                "outpost was unregistered, but its directory could not be removed at /outposts/C: denied",
+            ),
         ];
 
         for (error, expected) in cases {
@@ -729,6 +753,13 @@ mod tests {
                 OutpostError::IoAt {
                     path: path("/repo/.git/outpost/registry.json"),
                     source: std::io::Error::new(std::io::ErrorKind::NotFound, "missing"),
+                },
+                70,
+            ),
+            (
+                OutpostError::OutpostDirectoryNotRemoved {
+                    path: path("/outposts/C"),
+                    source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
                 },
                 70,
             ),

@@ -176,8 +176,7 @@ impl Outpost {
         ])?;
         let local_ref = format!("refs/heads/{}", branch.as_str());
         let range = format!("{source_oid}..{local_ref}");
-        let output = self.git.run_capture(["rev-list", "--count", &range])?;
-        parse_count(&self.work_tree, &output)
+        self.git.rev_list_count([&range])
     }
 
     pub fn upstream_tracking(&self) -> OutpostResult<Option<UpstreamRef>> {
@@ -205,28 +204,6 @@ impl Outpost {
     pub fn test_invoker(&self) -> &GitInvoker {
         &self.git
     }
-}
-
-fn invalid_count_output(repo: &Path, output: &str) -> OutpostError {
-    OutpostError::IoAt {
-        path: repo.to_path_buf(),
-        source: std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("unexpected rev-list output: {output}"),
-        ),
-    }
-}
-
-fn parse_count(repo: &Path, output: &str) -> OutpostResult<u32> {
-    let count = output
-        .split_whitespace()
-        .next()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_count_output(repo, output))?;
-    if output.split_whitespace().nth(1).is_some() {
-        return Err(invalid_count_output(repo, output));
-    }
-    Ok(count)
 }
 
 #[cfg(test)]

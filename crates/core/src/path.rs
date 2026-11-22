@@ -9,11 +9,11 @@ pub(crate) fn git_path_arg(path: &Path) -> OsString {
     git_path(path).into_os_string()
 }
 
+/// Lexically resolve `..` in an absolute path, whose components never include `.`.
 pub(crate) fn normalize_existing_or_missing(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {
-            Component::CurDir => {}
             Component::ParentDir => {
                 normalized.pop();
             }

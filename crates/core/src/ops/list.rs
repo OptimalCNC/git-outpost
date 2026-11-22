@@ -131,10 +131,9 @@ fn inspect_present_entry(source: &SourceRepo, entry: &RegistryEntry) -> Option<O
         .ok()?;
     let root_output = output.strip_prefix(b"true\n\n")?.strip_suffix(b"\n")?;
     let mut fields = root_output.splitn(3, |&byte| byte == b'\n');
-    let head_oid = std::str::from_utf8(fields.next()?).ok()?;
-    if !valid_object_id(head_oid) {
-        return None;
-    }
+    let head_oid = std::str::from_utf8(fields.next()?)
+        .ok()
+        .filter(|oid| valid_object_id(oid))?;
     let head = match std::str::from_utf8(fields.next()?).ok()? {
         "HEAD" => OutpostHead::Detached,
         reference => OutpostHead::Attached(BranchName::from_git_ref(reference).ok()?),

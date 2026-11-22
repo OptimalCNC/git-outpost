@@ -1,6 +1,7 @@
 #[allow(dead_code)]
 mod common;
 
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -229,4 +230,52 @@ fn expect_source(report: StatusReport) -> outpost_core::ops::status::SourceStatu
 
 fn branch(value: &str) -> BranchName {
     BranchName::parse(value).expect("branch")
+}
+
+#[test]
+fn outpost_head_pointing_at_a_tag_is_rejected_as_a_branch_name() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("add C");
+    let git = fixture.invoker(&outpost);
+    git.run_check(["tag", "v1"]).expect("tag");
+    git.run_check(["symbolic-ref", "HEAD", "refs/tags/v1"])
+        .expect("point HEAD at the tag");
+
+    let error = run_with(&outpost, &fixture.git_env).expect_err("tag is not a branch");
+
+    assert!(
+        matches!(error, OutpostError::InvalidRefName { ref name } if name == "refs/tags/v1"),
+        "{error:?}"
+    );
+    assert_eq!(
+        git.run_capture(["symbolic-ref", "HEAD"]).expect("HEAD"),
+        "refs/tags/v1"
+    );
+}
+
+#[test]
+fn imported_branch_literally_named_head_is_rejected() {
+    let fixture = AbcFixture::new();
+    fixture
+        .invoker(&fixture.source)
+        .run_check(["push", "origin", "main:refs/heads/HEAD"])
+        .expect("publish a branch named HEAD");
+    let imported = fixture.root.join("imported");
+    fixture
+        .invoker(&fixture.root)
+        .run_check([
+            OsStr::new("clone"),
+            OsStr::new("--branch"),
+            OsStr::new("HEAD"),
+            fixture.upstream.as_os_str(),
+            imported.as_os_str(),
+        ])
+        .expect("clone the branch named HEAD");
+
+    let error = run_with(&imported, &fixture.git_env).expect_err("HEAD is a reserved name");
+
+    assert!(
+        matches!(error, OutpostError::InvalidRefName { ref name } if name == "HEAD"),
+        "{error:?}"
+    );
 }

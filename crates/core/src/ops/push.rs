@@ -1,7 +1,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-use crate::error::PushHop;
+use crate::error::{PushHop, io_at};
 use crate::source_repo::{canonicalize_path, read_optional_config, source_branch_ref};
 use crate::{
     BranchName, GitInvoker, Outpost, OutpostError, OutpostResult, Reporter, SourceRepo, StepKind,
@@ -154,12 +154,7 @@ fn verify_origin_destinations(source: &SourceRepo) -> OutpostResult<OsString> {
             empty => empty.insert(local_repository(source.git(), &fetch_path)?),
         };
         let push = local_repository(source.git(), &push_path)?;
-        if *fetch != push
-            && !same_file::is_same_file(&*fetch, &push).map_err(|source| OutpostError::IoAt {
-                path: push.clone(),
-                source,
-            })?
-        {
+        if *fetch != push && !same_file::is_same_file(&*fetch, &push).map_err(io_at(&push))? {
             return Err(OutpostError::UpstreamRepositoryMismatch {
                 remote: "origin".to_owned(),
                 fetch: fetch.clone(),
@@ -361,8 +356,7 @@ fn pushed_commit_count(outpost: &Outpost, before: &str, after: &str) -> OutpostR
     }
 
     let range = format!("{before}..{after}");
-    let output = outpost.git().run_capture(["rev-list", "--count", &range])?;
-    parse_count(outpost.git(), &output)
+    outpost.git().rev_list_count([&range])
 }
 
 fn source_to_origin_commit_count(
@@ -371,39 +365,14 @@ fn source_to_origin_commit_count(
     after: &str,
 ) -> OutpostResult<u32> {
     let Some(before) = before else {
-        return parse_count(
-            git,
-            &git.run_capture(["rev-list", "--count", after, "--not", "--remotes=origin"])?,
-        );
+        return git.rev_list_count([after, "--not", "--remotes=origin"]);
     };
     if before == after {
         return Ok(0);
     }
 
     let range = format!("{before}..{after}");
-    parse_count(git, &git.run_capture(["rev-list", "--count", &range])?)
-}
-
-fn parse_count(git: &GitInvoker, output: &str) -> OutpostResult<u32> {
-    let count = output
-        .split_whitespace()
-        .next()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| invalid_count_output(git, output))?;
-    if output.split_whitespace().nth(1).is_some() {
-        return Err(invalid_count_output(git, output));
-    }
-    Ok(count)
-}
-
-fn invalid_count_output(git: &GitInvoker, output: &str) -> OutpostError {
-    OutpostError::IoAt {
-        path: git.cwd().to_path_buf(),
-        source: std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("unexpected rev-list output: {output}"),
-        ),
-    }
+    git.rev_list_count([&range])
 }
 
 #[cfg(test)]

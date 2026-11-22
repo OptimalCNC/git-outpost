@@ -184,8 +184,16 @@ fn destination_check_propagates_io_when_parent_is_not_a_directory() {
     let error = safety::check_destination_clean(&parent, Path::new("outpost"))
         .expect_err("file parent cannot be used as a working directory");
 
+    // Unix reports the destination below the file; Windows resolves it as missing
+    // and then cannot use the file as Git's working directory.
+    #[cfg(unix)]
+    let expected = fs::canonicalize(&parent)
+        .expect("canonical parent file")
+        .join("outpost");
+    #[cfg(windows)]
+    let expected = parent;
     assert!(matches!(
         error,
-        OutpostError::IoAt { path, .. } if path == parent
+        OutpostError::IoAt { path, .. } if path == expected
     ));
 }

@@ -246,8 +246,7 @@ fn report_from_metadata(
     env: &BTreeMap<OsString, OsString>,
 ) -> OutpostResult<OutpostStatus> {
     let mut problems = Vec::new();
-    let source_path = canonicalize_existing_or_missing(&metadata.source_repo)?;
-    let source_present = path_is_present(&source_path)?;
+    let (source_path, source_present) = locate_existing_or_missing(&metadata.source_repo)?;
     if !source_present {
         problems.push(ConfigProblem::SourceMissing(source_path.clone()));
     }
@@ -310,22 +309,16 @@ fn report_from_metadata(
     })
 }
 
-fn path_is_present(path: &Path) -> OutpostResult<bool> {
-    match std::fs::metadata(path) {
-        Ok(_) => Ok(true),
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(source) => Err(OutpostError::IoAt {
-            path: path.to_path_buf(),
-            source,
-        }),
-    }
+fn canonicalize_existing_or_missing(path: &Path) -> OutpostResult<PathBuf> {
+    locate_existing_or_missing(path).map(|(path, _)| path)
 }
 
-fn canonicalize_existing_or_missing(path: &Path) -> OutpostResult<PathBuf> {
+/// Canonicalize a path and report whether it exists, from one observation.
+fn locate_existing_or_missing(path: &Path) -> OutpostResult<(PathBuf, bool)> {
     match std::fs::metadata(path) {
-        Ok(_) => canonicalize_path(path),
+        Ok(_) => Ok((canonicalize_path(path)?, true)),
         Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
-            Ok(canonicalize_missing(path))
+            Ok((canonicalize_missing(path), false))
         }
         Err(source) => Err(OutpostError::IoAt {
             path: path.to_path_buf(),

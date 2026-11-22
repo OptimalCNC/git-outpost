@@ -31,16 +31,11 @@ fn config_write_reports_a_regular_state_parent() {
     let OutpostError::IoAt { path, source } = error else {
         panic!("expected path-qualified I/O error");
     };
+    assert_eq!(path, config_path);
     #[cfg(windows)]
-    {
-        assert_eq!(path, state_dir);
-        assert_eq!(source.kind(), std::io::ErrorKind::AlreadyExists);
-    }
+    assert_eq!(source.kind(), std::io::ErrorKind::AlreadyExists);
     #[cfg(not(windows))]
-    {
-        assert_eq!(path, config_path);
-        assert_eq!(source.kind(), std::io::ErrorKind::NotADirectory);
-    }
+    assert_eq!(source.kind(), std::io::ErrorKind::NotADirectory);
 }
 
 #[test]

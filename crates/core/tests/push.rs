@@ -1148,3 +1148,185 @@ fn expect_error<T>(result: OutpostResult<T>, message: &str) -> OutpostError {
         Err(err) => err,
     }
 }
+
+#[test]
+fn push_and_status_ignore_an_exported_legacy_git_config_file() {
+    let fixture = AbcFixture::new();
+    let checkout = fixture.add_outpost("C").expect("add C");
+    let tip = fixture
+        .commit_in_outpost(&checkout, "outpost work")
+        .expect("outpost commit");
+    // GIT_CONFIG only redirects `git config`; native push and status ignore it.
+    let legacy = fixture.root.join("legacy.gitconfig");
+    fs::write(&legacy, "").expect("legacy config file");
+    let mut env = fixture.git_env.clone();
+    env.insert("GIT_CONFIG".into(), legacy.into_os_string());
+
+    let status = status_run_with(&checkout, &env).expect("status with GIT_CONFIG");
+    let report = run(
+        &Outpost::at_with(&checkout, &env).expect("open outpost"),
+        PushOptions,
+        &mut CapturingReporter::default(),
+    )
+    .expect("push with GIT_CONFIG");
+
+    let StatusReport::Outpost(status) = status else {
+        panic!("expected outpost status");
+    };
+    assert!(matches!(
+        status.head,
+        OutpostHeadStatus::Attached { branch, .. } if branch.as_str() == "main"
+    ));
+    assert_pushed_commits(&report.outpost_to_source, 1);
+    assert_pushed_commits(&report.source_to_origin, 1);
+    for repo in [&fixture.source, &fixture.upstream] {
+        assert_eq!(
+            fixture.rev_parse(repo, "refs/heads/main").expect("branch"),
+            tip
+        );
+    }
+}
+
+#[test]
+fn push_preserves_all_tips_when_the_origin_url_value_spans_two_lines() {
+    let fixture = AbcFixture::new();
+    let checkout = fixture.add_outpost("C").expect("add C");
+    let original = fixture
+        .rev_parse(&fixture.source, "refs/heads/main")
+        .expect("original source branch");
+    let intended = fixture
+        .commit_in_outpost(&checkout, "unpublished work")
+        .expect("outpost commit");
+    let pasted = format!(
+        "{}\ngit@review.example:team/repo.git",
+        dunce::simplified(&fixture.upstream).display()
+    );
+    fixture
+        .invoker(&fixture.source)
+        .run_check(["config", "remote.origin.url", &pasted])
+        .expect("store the pasted read address");
+
+    let error = expect_error(
+        run(
+            &outpost(&fixture, &checkout),
+            PushOptions,
+            &mut CapturingReporter::default(),
+        ),
+        "refuse an origin without one usable address",
+    );
+
+    assert!(matches!(
+        error,
+        OutpostError::IoAt { source, .. }
+            if source.kind() == std::io::ErrorKind::InvalidData
+                && source.to_string().contains("expected one nonempty remote URL")
+    ));
+    for repo in [&fixture.source, &fixture.upstream] {
+        assert_eq!(
+            fixture.rev_parse(repo, "refs/heads/main").expect("branch"),
+            original
+        );
+    }
+    assert_eq!(
+        fixture.rev_parse(&checkout, "HEAD").expect("outpost"),
+        intended
+    );
+}
+
+#[test]
+fn push_preserves_all_tips_when_a_home_relative_origin_expands_to_nothing() {
+    let fixture = AbcFixture::new();
+    let origin_tip = fixture
+        .rev_parse(&fixture.upstream, "refs/heads/main")
+        .expect("published branch");
+    let checkout = fixture.add_outpost("C").expect("add C");
+    let outpost_tip = fixture
+        .commit_in_outpost(&checkout, "unpublished outpost commit")
+        .expect("outpost commit");
+    let source_tip = fixture
+        .rev_parse(&fixture.source, "refs/heads/main")
+        .expect("source branch");
+    fixture
+        .invoker(&fixture.source)
+        .run_check(["remote", "set-url", "--push", "origin", "~"])
+        .expect("configure the home directory as the write address");
+    // Git expands a bare ~ to an empty path when HOME is empty.
+    let mut env = fixture.git_env.clone();
+    env.insert("HOME".into(), "".into());
+    let outpost = Outpost::at_with(&checkout, &env).expect("open outpost");
+
+    let error = expect_error(
+        run(&outpost, PushOptions, &mut CapturingReporter::default()),
+        "an empty local path cannot identify the write repository",
+    );
+
+    assert!(matches!(
+        error,
+        OutpostError::IoAt { source, .. }
+            if source.kind() == std::io::ErrorKind::InvalidData
+                && source.to_string() == "empty Git path"
+    ));
+    for (repo, expected) in [
+        (&checkout, outpost_tip),
+        (&fixture.source, source_tip),
+        (&fixture.upstream, origin_tip),
+    ] {
+        assert_eq!(
+            fixture.rev_parse(repo, "refs/heads/main").expect("branch"),
+            expected
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn push_refuses_a_file_url_whose_percent_escape_decodes_to_nul() {
+    let fixture = AbcFixture::new();
+    let checkout = fixture.add_outpost("C").expect("add C");
+    let original = fixture
+        .rev_parse(&fixture.source, "refs/heads/main")
+        .expect("original source branch");
+    let intended = fixture
+        .commit_in_outpost(&checkout, "unpublished work")
+        .expect("outpost commit");
+    // The directory name literally contains "%00"; Outpost accepts no NUL in a decoded path.
+    let archive = fixture.root.join("archive%00.git");
+    fixture
+        .invoker(&fixture.root)
+        .run_check([
+            OsStr::new("init"),
+            OsStr::new("--bare"),
+            archive.as_os_str(),
+        ])
+        .expect("archive repository");
+    let url = format!("file://{}", archive.display());
+    fixture
+        .invoker(&fixture.source)
+        .run_check(["remote", "set-url", "--push", "origin", &url])
+        .expect("configure the archive write address");
+
+    let error = expect_error(
+        run(
+            &outpost(&fixture, &checkout),
+            PushOptions,
+            &mut CapturingReporter::default(),
+        ),
+        "refuse the undecodable write address before publishing",
+    );
+
+    assert!(matches!(
+        error,
+        OutpostError::IoAt { source, .. } if source.kind() == std::io::ErrorKind::InvalidData
+    ));
+    for repo in [&fixture.source, &fixture.upstream] {
+        assert_eq!(
+            fixture.rev_parse(repo, "refs/heads/main").expect("branch"),
+            original
+        );
+    }
+    assert_eq!(
+        fixture.rev_parse(&checkout, "HEAD").expect("outpost"),
+        intended
+    );
+    assert!(fixture.rev_parse(&archive, "refs/heads/main").is_err());
+}

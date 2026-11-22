@@ -36,6 +36,10 @@ fn add_propagates_destination_parent_canonicalization_failure() {
         "file parent should fail",
     );
 
+    // Unix reports the destination below the file; Windows resolves it as missing
+    // and then cannot use the file as Git's working directory.
+    #[cfg(unix)]
+    let expected_parent = expected_parent.join("C");
     assert!(matches!(err, OutpostError::IoAt { path, .. } if path == expected_parent));
     assert!(!destination.exists());
 }

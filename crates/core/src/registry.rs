@@ -1,10 +1,10 @@
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::state_file::{Publish, publish_json};
 use crate::{OutpostError, OutpostResult, RemoteName, SourceRepo};
 
 const REGISTRY_VERSION: u32 = 1;
@@ -93,35 +93,9 @@ impl Registry {
     }
 
     pub fn save(&self) -> OutpostResult<()> {
-        let state_dir = &self.state_dir;
-        let path = state_dir.join("registry.json");
-        fs::create_dir_all(state_dir).map_err(|source| OutpostError::IoAt {
-            path: state_dir.to_path_buf(),
-            source,
-        })?;
-
+        let path = self.state_dir.join("registry.json");
         let file = RegistryFile::from_registry(self);
-        let mut temp =
-            tempfile::NamedTempFile::new_in(state_dir).map_err(|source| OutpostError::IoAt {
-                path: state_dir.to_path_buf(),
-                source,
-            })?;
-        serde_json::to_writer_pretty(temp.as_file_mut(), &file).map_err(|source| {
-            OutpostError::IoAt {
-                path: path.to_path_buf(),
-                source: std::io::Error::other(source),
-            }
-        })?;
-        writeln!(temp.as_file_mut()).map_err(|source| OutpostError::IoAt {
-            path: path.to_path_buf(),
-            source,
-        })?;
-        temp.persist(&path).map_err(|source| OutpostError::IoAt {
-            path: path.to_path_buf(),
-            source: source.error,
-        })?;
-
-        Ok(())
+        publish_json(&self.state_dir, &path, &file, Publish::Replace)
     }
 
     fn find(&self, path: &Path) -> Option<usize> {
@@ -186,13 +160,14 @@ impl RegistryMut {
         Ok(())
     }
 
-    pub fn update_path(&mut self, old: &Path, new: PathBuf) -> OutpostResult<()> {
+    /// Record the entry's new location and return its canonical path.
+    pub fn update_path(&mut self, old: &Path, new: PathBuf) -> OutpostResult<PathBuf> {
         let (old, index) = self.inner.find_existing_or_recorded(old)?;
         let new = canonicalize_path(&new)?;
         let index = index.ok_or_else(|| OutpostError::RegistryEntryNotFound(old.clone()))?;
-        self.inner.entries[index].path = new;
+        self.inner.entries[index].path = new.clone();
         self.dirty = true;
-        Ok(())
+        Ok(new)
     }
 
     pub fn lock(&mut self, path: &Path, reason: Option<String>) -> OutpostResult<()> {

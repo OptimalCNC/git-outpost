@@ -98,7 +98,10 @@ fn remove_reports_the_residual_outpost_and_keeps_branches_when_a_reader_blocks_d
     .expect_err("the open document blocks directory removal");
     drop(reader);
 
-    assert!(matches!(err, OutpostError::IoAt { path, .. } if path == expected_path));
+    assert!(matches!(
+        err,
+        OutpostError::OutpostDirectoryNotRemoved { path, .. } if path == expected_path
+    ));
     assert_eq!(fs::read_to_string(notes).expect("residual notes"), contents);
     assert_registry_empty(&source);
     assert!(prompt.source_prompts.is_empty() && prompt.upstream_prompts.is_empty());
@@ -662,7 +665,9 @@ fn remove_with_cleanup_skips_default_branch_even_when_not_checked_out() {
         outcome,
         remove::BranchCleanupOutcome::Skipped {
             branch: Some(branch),
-            reason: remove::BranchCleanupSkipReason::DefaultBranch,
+            reason: remove::BranchCleanupSkipReason::Analysis(
+                outpost_core::ops::branch_analysis::BranchCleanupSkipReason::DefaultBranch,
+            ),
         } if branch == &main
     )));
 }
@@ -700,7 +705,9 @@ fn remove_with_cleanup_skips_checked_out_source_branch() {
         outcome,
         remove::BranchCleanupOutcome::Skipped {
             branch: Some(skipped),
-            reason: remove::BranchCleanupSkipReason::BranchCheckedOut,
+            reason: remove::BranchCleanupSkipReason::Analysis(
+                outpost_core::ops::branch_analysis::BranchCleanupSkipReason::BranchCheckedOut,
+            ),
         } if skipped == &branch
     )));
 }
@@ -914,7 +921,9 @@ fn remove_with_cleanup_rejects_mismatched_merged_pr_proof() {
         outcome,
         remove::BranchCleanupOutcome::Skipped {
             branch: Some(skipped),
-            reason: remove::BranchCleanupSkipReason::NoProof,
+            reason: remove::BranchCleanupSkipReason::Analysis(
+                outpost_core::ops::branch_analysis::BranchCleanupSkipReason::NoProof,
+            ),
         } if skipped == &branch
     )));
 }
@@ -1051,7 +1060,9 @@ fn cleanup_preserves_a_branch_checked_out_during_confirmation() {
             .branch_cleanup
             .contains(&remove::BranchCleanupOutcome::Skipped {
                 branch: Some(branch),
-                reason: remove::BranchCleanupSkipReason::BranchCheckedOut
+                reason: remove::BranchCleanupSkipReason::Analysis(
+                    outpost_core::ops::branch_analysis::BranchCleanupSkipReason::BranchCheckedOut,
+                )
             })
     );
 }
@@ -1477,7 +1488,9 @@ fn force_remove_keeps_branches_when_the_outpost_tracks_another_remote() {
     assert!(report.branch_cleanup.iter().any(|outcome| matches!(
         outcome,
         remove::BranchCleanupOutcome::Skipped {
-            reason: remove::BranchCleanupSkipReason::UpstreamRemoteMismatch,
+            reason: remove::BranchCleanupSkipReason::Analysis(
+                outpost_core::ops::branch_analysis::BranchCleanupSkipReason::UpstreamRemoteMismatch,
+            ),
             ..
         }
     )));
@@ -1524,7 +1537,9 @@ fn remove_force_does_not_bypass_branch_cleanup_proof() {
         outcome,
         remove::BranchCleanupOutcome::Skipped {
             branch: Some(skipped),
-            reason: remove::BranchCleanupSkipReason::OutpostHeadMismatch,
+            reason: remove::BranchCleanupSkipReason::Analysis(
+                outpost_core::ops::branch_analysis::BranchCleanupSkipReason::OutpostHeadMismatch,
+            ),
         } if skipped == &branch
     )));
 }
@@ -1735,4 +1750,135 @@ fn canonical(path: &Path) -> PathBuf {
 fn canonical_missing(path: &Path) -> PathBuf {
     let parent = path.parent().expect("path parent");
     canonical(parent).join(path.file_name().expect("file name"))
+}
+
+#[test]
+fn remove_keeps_the_upstream_namesake_when_the_source_branch_was_deleted() {
+    let fixture = AbcFixture::new();
+    let branch = fixture.create_source_branch("topic").expect("topic branch");
+    fixture.push_source_branch(&branch).expect("publish topic");
+    let published = fixture
+        .rev_parse(&fixture.upstream, "refs/heads/topic")
+        .expect("published topic");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch.clone()))
+        .expect("topic outpost");
+    fixture
+        .delete_source_branch(&branch)
+        .expect("delete the source branch");
+    let source = fixture.source_repo().expect("source repo");
+    let mut prompt = TestPrompt::new([true], [true]);
+
+    let report = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            selector: OutpostSelector::from_path(outpost.clone()),
+            force: true,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect("remove the outpost");
+
+    assert!(
+        report
+            .branch_cleanup
+            .contains(&remove::BranchCleanupOutcome::Skipped {
+            branch: Some(branch),
+            reason: remove::BranchCleanupSkipReason::Analysis(
+                outpost_core::ops::branch_analysis::BranchCleanupSkipReason::SourceBranchMissing,
+            ),
+        })
+    );
+    assert!(!outpost.exists());
+    assert_registry_empty(&source);
+    assert!(prompt.source_prompts.is_empty() && prompt.upstream_prompts.is_empty());
+    assert_eq!(
+        fixture
+            .rev_parse(&fixture.upstream, "refs/heads/topic")
+            .expect("upstream topic kept"),
+        published
+    );
+}
+
+// A container can leave files that the user cannot delete inside the outpost.
+// A non-writable directory reproduces that permission state for a normal user.
+#[test]
+#[cfg(unix)]
+fn remove_reports_the_residual_outpost_and_keeps_branches_when_a_directory_is_not_writable() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = AbcFixture::new();
+    let main = BranchName::parse("main").unwrap();
+    fixture.push_source_branch(&main).expect("publish main");
+    let branch = fixture.create_source_branch("topic").expect("topic branch");
+    fixture.push_source_branch(&branch).expect("publish topic");
+    let tip = fixture
+        .rev_parse(&fixture.source, "refs/heads/topic")
+        .expect("topic tip");
+    let outpost = fixture
+        .add_outpost_on_branch("C", Some(branch))
+        .expect("topic outpost");
+    fs::write(outpost.join(".git/info/exclude"), "cache/\n").expect("ignore cache");
+    let cache = outpost.join("cache");
+    fs::create_dir(&cache).expect("cache directory");
+    let output = cache.join("output.bin");
+    fs::write(&output, "container output").expect("container output");
+    let _restore = WritableOnDrop(cache.clone());
+    fs::set_permissions(&cache, fs::Permissions::from_mode(0o555)).expect("read-only cache");
+    // Privileged users bypass directory write permission.
+    if fs::write(cache.join("probe"), "").is_ok() {
+        eprintln!("skipping: directory permissions do not restrict this user");
+        return;
+    }
+    let expected_path = fs::canonicalize(&outpost).expect("outpost path");
+    let source = fixture.source_repo().expect("source repo");
+    let mut prompt = TestPrompt::new([true], [true]);
+
+    let err = remove::run_with_cleanup(
+        &source,
+        remove::RemoveOptions {
+            selector: OutpostSelector::from_path(outpost.clone()),
+            force: false,
+        },
+        remove::BranchCleanupMode::Prompt(remove::BranchCleanupOptions {
+            provider: None,
+            prompt: &mut prompt,
+        }),
+    )
+    .expect_err("the non-writable directory blocks outpost removal");
+
+    assert!(matches!(
+        err,
+        OutpostError::OutpostDirectoryNotRemoved { path, source }
+            if path == expected_path && source.kind() == std::io::ErrorKind::PermissionDenied
+    ));
+    assert_eq!(
+        fs::read_to_string(&output).expect("residual output"),
+        "container output"
+    );
+    assert_registry_empty(&source);
+    assert!(prompt.source_prompts.is_empty() && prompt.upstream_prompts.is_empty());
+    for repo in [&fixture.source, &fixture.upstream] {
+        assert_eq!(
+            fixture
+                .rev_parse(repo, "refs/heads/topic")
+                .expect("preserved topic"),
+            tip
+        );
+    }
+}
+
+/// Restore write permission so the fixture's temporary directory can be removed.
+#[cfg(unix)]
+struct WritableOnDrop(PathBuf);
+
+#[cfg(unix)]
+impl Drop for WritableOnDrop {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+    }
 }

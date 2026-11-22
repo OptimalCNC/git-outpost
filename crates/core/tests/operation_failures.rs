@@ -554,3 +554,36 @@ fn failed_move_to_an_overlong_name_preserves_the_outpost_and_registry() {
         "uncommitted edits\n"
     );
 }
+
+// An ignored directory inside the outpost passes the destination checks, but
+// the operating system cannot move a directory into itself.
+#[test]
+fn moving_an_outpost_into_its_own_ignored_directory_preserves_it_and_the_registry() {
+    let fixture = AbcFixture::new();
+    let path = fixture.add_outpost("C").expect("outpost");
+    let source = fixture.source_repo().expect("source repository");
+    fs::write(path.join(".git/info/exclude"), "build/\n").expect("ignore build output");
+    fs::create_dir(path.join("build")).expect("build directory");
+    let registry = fs::read(source.registry_path()).expect("registry");
+    let head = fixture.rev_parse(&path, "HEAD").expect("outpost HEAD");
+    let destination = path.join("build").join("moved");
+
+    let error = outpost_core::ops::r#move::run(
+        &source,
+        outpost_core::ops::r#move::MoveOptions {
+            selector: OutpostSelector::from_path(path.clone()),
+            new_path: destination.clone(),
+            force: false,
+        },
+    )
+    .expect_err("a directory cannot move into itself");
+
+    let canonical_path = fs::canonicalize(&path).expect("canonical outpost");
+    assert!(matches!(
+        error,
+        outpost_core::OutpostError::IoAt { path: failed_path, .. } if failed_path == canonical_path
+    ));
+    assert!(!destination.exists());
+    assert_eq!(fixture.rev_parse(&path, "HEAD").unwrap(), head);
+    assert_eq!(fs::read(source.registry_path()).unwrap(), registry);
+}
