@@ -10,6 +10,37 @@ use outpost_core::ops::status;
 use outpost_core::selector::OutpostSelector;
 use outpost_core::{AheadBehind, BranchName, Outpost, OutpostError};
 
+#[test]
+fn status_identifies_the_outposts_malformed_remote_from_either_checkout() {
+    let fixture = AbcFixture::new();
+    let outpost = fixture.add_outpost("C").expect("registered outpost");
+    let git = fixture.invoker(&outpost);
+    let source_url = git.run_capture(["remote", "get-url", "local"]).unwrap();
+    let pasted = format!("{source_url}\n../old-source");
+    git.run_check(["config", "remote.local.url", &pasted])
+        .expect("store two pasted addresses as one configuration value");
+    let outpost_path = fs::canonicalize(&outpost).unwrap();
+
+    for checkout in [&fixture.source, &outpost] {
+        let error = status::run_with(checkout, &fixture.git_env)
+            .expect_err("status cannot identify the outpost's source remote");
+        assert!(
+            matches!(
+                &error,
+                OutpostError::IoAt { path, source } if path == &outpost_path
+                    && source.kind() == std::io::ErrorKind::InvalidData
+            ),
+            "{error}"
+        );
+        assert!(error.to_string().contains("remote.local.url"), "{error}");
+    }
+    assert_eq!(
+        git.run_capture(["config", "--get", "remote.local.url"])
+            .unwrap(),
+        pasted
+    );
+}
+
 // An ordinary directory can obstruct the application-owned metadata document.
 // Source-context status must propagate that filesystem cause through its
 // registered-outpost inspection, rather than flatten it to an integrity error.

@@ -156,6 +156,39 @@ fn refs_snapshot(fixture: &AbcFixture, repository: &Path) -> String {
         .expect("repository refs")
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn add_cannot_record_a_source_path_that_metadata_json_cannot_represent() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let mut fixture = AbcFixture::new();
+    let source_path = fixture
+        .root
+        .join(std::ffi::OsStr::from_bytes(b"projet-\xe9"));
+    fs::rename(&fixture.source, &source_path).expect("rename source checkout");
+    fixture.source = source_path;
+    let git = fixture.invoker(&fixture.source);
+    git.run_check(["config", "receive.denyCurrentBranch", "refuse"])
+        .expect("set source push policy");
+    let metadata = fs::canonicalize(&fixture.root)
+        .expect("fixture root")
+        .join("C/.git/outpost/metadata.json");
+
+    let error = fixture
+        .add_outpost("C")
+        .expect_err("unrepresentable source path");
+
+    assert!(matches!(error, OutpostError::IoAt { path, .. } if path == metadata));
+    assert!(!metadata.try_exists().expect("check unpublished metadata"));
+    let source = fixture.source_repo().expect("source repository");
+    assert!(source.registry().expect("registry").entries().is_empty());
+    assert_eq!(
+        git.run_capture(["config", "--get", "receive.denyCurrentBranch"])
+            .expect("source push policy"),
+        "refuse"
+    );
+}
+
 // Unix can clone to a non-UTF-8 path, but JSON cannot represent that registry
 // entry. Failed publication must preserve prior registrations and their work;
 // config serialization and early storage obstructions do not prove this.

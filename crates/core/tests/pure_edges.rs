@@ -99,6 +99,7 @@ fn refname_composites_preserve_display_and_short_branch_semantics() {
         remote: RemoteName::parse("origin").expect("remote"),
         merge_ref: RefName::parse("refs/remotes/origin/main").expect("remote ref"),
     };
+    assert_eq!(upstream.merge_ref.to_string(), "refs/remotes/origin/main");
     assert_eq!(upstream.short_branch(), None);
 }
 
