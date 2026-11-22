@@ -491,8 +491,10 @@ creating it in the source repository.
 
 The outpost's source remote must read from and write only to the local source
 recorded in its metadata. If an old or additional write URL points elsewhere,
-push stops. Before publishing upstream it verifies that the source branch
-received the intended outpost commit.
+push stops. After each successful Git push, Outpost reads the destination
+branch. If it points to a different commit, the error names the completed
+push and shows the expected and observed commits. The push to `origin`
+starts only after the source branch has been verified.
 
 When the source's `origin` reads from a local Git repository, every local push
 URL must resolve to that same repository. Outpost checks before either push.

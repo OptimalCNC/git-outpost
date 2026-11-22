@@ -89,6 +89,16 @@ pub enum OutpostError {
     #[error("history diverges from source repository on branch {branch}")]
     Divergence { branch: String },
 
+    #[error(
+        "push from {hop} completed for branch {branch}. Verification expected {expected_oid} and observed {observed_oid}"
+    )]
+    PushedBranchTipMismatch {
+        hop: PushHop,
+        branch: String,
+        expected_oid: String,
+        observed_oid: String,
+    },
+
     #[error("branch not found: {branch} in {}", .repo.display())]
     BranchNotFound { branch: String, repo: PathBuf },
 
@@ -187,6 +197,7 @@ impl OutpostError {
             | UnpushedCommits { .. }
             | OutpostLocked { .. } => 3,
             Divergence { .. }
+            | PushedBranchTipMismatch { .. }
             | PushIntoCheckedOutBranch { .. }
             | AmbiguousBranchCreation { .. } => 4,
             BranchNotFound { .. }
@@ -210,6 +221,21 @@ impl OutpostError {
             GitTerminatedBySignal { .. } => 137,
             IoAt { .. } => 70,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PushHop {
+    OutpostToSource,
+    SourceToOrigin,
+}
+
+impl std::fmt::Display for PushHop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::OutpostToSource => "outpost to source",
+            Self::SourceToOrigin => "source to origin",
+        })
     }
 }
 

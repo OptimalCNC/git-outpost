@@ -1,6 +1,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
+use crate::error::PushHop;
 use crate::source_repo::{canonicalize_path, read_optional_config, source_branch_ref};
 use crate::{
     BranchName, GitInvoker, Outpost, OutpostError, OutpostResult, Reporter, SourceRepo, StepKind,
@@ -70,8 +71,11 @@ pub fn run(
         .run_check(["push", "--", remote.as_str(), &refspec, &exclude_nested])?;
     let source_after = source.git().ref_oid(&branch_ref)?;
     if source_after != intended_tip {
-        return Err(OutpostError::Divergence {
+        return Err(OutpostError::PushedBranchTipMismatch {
+            hop: PushHop::OutpostToSource,
             branch: branch.as_str().to_owned(),
+            expected_oid: intended_tip,
+            observed_oid: source_after,
         });
     }
 
@@ -101,8 +105,11 @@ pub fn run(
                 branch: branch.as_str().to_owned(),
             })?;
     if origin_after != source_after {
-        return Err(OutpostError::Divergence {
+        return Err(OutpostError::PushedBranchTipMismatch {
+            hop: PushHop::SourceToOrigin,
             branch: branch.as_str().to_owned(),
+            expected_oid: source_after,
+            observed_oid: origin_after,
         });
     }
 

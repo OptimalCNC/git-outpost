@@ -226,6 +226,14 @@ pub enum OutpostError {
     #[error("history diverges from source repository on branch {branch}")]
     Divergence { branch: String },
 
+    #[error("push from {hop} completed for branch {branch}. Verification expected {expected_oid} and observed {observed_oid}")]
+    PushedBranchTipMismatch {
+        hop: PushHop,
+        branch: String,
+        expected_oid: String,
+        observed_oid: String,
+    },
+
     #[error("branch not found: {branch} in {repo}")]
     BranchNotFound { branch: String, repo: PathBuf },
 
@@ -1441,7 +1449,9 @@ Step-by-step:
    This also works when a tag has the same name or a second branch is
    literally named `refs/heads/<branch>`. After the push succeeds, verify
    the branch tip on `origin`. If the remote omits the branch from its
-   response, return `PushedBranchNotVisible` with exit code 5.
+   response, return `PushedBranchNotVisible` with exit code 5. After either
+   successful Git push, a different observed tip produces `PushedBranchTipMismatch`
+   (exit 4) with the completed hop, the branch, and both commit IDs.
 
 #### 5.9.9 `ops/lock.rs`
 
@@ -2036,7 +2046,7 @@ impl OutpostError {
             DestinationExists(_) | DestinationInsideRepo(_)
                 | DirtyTree { .. } | UnpushedCommits { .. }
                 | OutpostLocked { .. } => 3,
-            Divergence { .. } | PushIntoCheckedOutBranch { .. }
+            Divergence { .. } | PushedBranchTipMismatch { .. } | PushIntoCheckedOutBranch { .. }
                 | AmbiguousBranchCreation { .. } => 4,
             BranchNotFound { .. } | PushedBranchNotVisible { .. } | NoUpstreamTracking { .. }
                 | InvalidRefName { .. } | UpstreamNotABranch { .. } => 5,

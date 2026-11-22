@@ -6,6 +6,7 @@ use std::fs;
 use std::path::Path;
 
 use common::fixture::{AbcFixture, CapturingReporter};
+use outpost_core::error::PushHop;
 use outpost_core::ops::list;
 use outpost_core::ops::push::{PushOptions, StepResult, run};
 use outpost_core::ops::status::{
@@ -715,6 +716,122 @@ fn pu05_push_dirty_outpost_succeeds() {
             .expect("origin main"),
         outpost_oid
     );
+}
+
+#[test]
+fn push_stops_before_origin_when_a_release_hook_advances_the_source_tip() {
+    assert_release_hook_outcome(PushHop::OutpostToSource);
+}
+
+#[test]
+fn push_reports_when_an_origin_release_hook_advances_the_published_tip() {
+    assert_release_hook_outcome(PushHop::SourceToOrigin);
+}
+
+fn assert_release_hook_outcome(hop: PushHop) {
+    let fixture = AbcFixture::new();
+    let release = fixture
+        .create_source_branch("release")
+        .expect("release branch");
+    fixture
+        .push_source_branch(&release)
+        .expect("publish release");
+    let previous = fixture
+        .rev_parse(&fixture.upstream, "refs/heads/release")
+        .unwrap();
+    let checkout = fixture
+        .add_outpost_on_branch("C", Some(release))
+        .expect("release outpost");
+    let intended = fixture
+        .commit_file_in_outpost(&checkout, "release changes", "app.txt", "release\n")
+        .expect("prepare release");
+    let (receiver, other, expected_other, direction) = match hop {
+        PushHop::OutpostToSource => (
+            &fixture.source,
+            &fixture.upstream,
+            &previous,
+            "outpost to source",
+        ),
+        PushHop::SourceToOrigin => (
+            &fixture.upstream,
+            &fixture.source,
+            &intended,
+            "source to origin",
+        ),
+    };
+    install_release_hook(&fixture, receiver);
+
+    let error = expect_error(
+        run(
+            &outpost(&fixture, &checkout),
+            PushOptions,
+            &mut CapturingReporter::default(),
+        ),
+        "the receiving repository advanced its branch after accepting the push",
+    );
+
+    let observed = fixture
+        .rev_parse(receiver, "refs/heads/release")
+        .expect("receiver tip");
+    assert_eq!(
+        fixture.rev_parse(receiver, "refs/heads/release^").unwrap(),
+        intended
+    );
+    assert_eq!(
+        fixture.rev_parse(&checkout, "refs/heads/release").unwrap(),
+        intended
+    );
+    assert_eq!(
+        &fixture.rev_parse(other, "refs/heads/release").unwrap(),
+        expected_other
+    );
+    assert_eq!(error.exit_code(), 4);
+    assert!(
+        matches!(&error, OutpostError::PushedBranchTipMismatch { hop: actual, .. } if *actual == hop)
+    );
+    let message = error.to_string();
+    for detail in [
+        format!("{direction} completed"),
+        "branch release".to_owned(),
+        format!("expected {intended}"),
+        format!("observed {observed}"),
+    ] {
+        assert!(
+            message.contains(&detail),
+            "missing {detail:?} in {message:?}"
+        );
+    }
+}
+
+fn install_release_hook(fixture: &AbcFixture, receiver: &Path) {
+    let hooks = fixture.root.join("release-hooks");
+    fs::create_dir(&hooks).expect("release hooks directory");
+    let hook = hooks.join("post-receive");
+    fs::write(
+        &hook,
+        r#"#!/bin/sh
+set -eu
+while read -r old new ref; do
+    test "$ref" = refs/heads/release || continue
+    record=$(git commit-tree "$new^{tree}" -p "$new" -m "Record publication of $new")
+    git update-ref "$ref" "$record" "$new"
+done
+"#,
+    )
+    .expect("write release-recording hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("enable release hook");
+    }
+    fixture
+        .invoker(receiver)
+        .run_check([
+            OsStr::new("config"),
+            OsStr::new("core.hooksPath"),
+            hooks.as_os_str(),
+        ])
+        .expect("install release hook for the receiving repository");
 }
 
 #[test]
