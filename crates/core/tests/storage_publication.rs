@@ -190,10 +190,10 @@ fn add_cannot_record_a_source_path_that_metadata_json_cannot_represent() {
     );
 }
 
-// Unix can clone to a non-UTF-8 path, but JSON cannot represent that registry
+// This Linux fixture uses a non-UTF-8 path that JSON cannot store as a registry
 // entry. Failed publication must preserve prior registrations and their work;
 // config serialization and early storage obstructions do not prove this.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn add_to_a_non_utf8_path_preserves_the_existing_registry_on_serialization_failure() {
     use std::os::unix::ffi::OsStringExt;
